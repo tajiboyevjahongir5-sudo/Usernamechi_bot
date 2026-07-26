@@ -432,8 +432,8 @@ body::before {
         <canvas id="chart-revenue" height="130"></canvas>
       </div>
       <div class="chart-box">
-        <div class="chart-title">📈 Savdo Oqimi Analogiyasi</div>
-        <canvas id="chart-sales" height="130"></canvas>
+        <div class="chart-title">📂 Kategoriyalar Bo'yicha Buyurtmalar</div>
+        <canvas id="chart-categories" height="130"></canvas>
       </div>
     </div>
 
@@ -801,8 +801,10 @@ async function loadDashboard() {
     const aRes = await fetch('/api/admin/analytics', { headers: headers() });
     if (aRes.ok) {
       const analytics = await aRes.json();
-      if (analytics.chart_labels) {
-        renderChart('chart-sales', analytics.chart_labels, analytics.chart_data, '#06b6d4', 'Savdo Hajmi');
+      if (analytics.categories) {
+        const catLabels = Object.keys(analytics.categories);
+        const catCounts = Object.values(analytics.categories);
+        renderDoughnutChart('chart-categories', catLabels, catCounts);
       }
     }
   } catch(e) {}
@@ -1170,6 +1172,35 @@ function renderChart(id, labels, data, color, label) {
         x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#64748b' } },
         y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#64748b' } }
       }
+    }
+  });
+}
+
+function renderDoughnutChart(id, labels, data) {
+  if (chartCache[id]) chartCache[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  
+  chartCache[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: ['#8b5cf6', '#06b6d4', '#d946ef', '#10b981', '#f59e0b'],
+        borderWidth: 0,
+        hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'right',
+          labels: { color: '#94a3b8', font: { family: 'Plus Jakarta Sans', size: 11 } }
+        }
+      },
+      cutout: '70%'
     }
   });
 }

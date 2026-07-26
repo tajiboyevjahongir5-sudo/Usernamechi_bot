@@ -2297,15 +2297,41 @@ async def api_admin_analytics(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
-    
+
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+        
+        # 1. Categories breakdown
+        categories = {}
+        async with db.execute("SELECT category, COUNT(*) as cnt FROM orders GROUP BY category") as c:
+            for r in await c.fetchall():
+                categories[r['category'] or 'boshqa'] = r['cnt']
+                
+        # 2. Daily orders & registrations for 7 days
+        days_labels, daily_orders_cnt, daily_reg_cnt = [], [], []
+        for i in range(6, -1, -1):
+            ts_start = time.time() - i * 86400
+            ts_end = ts_start + 86400
+            day_str = time.strftime('%d/%m', time.localtime(ts_start))
+            
+            async with db.execute("SELECT COUNT(*) FROM orders WHERE rowid IN (SELECT rowid FROM orders) AND status='completed'") as c:
+                pass # placeholder for completed orders
+            
+            # Orders created on that day
+            async with db.execute("SELECT COUNT(*) FROM orders WHERE id IN (SELECT id FROM orders WHERE rowid >= ?)", (1,)) as c:
+                pass
+
+            days_labels.append(day_str)
+
+        # Total counts
         async with db.execute("SELECT COUNT(*) FROM users") as c:
             total_users = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM listings WHERE status='sold'") as c:
-            total_sold = (await c.fetchone())[0]
-        async with db.execute("SELECT SUM(amount) FROM topups WHERE status='approved'") as c:
-            total_topups = (await c.fetchone())[0] or 0
+        async with db.execute("SELECT COUNT(*) FROM orders") as c:
+            total_orders = (await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM registered_usernames") as c:
+            total_usernames = (await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM users WHERE session_string IS NOT NULL AND session_string != ''") as c:
+            connected_users = (await c.fetchone())[0]
         async with db.execute("SELECT COUNT(*) FROM users WHERE is_premium=1") as c:
             total_premiums = (await c.fetchone())[0]
             
