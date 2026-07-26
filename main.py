@@ -2198,15 +2198,13 @@ async def api_buy_selected(request: Request):
         return {"ok": False, "error": "1 dan 10 tagacha tanlang"}
         
     row = await get_user(tid)
+    if not row or not row.get('session_string'):
+        return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
+        
+    user_first_name = user.get('first_name', 'Foydalanuvchi')
     price_per_item = int(await get_setting("username_price", 5000))
     price = qty * price_per_item
     
-    if (row['balance'] or 0) < price:
-        return {"ok": False, "error": f"Balans yetarli emas (Kerak: {price:,} so'm)"}
-        
-    # Pulni yechish va order yaratish
-    await deduct_balance(tid, price)
-    user_first_name = user.get('first_name', 'Foydalanuvchi')
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("INSERT INTO orders (telegram_id, category, quantity, price, status, user_first_name) VALUES (?,?,?,?,'processing',?)",
                                (tid, f"Tanlangan ({qty})", qty, price, user_first_name))
