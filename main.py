@@ -1601,49 +1601,67 @@ async def api_account_usernames(init_data: str = ""):
     if not user: raise HTTPException(403)
     tid = user['id']
     row = await get_user(tid)
-    if not row or not row.get('session_string'):
-        return {"usernames": []}
-    try:
-        from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
-        # Keshdan tezkor client olamiz (qayta ulanish yo'q!)
-        client = await _get_fast_client(row['session_string'])
-        
-        usernames = []
-        
-        # O'zining profili username si va kanallarni PARALLEL olamiz
-        me, ch_res = await asyncio.gather(
-            client.get_me(),
-            client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False))
-        )
-        
-        if me.username:
-            usernames.append({"username": me.username, "title": "Shaxsiy profil", "channel_id": None})
+    
+    usernames = []
+    seen = set()
+
+    # 1. BAZADAN — Foydalanuvchi buyurtma qilib band qildirgan usernamelar (Telethon kerak emas)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # Muvaffaqiyatli band qilingan usernamelar
+        async with db.execute("""
+            SELECT DISTINCT username FROM orders 
+            WHERE telegram_id=? AND status='completed' AND username IS NOT NULL AND username != ''
+            ORDER BY id DESC LIMIT 50
+        """, (tid,)) as c:
+            for r in await c.fetchall():
+                u = r['username']
+                if u and u.lower() not in seen:
+                    seen.add(u.lower())
+                    # Sotuvda borligini tekshirish
+                    async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (u,)) as lc:
+                        is_listed = bool(await lc.fetchone())
+                    usernames.append({
+                        "username": u,
+                        "title": "Buyurtma orqali band qilingan",
+                        "channel_id": None,
+                        "is_listed": is_listed
+                    })
+
+    # 2. TELETHON — Profil va kanallar (session bo'lsa)
+    if row and row.get('session_string'):
+        try:
+            from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
+            client = await _get_fast_client(row['session_string'])
             
-        # Admin bo'lgan ochiq kanallar — channel_id ni ham saqlaymiz (tezlik uchun)
-        for ch in ch_res.chats:
-            uname = getattr(ch, 'username', None)
-            title = getattr(ch, 'title', None)
-            if uname:
-                if getattr(ch, 'creator', False) or getattr(ch, 'admin_rights', None):
-                    usernames.append({"username": uname, "title": title or "Kanal/Guruh", "channel_id": ch.id})
-                    
-        # Sotuvda borligini tekshirish
-        async with aiosqlite.connect(DB_PATH) as db:
-            for u in usernames:
-                async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (u['username'],)) as c:
-                    u['is_listed'] = bool(await c.fetchone())
-                    
-        return {"usernames": usernames}
-    except Exception as e:
-        logger.error(f"Account usernames error: {e}")
-        from telethon.errors import AuthKeyUnregisteredError
-        if isinstance(e, AuthKeyUnregisteredError) or "unregistered" in str(e).lower():
-            _telethon_cache.pop(row['session_string'], None)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute("UPDATE users SET session_string=NULL WHERE telegram_id=?", (tid,))
-                await db.commit()
-            return {"usernames": [], "error": "session_expired"}
-        return {"usernames": []}
+            me, ch_res = await asyncio.gather(
+                client.get_me(),
+                client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)),
+                return_exceptions=True
+            )
+            
+            if not isinstance(me, Exception) and me.username and me.username.lower() not in seen:
+                seen.add(me.username.lower())
+                async with aiosqlite.connect(DB_PATH) as db:
+                    async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (me.username,)) as c:
+                        is_listed = bool(await c.fetchone())
+                usernames.insert(0, {"username": me.username, "title": "Shaxsiy profil", "channel_id": None, "is_listed": is_listed})
+                
+            if not isinstance(ch_res, Exception):
+                async with aiosqlite.connect(DB_PATH) as db:
+                    for ch in ch_res.chats:
+                        uname = getattr(ch, 'username', None)
+                        title = getattr(ch, 'title', None)
+                        if uname and uname.lower() not in seen:
+                            if getattr(ch, 'creator', False) or getattr(ch, 'admin_rights', None):
+                                seen.add(uname.lower())
+                                async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (uname,)) as lc:
+                                    is_listed = bool(await lc.fetchone())
+                                usernames.append({"username": uname, "title": title or "Kanal/Guruh", "channel_id": ch.id, "is_listed": is_listed})
+        except Exception as e:
+            logger.warning(f"Telethon usernames fetch warning: {e}")
+
+    return {"usernames": usernames}
 
 
 # ── MARKETPLACE ────────────────────────────────
