@@ -141,7 +141,8 @@
     color: var(--text);
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
-    touch-action: manipulation;
+    overflow-y: auto;
+    touch-action: pan-y;
     -webkit-user-select: none;
     user-select: none;
     overscroll-behavior: none;
@@ -1244,28 +1245,7 @@ try {
   }
 } catch(e) {}
 
-// Prevent overscroll / bounce that triggers app close
-document.addEventListener('touchmove', function(e) {
-  // Allow scrolling inside scrollable containers only
-  let el = e.target;
-  let canScroll = false;
-  while (el && el !== document.body) {
-    const style = getComputedStyle(el);
-    const overflow = style.overflowY;
-    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) {
-      canScroll = true;
-      break;
-    }
-    el = el.parentElement;
-  }
-  if (!canScroll) {
-    e.preventDefault();
-  }
-}, { passive: false });
 
-// Prevent browser pull-to-refresh / overscroll
-document.body.style.overscrollBehavior = 'none';
-document.documentElement.style.overscrollBehavior = 'none';
 
 const API = '';  // same origin
 let userData = {};
@@ -1867,13 +1847,17 @@ function initNavDragPhysics() {
   if (activeBtn) moveDropletTo(activeBtn, false);
 
   let startTouchX = 0;
+  let startTouchY = 0;
   let initialLeft = 0;
   let lastX = 0;
+  let lastY = 0;
 
-  function onDragStart(clientX) {
+  function onDragStart(clientX, clientY) {
     isDraggingNav = true;
     startTouchX = clientX;
+    startTouchY = clientY;
     lastX = clientX;
+    lastY = clientY;
     const ab = document.querySelector('nav button.active');
     if (ab) {
       const bRect = ab.getBoundingClientRect();
@@ -1885,21 +1869,45 @@ function initNavDragPhysics() {
     droplet.classList.remove('snap');
   }
 
-  function onDragMove(clientX) {
+  function onDragMove(clientX, clientY) {
     if (!isDraggingNav) return;
     const deltaX = clientX - startTouchX;
+    const deltaY = clientY - startTouchY; // negative = upward pull
     const navRect = navEl.getBoundingClientRect();
     const dropW = parseInt(droplet.style.width) || 72;
     const maxLeft = navRect.width - dropW;
     let targetX = Math.max(0, Math.min(maxLeft, initialLeft + deltaX));
 
-    const speed = clientX - lastX;
+    // Horizontal speed → horizontal liquid stretch
+    const speedX = clientX - lastX;
+    const speedY = clientY - lastY;
     lastX = clientX;
-    const stretch = Math.min(28, Math.abs(speed) * 1.5);
-    const skewDir = speed > 0 ? 1 : -1;
+    lastY = clientY;
+    const stretchH = Math.min(28, Math.abs(speedX) * 1.5);
 
-    // Liquid stretch: wider + flatter when moving fast
-    droplet.style.transform = `translate(${targetX}px, -50%) scaleX(${1 + stretch/50}) scaleY(${1 - stretch/120})`;
+    // Vertical pull: clamp upward offset to -30px, resist going down
+    const pullY = Math.min(0, deltaY);            // only upward
+    const clampedPullY = Math.max(-30, pullY);    // max 30px above nav
+    const upRatio = Math.abs(clampedPullY) / 30;  // 0..1
+
+    // When pulled up: taller (scaleY up) + narrower (scaleX down) = teardrop
+    const scaleYUp   = 1 + upRatio * 0.55;        // up to 1.55×
+    const scaleXPull = 1 - upRatio * 0.22;        // down to 0.78×
+    // Combined with horizontal speed flatten
+    const finalScaleX = (scaleXPull) * (1 + stretchH / 50);
+    const finalScaleY = scaleYUp * (1 - stretchH / 160);
+
+    // translateY: -50% keeps it centred, pull moves it up
+    const translateY = `calc(-50% + ${clampedPullY}px)`;
+    droplet.style.transform = `translate(${targetX}px, ${translateY}) scaleX(${finalScaleX.toFixed(3)}) scaleY(${finalScaleY.toFixed(3)})`;
+
+    // Slightly round the top when pulled (teardrop top)
+    if (upRatio > 0.1) {
+      const r = 30 + upRatio * 20;
+      droplet.style.borderRadius = `${r}px ${r}px 30px 30px`;
+    } else {
+      droplet.style.borderRadius = '30px';
+    }
 
     // Highlight nearest button while dragging
     const buttons = Array.from(document.querySelectorAll('#main-nav button'));
@@ -1929,11 +1937,11 @@ function initNavDragPhysics() {
     }
   }
 
-  navEl.addEventListener('touchstart', (e) => { e.stopPropagation(); onDragStart(e.touches[0].clientX); }, {passive: true});
-  navEl.addEventListener('touchmove', (e) => { onDragMove(e.touches[0].clientX); }, {passive: true});
+  navEl.addEventListener('touchstart', (e) => { e.stopPropagation(); onDragStart(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+  navEl.addEventListener('touchmove', (e) => { onDragMove(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
   navEl.addEventListener('touchend', onDragEnd, {passive: true});
-  navEl.addEventListener('mousedown', (e) => onDragStart(e.clientX));
-  window.addEventListener('mousemove', (e) => isDraggingNav && onDragMove(e.clientX));
+  navEl.addEventListener('mousedown', (e) => onDragStart(e.clientX, e.clientY));
+  window.addEventListener('mousemove', (e) => isDraggingNav && onDragMove(e.clientX, e.clientY));
   window.addEventListener('mouseup', onDragEnd);
 }
 
