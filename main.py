@@ -1346,7 +1346,7 @@ async def deferred_claim_loop(bot):
         await asyncio.sleep(60)  # Har 60 soniyada tekshirish
 
 async def monitoring_loop(bot):
-    """Orqa fonda barcha monitoring_tasks larni ultra-tezkor va xavfsiz poylaydi."""
+    """Orqa fonda barcha monitoring_tasks larni parallel (100+ nomlarni 1-2 soniyada) poylaydi."""
     from telethon.tl.functions.account import CheckUsernameRequest
     from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest, DeleteChannelRequest
     from telethon.errors import FloodWaitError
@@ -1355,7 +1355,8 @@ async def monitoring_loop(bot):
     headers_list = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1'
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+        'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
     ]
     
     hdr_idx = 0
@@ -1372,25 +1373,25 @@ async def monitoring_loop(bot):
 
             hdr_idx = (hdr_idx + 1) % len(headers_list)
             async with aiohttp.ClientSession(headers={'User-Agent': headers_list[hdr_idx]}) as http_session:
-                for task in tasks:
+                
+                async def check_single_target(task):
                     uname = task["username"]
-                    
-                    # 1-qadam: HTTP t.me orqali tezkor va xavfsiz profil bor-yo'qligini tekshiramiz
                     try:
-                        async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
+                        # 1-qadam: HTTP t.me orqali tezkor va xavfsiz profil bor-yo'qligini tekshiramiz
+                        async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=2.0)) as resp:
                             if resp.status == 429:
-                                await asyncio.sleep(0.5)
-                                continue
+                                await asyncio.sleep(0.3)
+                                return
                             text = await resp.text()
                             
                             # Profil yoki kanal mavjud bo'lsa — hali bo'shamagan
                             if 'tgme_page_title' in text or 'tgme_page_extra' in text:
-                                continue
+                                return
                     except Exception:
-                        continue
+                        return
 
                     # 2-qadam: Profil HTTP da yo'q bo'lsa (BO'SHAGAN) — Keshdagi tezkor klient bilan lahzada band qilamiz!
-                    if not task["session_string"]: continue
+                    if not task["session_string"]: return
                     try:
                         client = await _get_fast_client(task["session_string"])
                         try:
@@ -1430,6 +1431,14 @@ async def monitoring_loop(bot):
                             logger.error(f"Nishon tekshirishda xato (@{uname}): {e}")
                     except Exception as e:
                         logger.error(f"Nishon client ulanishda xato: {e}")
+
+                # Parallel batching: 15 tadan so'rovni bir vaqtda (concurrently) yuboramiz
+                batch_size = 15
+                for i in range(0, len(tasks), batch_size):
+                    batch = tasks[i:i+batch_size]
+                    await asyncio.gather(*[check_single_target(t) for t in batch])
+                    await asyncio.sleep(0.08)
+
         except Exception as e:
             logger.error(f"Monitoring loop xato: {e}")
             
