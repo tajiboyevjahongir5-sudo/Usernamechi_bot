@@ -1123,7 +1123,7 @@
   </div>
 
   <!-- Mening usernamelarim -->
-  <div class="card" id="my-usernames-wrap" style="display:none;">
+  <div class="card" id="my-usernames-wrap">
     <div class="section-title" style="margin-bottom:4px;">Mening <span>usernamlarim</span></div>
     <div style="font-size:12px; color:var(--muted); margin-bottom:14px;">🔄 Almashtirish — bu username sizning Telegram profilingizga o'rnatiladi</div>
     <div id="my-usernames-list">
@@ -1302,7 +1302,6 @@ async function loadUserData() {
 }
 
 async function loadMyUsernames() {
-  document.getElementById('my-usernames-wrap').style.display = 'block';
   const listEl = document.getElementById('my-usernames-list');
   try {
     const res = await fetch(`${API}/api/account/usernames?init_data=${encodeURIComponent(tg.initData)}`);
@@ -1327,10 +1326,10 @@ async function loadMyUsernames() {
         </div>
       `).join('');
     } else {
-      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Sizda bo\'sh usernamelar yo\'q</div>';
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">📭 Sizda hali username yo\'q.<br><small>Username band qilib, bu yerdan almashtirishingiz mumkin.</small></div>';
     }
   } catch(e) {
-    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">Yuklashda xato</div>';
+    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">Yuklashda xato. Qayta urinib ko\'ring.</div>';
   }
 }
 
