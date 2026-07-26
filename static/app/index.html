@@ -413,6 +413,110 @@
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
     transition: transform 0.2s ease, border-color 0.2s ease;
   }
+
+  /* MARKET 2-COLUMN GRID CARDS */
+  .market-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .market-card {
+    background: linear-gradient(145deg, rgba(22,22,38,0.9), rgba(15,15,28,0.95));
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 20px;
+    padding: 14px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.22s cubic-bezier(0.16,1,0.3,1), border-color 0.2s ease, box-shadow 0.2s ease;
+    animation: cardIn 0.35s cubic-bezier(0.16,1,0.3,1) both;
+  }
+  .market-card:active { transform: scale(0.96); }
+  .market-card:hover { border-color: rgba(167,139,250,0.35); box-shadow: 0 8px 28px rgba(139,92,246,0.2); }
+  .market-card.premium {
+    border-color: rgba(245,158,11,0.4);
+    background: linear-gradient(145deg, rgba(35,28,8,0.95), rgba(15,15,28,0.95));
+    box-shadow: 0 4px 20px rgba(245,158,11,0.18);
+  }
+  .market-card.auction {
+    border-color: rgba(6,182,212,0.4);
+    background: linear-gradient(145deg, rgba(6,25,38,0.95), rgba(15,15,28,0.95));
+    box-shadow: 0 4px 20px rgba(6,182,212,0.18);
+  }
+  @keyframes cardIn {
+    from { opacity:0; transform: translateY(16px) scale(0.96); }
+    to { opacity:1; transform: translateY(0) scale(1); }
+  }
+  .market-card-avatar {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 900; color: white;
+    margin: 0 auto 10px;
+    box-shadow: 0 4px 14px rgba(139,92,246,0.4);
+    position: relative;
+  }
+  .market-card-avatar.premium { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 14px rgba(245,158,11,0.45); }
+  .market-card-avatar.auction { background: linear-gradient(135deg, #06b6d4, #3b82f6); box-shadow: 0 4px 14px rgba(6,182,212,0.45); }
+  .market-card-badge {
+    position: absolute; top: 8px; right: 8px;
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 3px 7px; border-radius: 8px;
+  }
+  .market-card-badge.premium { background: rgba(245,158,11,0.25); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); }
+  .market-card-badge.auction { background: rgba(6,182,212,0.2); color:#38bdf8; border:1px solid rgba(6,182,212,0.4); }
+  .market-card-username {
+    text-align: center;
+    font-size: 15px; font-weight: 800;
+    color: var(--accent-light);
+    margin-bottom: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .market-card-username.premium { color: #fbbf24; }
+  .market-card-username.auction { color: #38bdf8; }
+  .market-card-seller {
+    text-align: center;
+    font-size: 10px; color: var(--muted);
+    margin-bottom: 10px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .market-card-price {
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 8px;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .market-card-price-label { font-size: 9px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .market-card-price-value { font-size: 13px; font-weight: 800; color: var(--text); }
+  .market-card-price-value.premium { color: #fbbf24; }
+  .market-card-price-value.auction { color: #38bdf8; }
+  .market-card-btn {
+    width: 100%; padding: 8px 0;
+    border: none; border-radius: 12px;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+    color: white;
+    transition: all 0.2s ease;
+    box-shadow: 0 3px 10px rgba(139,92,246,0.35);
+  }
+  .market-card-btn:active { transform: scale(0.97); }
+  .market-card-btn.premium { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 3px 10px rgba(245,158,11,0.35); }
+  .market-card-btn.auction { background: linear-gradient(135deg, #06b6d4, #3b82f6); box-shadow: 0 3px 10px rgba(6,182,212,0.35); }
+
+  /* Shimmer skeleton loader */
+  @keyframes shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+    background-size: 800px 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: 12px;
+  }
   .order-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .order-cat { font-weight: 700; font-size: 15px; }
   .badge {
@@ -1296,7 +1400,15 @@ async function loadMarketplace(reset = true) {
   const loadMoreBtn = document.getElementById('btn-load-more');
   
   if (reset) {
-    listEl.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner" style="margin:0 auto 12px;"></div>Yuklanmoqda...</div>';
+    // Shimmer skeleton
+    listEl.innerHTML = `<div class="market-grid">${Array(4).fill(`
+      <div class="market-card" style="pointer-events:none;">
+        <div class="skeleton" style="width:48px;height:48px;border-radius:50%;margin:0 auto 10px;"></div>
+        <div class="skeleton" style="height:14px;width:70%;margin:0 auto 6px;"></div>
+        <div class="skeleton" style="height:10px;width:50%;margin:0 auto 10px;"></div>
+        <div class="skeleton" style="height:36px;border-radius:12px;margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:30px;border-radius:12px;"></div>
+      </div>`).join('')}</div>`;
     loadMoreEl.style.display = 'none';
   } else {
     loadMoreBtn.innerText = 'Yuklanmoqda...';
@@ -1309,36 +1421,44 @@ async function loadMarketplace(reset = true) {
     
     let html = '';
     if (d.length > 0) {
-      html = d.map(l => `
-        <div class="order-item" style="${l.is_premium 
-          ? 'border:1px solid #f59e0b; box-shadow:0 4px 18px rgba(245,158,11,0.25); background:linear-gradient(135deg, rgba(245,158,11,0.14), rgba(15,23,42,0.6)); position:relative; overflow:hidden;' 
-          : ''}">
-          ${l.is_premium ? `<div style="font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#fbbf24; background:rgba(245,158,11,0.25); border:1px solid rgba(245,158,11,0.4); padding:2px 8px; border-radius:10px; display:inline-flex; align-items:center; gap:4px; margin-bottom:8px;">👑 PREMIUM E'LON</div>` : ''}
-          ${l.is_auction ? `<div style="font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#38bdf8; background:rgba(6,182,212,0.2); border:1px solid rgba(6,182,212,0.4); padding:2px 8px; border-radius:10px; display:inline-flex; align-items:center; gap:4px; margin-bottom:8px; margin-left:4px;">⚡ AUKSION</div>` : ''}
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <div style="font-weight:800; font-size:18px; color:${l.is_premium ? '#fbbf24' : 'var(--accent)'};">@${l.username}</div>
-              <div style="font-size:12px; color:var(--muted); margin-top:4px;">
-                Sotuvchi: ${l.seller_name || l.seller_username || 'Foydalanuvchi'} ${l.is_premium ? '<span style="color:#fbbf24; font-weight:700; font-size:11px; margin-left:2px;">(👑 Premium)</span>' : ''}
-              </div>
+      html = '<div class="market-grid">' + d.map((l, i) => {
+        const cls = l.is_premium ? 'premium' : l.is_auction ? 'auction' : '';
+        const letter = l.username ? l.username[0].toUpperCase() : '?';
+        const price = (l.current_bid || l.price).toLocaleString();
+        const priceLabel = l.is_auction ? '⚡ Joriy stavka' : '💰 Narxi';
+        const btnText = l.is_auction ? '⚡ Stavka berish' : '🛒 Sotib olish';
+        const btnFn = l.is_auction ? `placeAuctionBid(${l.id}, ${l.current_bid || l.price})` : `buyListing(${l.id})`;
+        const delay = (i % 4) * 60;
+        return `
+          <div class="market-card ${cls}" style="animation-delay:${delay}ms">
+            ${l.is_premium ? '<div class="market-card-badge premium">👑 TOP</div>' : ''}
+            ${l.is_auction ? '<div class="market-card-badge auction">⚡ AUKSION</div>' : ''}
+            <div class="market-card-avatar ${cls}">${letter}</div>
+            <div class="market-card-username ${cls}">@${l.username}</div>
+            <div class="market-card-seller">${l.seller_name || 'Foydalanuvchi'}</div>
+            <div class="market-card-price">
+              <div class="market-card-price-label">${priceLabel}</div>
+              <div class="market-card-price-value ${cls}">${price} so'm</div>
             </div>
-            <div style="text-align:right;">
-              <div style="font-size:11px; color:var(--muted);">${l.is_auction ? 'Joriy stavka:' : 'Narxi:'}</div>
-              <div style="font-weight:700; font-size:16px; ${l.is_premium ? 'color:#fbbf24;' : ''}">${(l.current_bid || l.price).toLocaleString()} so'm</div>
-              ${l.is_auction 
-                ? `<button class="btn btn-primary" style="padding:6px 12px; width:auto; font-size:12px; margin:8px 0 0 0; background:linear-gradient(135deg,#06b6d4,#3b82f6);" onclick="placeAuctionBid(${l.id}, ${l.current_bid || l.price})">⚡ Stavka berish</button>`
-                : `<button class="btn btn-primary" style="padding:6px 12px; width:auto; font-size:12px; margin:8px 0 0 0; ${l.is_premium ? 'background:linear-gradient(135deg, #f59e0b, #d97706); border:none; box-shadow:0 2px 8px rgba(245,158,11,0.3);' : ''}" onclick="buyListing(${l.id})">Sotib olish</button>`
-              }
-            </div>
-          </div>
-        </div>
-      `).join('');
+            <button class="market-card-btn ${cls}" onclick="${btnFn}">${btnText}</button>
+          </div>`;
+      }).join('') + '</div>';
     }
     
     if (reset) {
       listEl.innerHTML = html || `<div style="text-align:center;padding:40px;color:var(--muted);">Sotuvda usernamelar yo'q</div>`;
     } else {
-      listEl.innerHTML += html;
+      const grid = listEl.querySelector('.market-grid');
+      if (grid) grid.innerHTML += '<div class="market-grid" style="display:contents;">' + d.map((l, i) => {
+        const cls = l.is_premium ? 'premium' : l.is_auction ? 'auction' : '';
+        const letter = l.username ? l.username[0].toUpperCase() : '?';
+        const price = (l.current_bid || l.price).toLocaleString();
+        const priceLabel = l.is_auction ? '⚡ Joriy stavka' : '💰 Narxi';
+        const btnText = l.is_auction ? '⚡ Stavka berish' : '🛒 Sotib olish';
+        const btnFn = l.is_auction ? `placeAuctionBid(${l.id}, ${l.current_bid || l.price})` : `buyListing(${l.id})`;
+        return `<div class="market-card ${cls}"><div class="market-card-avatar ${cls}">${letter}</div><div class="market-card-username ${cls}">@${l.username}</div><div class="market-card-seller">${l.seller_name || 'Foydalanuvchi'}</div><div class="market-card-price"><div class="market-card-price-label">${priceLabel}</div><div class="market-card-price-value ${cls}">${price} so'm</div></div><button class="market-card-btn ${cls}" onclick="${btnFn}">${btnText}</button></div>`;
+      }).join('') + '</div>';
+      else listEl.innerHTML += html;
     }
     
     if (d.length === 20) {
