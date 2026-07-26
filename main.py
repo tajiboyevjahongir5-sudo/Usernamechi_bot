@@ -1315,10 +1315,10 @@ async def monitoring_loop(bot):
                         await client.disconnect()
                 except Exception as e:
                     logger.error(f"Nishon ulanishda xato: {e}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.2)
         except Exception as e:
             logger.error(f"Monitoring loop xato: {e}")
-        await asyncio.sleep(10)
+        await asyncio.sleep(2)
 
 # ─── FASTAPI APP ──────────────────────────────
 app = FastAPI()
