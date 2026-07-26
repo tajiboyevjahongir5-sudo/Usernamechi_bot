@@ -434,9 +434,9 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 2000) -> l
         custom_word_clean = ''.join(c for c in custom_word if c.isalnum() or c == '_')
         
         # O'zgarishlarni yaratish (prefixes, suffixes, numbers)
-        prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'its']
-        suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech']
-        numbers = ['', '1', '7', '11', '24', '77', '99', '100', '777', '999', '2024', '007']
+        prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'its', 'iam', 'official', 'go', 'hey', 'hi', 'get', 'one', 'club', 'hub', 'app']
+        suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online']
+        numbers = ['', '1', '2', '3', '5', '7', '8', '9', '10', '11', '24', '77', '99', '100', '777', '888', '999', '2024', '2025', '007', '01', '07', '700', '900']
         
         custom_pool = set()
         
@@ -451,13 +451,15 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 2000) -> l
                 if s: custom_pool.add(f"{p}{custom_word_clean}_{s}")
                 if p and s: custom_pool.add(f"{p}_{custom_word_clean}_{s}")
                 
-        # 3. Numbers
+        # 3. Numbers & Combinations
         for n in numbers:
             if n:
                 custom_pool.add(f"{custom_word_clean}{n}")
                 custom_pool.add(f"{custom_word_clean}_{n}")
+                custom_pool.add(f"{n}{custom_word_clean}")
                 for s in suffixes:
                     if s: custom_pool.add(f"{custom_word_clean}_{s}{n}")
+                    if s: custom_pool.add(f"{custom_word_clean}{s}_{n}")
         
         pool = list(custom_pool)
     elif cat == 'qisqa':
@@ -1054,7 +1056,7 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
 async def search_sniper(telegram_id: int, search_id: int, category: str, lang: str = 'uz'):
     """Fon rejimida faqat usernamesni tekshiradi va bazaga yozadi."""
     try:
-        targets = generate_usernames(category, lang=lang, limit=2000)
+        targets = generate_usernames(category, lang=lang, limit=15000)
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
         
