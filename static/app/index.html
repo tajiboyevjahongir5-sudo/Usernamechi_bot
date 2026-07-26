@@ -1289,15 +1289,15 @@ async function loadUserData() {
       document.getElementById('seller-balance-amount').textContent = (userData.seller_balance || 0).toLocaleString() + ' so\'m';
       
       document.getElementById('subscriptions-wrap').style.display = 'block';
-      
-      loadMyUsernames();
       loadSubscriptions();
     } else {
       document.getElementById('no-session-warn').style.display = 'block';
       document.getElementById('seller-balance-wrap').style.display = 'none';
-      document.getElementById('my-usernames-wrap').style.display = 'none';
       document.getElementById('subscriptions-wrap').style.display = 'none';
     }
+
+    // Akkaunt ulangan-ullanmaganidan qat'i nazar - HAR DOIM Usernamelar ro'yxatini yuklaymiz!
+    loadMyUsernames();
   } catch(e) { console.error(e); }
 }
 
