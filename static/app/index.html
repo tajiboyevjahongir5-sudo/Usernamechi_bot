@@ -1124,7 +1124,8 @@
 
   <!-- Mening usernamelarim -->
   <div class="card" id="my-usernames-wrap" style="display:none;">
-    <div class="section-title">Mening <span>usernamlarim</span></div>
+    <div class="section-title" style="margin-bottom:4px;">Mening <span>usernamlarim</span></div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:14px;">🔄 Almashtirish — bu username sizning Telegram profilingizga o'rnatiladi</div>
     <div id="my-usernames-list">
       <div style="text-align:center;padding:20px;color:var(--muted);"><div class="spinner" style="margin:0 auto 12px;"></div>Yuklanmoqda...</div>
     </div>
@@ -1308,15 +1309,21 @@ async function loadMyUsernames() {
     const d = await res.json();
     if (d.usernames && d.usernames.length > 0) {
       listEl.innerHTML = d.usernames.map(u => `
-        <div class="order-item" style="display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            <div style="font-weight:700;">@${u.username}</div>
-            <div style="font-size:12px; color:var(--muted);">${u.title}</div>
+        <div class="order-item" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:700; font-size:14px;">@${u.username}</div>
+            <div style="font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${u.title}</div>
           </div>
-          ${u.is_listed 
-            ? `<div class="btn btn-outline" style="padding:6px 12px; width:auto; font-size:12px; margin:0; opacity:0.5; pointer-events:none; border-color:var(--success); color:var(--success);">Sotuvga qo'yilgan</div>`
-            : `<button class="btn btn-outline" style="padding:6px 12px; width:auto; font-size:12px; margin:0;" onclick="listUsername('${u.username}')">Sotish</button>`
-          }
+          <div style="display:flex; gap:6px; flex-shrink:0;">
+            ${u.title !== 'Shaxsiy profil' 
+              ? `<button class="btn btn-outline" style="padding:6px 10px; width:auto; font-size:12px; margin:0; background:linear-gradient(135deg,rgba(99,102,241,0.2),rgba(6,182,212,0.15)); border-color:rgba(99,102,241,0.5); color:#a5b4fc;" onclick="setUsernameToProfile('${u.username}', this)" title="Profilimga almashtir">🔄 Almashtirish</button>`
+              : `<div style="font-size:11px; padding:6px 10px; color:#34d399; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.3); border-radius:10px; white-space:nowrap;">✅ Joriy profil</div>`
+            }
+            ${u.is_listed 
+              ? `<div class="btn btn-outline" style="padding:6px 10px; width:auto; font-size:12px; margin:0; opacity:0.5; pointer-events:none; border-color:var(--success); color:var(--success);">Sotuvda</div>`
+              : (u.title !== 'Shaxsiy profil' ? `<button class="btn btn-outline" style="padding:6px 10px; width:auto; font-size:12px; margin:0;" onclick="listUsername('${u.username}')">Sotish</button>` : '')
+            }
+          </div>
         </div>
       `).join('');
     } else {
@@ -1324,6 +1331,35 @@ async function loadMyUsernames() {
     }
   } catch(e) {
     listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">Yuklashda xato</div>';
+  }
+}
+
+async function setUsernameToProfile(username, btn) {
+  if (!confirm(`@${username} username ni Telegram profilingizga o'rnatmoqchimisiz?\n\nJoriy profil username ingiz uning o'rniga o'tadi.`)) return;
+  
+  const origText = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = '⏳...';
+  
+  try {
+    const res = await fetch(`${API}/api/account/set_username`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: tg.initData, username })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`✅ @${username} profilingizga o'rnatildi!`, 'success');
+      await loadMyUsernames(); // Ro'yxatni yangilaymiz
+    } else {
+      showToast(d.error || 'Xato yuz berdi', 'error');
+      btn.disabled = false;
+      btn.innerText = origText;
+    }
+  } catch(e) {
+    showToast('Xato yuz berdi', 'error');
+    btn.disabled = false;
+    btn.innerText = origText;
   }
 }
 

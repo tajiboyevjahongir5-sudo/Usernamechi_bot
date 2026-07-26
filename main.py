@@ -1513,6 +1513,67 @@ async def api_user(init_data: str = ""):
             "monitor_price": monitor_price,
             "listing_price": listing_price}
 
+@app.post("/api/account/set_username")
+async def api_account_set_username(request: Request):
+    """Foydalanuvchi tanlagan username ni uning Telegram profiliga o'rnatadi."""
+    data = await request.json()
+    user = verify_init_data(data.get('init_data', ''))
+    if not user: raise HTTPException(403)
+    tid = user['id']
+    username = data.get('username', '').strip().lstrip('@')
+    if not username:
+        return {"ok": False, "error": "Username kiritilmadi"}
+
+    row = await get_user(tid)
+    if not row or not row.get('session_string'):
+        return {"ok": False, "error": "Akkaunt ulanmagan"}
+
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from telethon.tl.functions.account import UpdateUsernameRequest as AccountUpdateUsernameRequest
+    from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest, UpdateUsernameRequest as ChannelUpdateUsernameRequest
+
+    client = TelegramClient(StringSession(row['session_string']), API_ID, API_HASH)
+    try:
+        await client.connect()
+        me = await client.get_me()
+        old_username = me.username or ""
+
+        # Kanaldan username ni olish (agar kanal username si bo'lsa)
+        # Avval kanalda username bo'lsa, uni bo'shating
+        req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
+        res_ch = await client(req)
+        source_channel_id = None
+        for ch in res_ch.chats:
+            if getattr(ch, 'username', '').lower() == username.lower():
+                source_channel_id = ch.id
+                break
+
+        if source_channel_id:
+            # Kanaldan username ni olib profilga o'rnatamiz
+            await client(ChannelUpdateUsernameRequest(channel=source_channel_id, username=""))
+            await asyncio.sleep(0.5)
+
+        # Profilga yangi username o'rnatish
+        await client(AccountUpdateUsernameRequest(username=username))
+
+        # Eski profil username ini kanalga qaytarib qo'yamiz (agar eski username bor va kanal bor bo'lsa)
+        if old_username and source_channel_id:
+            try:
+                await asyncio.sleep(0.5)
+                await client(ChannelUpdateUsernameRequest(channel=source_channel_id, username=old_username))
+            except Exception:
+                pass  # Eski username ni kanalga qaytara olmasa ham davom etamiz
+
+        await client.disconnect()
+        return {"ok": True, "message": f"@{username} profilingizga muvaffaqiyatli o'rnatildi!"}
+    except Exception as e:
+        logger.error(f"Set username error: {e}")
+        try: await client.disconnect()
+        except: pass
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/account/usernames")
 async def api_account_usernames(init_data: str = ""):
     user = verify_init_data(init_data)
