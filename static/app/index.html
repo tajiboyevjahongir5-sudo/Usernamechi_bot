@@ -962,6 +962,49 @@
 <div class="page" id="page-account">
   <div class="page-header"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Gear/3D/gear_3d.png" class="icon-3d-img"></span> <span>Akkaunt</span></div>
 
+  <!-- AKKAUNT ULASH FORMASI (ENG TEPADA) -->
+  <div class="account-status" id="account-status">
+    <div class="status-dot disconnected" id="status-dot"></div>
+    <div class="account-info">
+      <div class="name" id="account-name">Akkaunt ulanmagan</div>
+      <div class="sub" id="account-sub">Username band qilish uchun ulang</div>
+    </div>
+  </div>
+
+  <div class="card" id="session-form-wrap">
+    <div class="section-title"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Link/3D/link_3d.png" class="icon-3d-img"></span> Telegramga <span>ulanish</span></div>
+    
+    <!-- BOSQICH 1: Telefon raqam -->
+    <div id="auth-step-phone">
+      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Akkauntingizni ulash uchun Telegram telefon raqamingizni kiriting.</div>
+      <div class="form-group">
+        <label>TELEFON RAQAM</label>
+        <input type="text" id="auth-phone" placeholder="+998 90 123 45 67">
+      </div>
+      <button class="btn btn-primary" onclick="sendAuthCode()" id="btn-send-code">Kod yuborish</button>
+    </div>
+
+    <!-- BOSQICH 2: Kod kiritish -->
+    <div id="auth-step-code" style="display:none;">
+      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Telegram ilovangizga yuborilgan tasdiqlash kodini kiriting.</div>
+      <div class="form-group">
+        <label>TASDIQLASH KODI</label>
+        <input type="number" id="auth-code" placeholder="12345">
+      </div>
+      <button class="btn btn-primary" onclick="verifyAuthCode()" id="btn-verify-code">Tasdiqlash</button>
+    </div>
+
+    <!-- BOSQICH 3: 2FA Parol -->
+    <div id="auth-step-password" style="display:none;">
+      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Akkauntingizda 2 bosqichli tasdiqlash (2FA) yoqilgan. Parolingizni kiriting.</div>
+      <div class="form-group">
+        <label>PAROL (2FA)</label>
+        <input type="password" id="auth-password" placeholder="Parol">
+      </div>
+      <button class="btn btn-primary" onclick="verifyAuthPassword()" id="btn-verify-pass">Kirish</button>
+    </div>
+  </div>
+
   <!-- PREMIUM SECTION -->
   <div class="card" id="premium-wrap" style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05)); border-color:rgba(245,158,11,0.3);">
     <div style="font-weight:700; font-size:16px; margin-bottom:8px; color:#fbbf24; display:flex; align-items:center; gap:6px;"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Crown/3D/crown_3d.png" class="icon-3d-img" style="width:20px!important;height:20px!important;"> Premium Akkaunt</div>
