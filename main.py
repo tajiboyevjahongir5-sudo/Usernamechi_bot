@@ -1088,27 +1088,25 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                     if resp.status == 429: return
                     text = await resp.text()
-                    # HTTP orqali profil yo'qligi tekshiriladi
-                    if 'tgme_page_title' not in text and 'tgme_page_extra' not in text:
+                    # 1-Bosqich: HTTP orqali profil mavjud bo'lsa darhol o'tkazib yuborish
+                    if 'tgme_page_title' not in text and 'tgme_page_extra' not in text and 'tgme_action_button_new' not in text:
                         is_free = False
+                        # 2-Bosqich: FAQAT TELEGRAM OFFICIAL API BILAN 100% TASDIQLASH
                         if client and not api_blocked:
                             try:
                                 res = await client(CheckUsernameRequest(username))
                                 is_free = bool(res)
                                 await asyncio.sleep(0.2)
                             except UsernamePurchaseAvailableError:
-                                # Fragment Auksionida pulga sotilayotgan nom — TAShLAB YUBORAMIZ!
+                                # Auksion nom — strictly false
                                 is_free = False
                             except FloodWaitError:
                                 api_blocked = True
                                 is_free = False
                             except Exception:
                                 is_free = False
-                        else:
-                            # Client bo'lmasa yoki API blokda bo'lsa, xavfsizlik uchun auksion iboralari yo'qligini HTTP dan tekshiramiz
-                            if 'Fragment' not in text and 'Auction' not in text:
-                                is_free = True
                         
+                        # Faqat rasmiy API "BO'SH" deb tasdiqlasa saqlaymiz!
                         if is_free:
                             async with aiosqlite.connect(DB_PATH) as db:
                                 await db.execute("INSERT INTO search_results (search_id, username) VALUES (?,?)", (search_id, username))
