@@ -41,7 +41,7 @@ ADMIN_CHANNEL = int(os.getenv("ADMIN_CHANNEL", "0"))
 API_ID        = int(os.getenv("API_ID", "0"))
 API_HASH      = os.getenv("API_HASH", "")
 ADMIN_IDS     = [int(x) for x in os.getenv("ADMIN_IDS", "0").split(",") if x.strip()]
-DB_PATH       = os.getenv("DB_PATH", "saas.db")
+DB_PATH       = os.getenv("DB_PATH", "/app/data/usernamechi.db")
 WEB_URL       = os.getenv("WEB_HOST", "https://your-app.railway.app")
 
 import sys
