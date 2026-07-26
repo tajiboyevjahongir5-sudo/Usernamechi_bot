@@ -607,25 +607,26 @@ body::before {
       <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-balance')">Bekor Qilish</button>
     </div>
   </div>
-<!-- ADD CARD MODAL -->
-<div class="modal-overlay" id="modal-card">
+<!-- EDIT CARD MODAL -->
+<div class="modal-overlay" id="modal-edit-card">
   <div class="modal-box">
-    <h3 style="font-size:18px; font-weight:800; margin-bottom:16px;">💳 Yangi Karta Qo'shish</h3>
+    <h3 style="font-size:18px; font-weight:800; margin-bottom:16px;">✏️ Karta Ma'lumotlarini Tahrirlash</h3>
+    <input type="hidden" id="edit-card-id">
     <div class="form-group">
       <label class="form-label">Karta Raqami</label>
-      <input type="text" id="new-card-number" class="form-input" placeholder="8600 1234 5678 9012">
+      <input type="text" id="edit-card-number" class="form-input" placeholder="8600 1234 5678 9012">
     </div>
     <div class="form-group">
-      <label class="form-label">Karta Egasi Ismi (Ixtiyoriy)</label>
-      <input type="text" id="new-card-owner" class="form-input" placeholder="Ali Valiyev">
+      <label class="form-label">Karta Egasi Ismi</label>
+      <input type="text" id="edit-card-owner" class="form-input" placeholder="Ali Valiyev">
     </div>
     <div class="form-group">
-      <label class="form-label">Kunlik To'lovlar Limiti (default: 40 ta)</label>
-      <input type="number" id="new-card-limit" class="form-input" value="40" placeholder="40">
+      <label class="form-label">Kunlik To'lovlar Limiti</label>
+      <input type="number" id="edit-card-limit" class="form-input" placeholder="40">
     </div>
     <div style="display:flex; gap:10px; margin-top:20px;">
-      <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitAddCard()">➕ Qo'shish</button>
-      <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-card')">Bekor Qilish</button>
+      <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitEditCard()">💾 Saqlash</button>
+      <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-edit-card')">Bekor Qilish</button>
     </div>
   </div>
 </div>
@@ -1192,11 +1193,14 @@ async function loadCards() {
             </div>
 
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="action-btn btn-primary" style="font-size:11px; padding:6px 12px;" onclick="openEditCardModal(${c.id}, '${c.card_number.replace(/'/g, "\\'")}', '${(c.card_owner || '').replace(/'/g, "\\'")}', ${c.daily_limit})">
+                ✏️ Tahrirlash
+              </button>
               <button class="action-btn ${c.is_active ? 'btn-secondary' : 'btn-emerald'}" style="font-size:11px; padding:6px 12px;" onclick="toggleCardStatus(${c.id}, ${c.is_active ? 0 : 1})">
                 ${c.is_active ? '⏸️ Pauza' : '▶️ Yoqish'}
               </button>
               <button class="action-btn btn-secondary" style="font-size:11px; padding:6px 12px;" onclick="resetCardCount(${c.id})">
-                🔄 Hisobni nolga tushirish
+                🔄 Reset
               </button>
               <button class="action-btn btn-rose" style="font-size:11px; padding:6px 12px;" onclick="deleteCard(${c.id})">
                 🗑️ O'chirish
@@ -1230,6 +1234,36 @@ async function submitAddCard() {
     if (d.ok) {
       showToast("✅ Karta qo'shildi", "success");
       closeModal('modal-card');
+      loadCards();
+    } else {
+      showToast(d.error || "Xatolik", "error");
+    }
+  } catch(e) { showToast("Xatolik", "error"); }
+}
+
+function openEditCardModal(id, number, owner, limit) {
+  document.getElementById('edit-card-id').value = id;
+  document.getElementById('edit-card-number').value = number;
+  document.getElementById('edit-card-owner').value = owner;
+  document.getElementById('edit-card-limit').value = limit;
+  document.getElementById('modal-edit-card').classList.add('show');
+}
+
+async function submitEditCard() {
+  const id = document.getElementById('edit-card-id').value;
+  const card_number = document.getElementById('edit-card-number').value.trim();
+  const card_owner = document.getElementById('edit-card-owner').value.trim();
+  const daily_limit = parseInt(document.getElementById('edit-card-limit').value) || 40;
+  if (!card_number) { showToast("Karta raqami kiritilmadi", "error"); return; }
+  try {
+    const res = await fetch(`/api/admin/cards/${id}`, {
+      method: 'PUT', headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ card_number, card_owner, daily_limit })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Karta ma'lumotlari saqlandi", "success");
+      closeModal('modal-edit-card');
       loadCards();
     } else {
       showToast(d.error || "Xatolik", "error");
