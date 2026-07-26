@@ -1344,16 +1344,16 @@ async def monitoring_loop(bot):
                                     except: pass
                     except FloodWaitError as e:
                         await asyncio.sleep(e.seconds)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.error(f"Nishon tekshirishda xato (@{task['username']}): {e}")
                     finally:
                         await client.disconnect()
-                except Exception:
-                    pass
-                await asyncio.sleep(2)
+                except Exception as e:
+                    logger.error(f"Nishon ulanishda xato: {e}")
+                await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Monitoring loop xato: {e}")
-        await asyncio.sleep(300)
+        await asyncio.sleep(10)
 
 # ─── FASTAPI APP ──────────────────────────────
 app = FastAPI()
