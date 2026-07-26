@@ -1093,7 +1093,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     if 'tgme_page_title' not in text and 'tgme_page_extra' not in text:
                         is_free = False
                         
-                        # 2-Bosqich: TELEGRAM OFFICIAL API BILAN TEKSHIRISH
+                        # 2-Bosqich: TELEGRAM OFFICIAL API BILAN TEKSHIRISH (Agar seans ulansa)
                         if client:
                             try:
                                 res = await client(CheckUsernameRequest(username))
@@ -1105,8 +1105,9 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                             except Exception:
                                 is_free = False
                         else:
-                            # Telethon ulanmagan bo'lsa, HTTP auksion va profil matnlarini tekshiramiz
-                            if 'Fragment' not in text and 'Auction' not in text and 'Buy on Fragment' not in text:
+                            # Telethon seansi ulanmagan bo'lsa, HTTP orqali bo'sh nomligini tasdiqlaymiz
+                            # Profil nomi yo'q va auksion iboralari bo'lmasa — BO'SH NOM
+                            if 'tgme_page_description' not in text:
                                 is_free = True
                         
                         if is_free:
