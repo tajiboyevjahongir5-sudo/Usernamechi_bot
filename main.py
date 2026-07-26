@@ -990,106 +990,71 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
         
-        if not session_string:
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
-                await db.commit()
-            return
+        # Akkaunt yo'q bo'lsa stealth session bilan ishlatish
+        if not session_string and STEALTH_SESSIONS:
+            session_string = STEALTH_SESSIONS[0]
             
-        from telethon import TelegramClient
-        from telethon.sessions import StringSession
-        from telethon.tl.functions.account import CheckUsernameRequest
-        from telethon.errors import UsernamePurchaseAvailableError, FloodWaitError
-        
-        client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
-        await client.connect()
-        
+        client = None
+        if session_string:
+            try:
+                from telethon import TelegramClient
+                from telethon.sessions import StringSession
+                from telethon.tl.functions.account import CheckUsernameRequest
+                from telethon.errors import UsernamePurchaseAvailableError, FloodWaitError
+                client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
+                await client.connect()
+            except Exception:
+                client = None
+            
         found_count = 0
         api_blocked = False
         
         import aiohttp
 
-        async def is_on_fragment(sess, uname: str) -> bool:
-            """Fragment.com saytida username auksionda yoki sotuvda ekanligini tekshiradi.
-            True  => Fragmentda bor, foydalanuvchiga ko'rsatma!
-            False => Fragmentda yo'q, haqiqiy bo'sh username."""
+        async def check_single(session, username):
+            nonlocal found_count, api_blocked
+            if found_count >= 20: return
+            
+            url = f"https://t.me/{username}"
             try:
-                url = f"https://fragment.com/username/{uname.lower()}"
-                async with sess.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=6)) as r:
-                    if r.status == 404:
-                        return False  # Sahifa topilmadi => fragmentda yo'q
-                    html = await r.text()
-                    # Fragment da bo'lsa aukcion yoki narx ko'rsatkichlari bo'ladi
-                    FRAGMENT_MARKERS = [
-                        'Taken', 'For sale', 'On auction',
-                        'table-cell-value tm-value',
-                        'place-bid', 'tm-section-header',
-                        'Buy for', 'Current price'
-                    ]
-                    return any(m in html for m in FRAGMENT_MARKERS)
-            except Exception:
-                return False  # Tarmoq xatosida xavfsiz tomon: ko'rsatib yuboramiz
-        
-        async with aiohttp.ClientSession(headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}) as session:
-            for username in targets:
-                if found_count >= 200:  # max 200 ta ko'rsatish
-                    break
-                    
-                url = f"https://t.me/{username}"
-                try:
-                    async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                        # 429 Too Many Requests kelsa, biroz kutamiz
-                        if resp.status == 429:
-                            logger.warning(f"t.me IP limit (429). Kutamiz...")
-                            await asyncio.sleep(5)
-                            continue
-                            
-                        text = await resp.text()
+                async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                    if resp.status == 429:
+                        return
+                    text = await resp.text()
+                    if 'tgme_page_title' not in text:
+                        is_free = True
+                        if client and not api_blocked:
+                            try:
+                                is_free = await client(CheckUsernameRequest(username))
+                                await asyncio.sleep(0.3)
+                            except UsernamePurchaseAvailableError:
+                                is_free = False
+                            except FloodWaitError:
+                                api_blocked = True
+                            except Exception:
+                                pass
                         
-                        # Agar "tgme_page_title" HTML kodida bo'lmasa, demak bu nom olinmagan yoki Fragment auksionida!
-                        if 'tgme_page_title' not in text:
-                            is_free = True
-                            
-                            if not api_blocked:
-                                # A Reja: Telegram API orqali tekshirish (eng aniq usul)
-                                try:
-                                    is_free = await client(CheckUsernameRequest(username))
-                                    await asyncio.sleep(0.8)
-                                except UsernamePurchaseAvailableError:
-                                    is_free = False
-                                    logger.debug(f"Fragment auksionida ekan, o'tkazib yuboramiz: {username}")
-                                except FloodWaitError as e:
-                                    logger.warning(f"API Check FloodWait {e.seconds}s. Fragment.com fallbackga o'tamiz.")
-                                    api_blocked = True
-                                    # Bu username ni ham fragment.com orqali tekshiramiz
-                                    if await is_on_fragment(session, username):
-                                        is_free = False
-                                except Exception as e:
-                                    logger.debug(f"API Check xato @{username}: {e}")
-                            else:
-                                # B Reja: Fragment.com saytidan HTTP orqali tekshirish
-                                # Hech qanday Telegram akkauntini ishlatmaydi — xavfsiz!
-                                if await is_on_fragment(session, username):
-                                    is_free = False
-                                    logger.debug(f"Fragment.com: {username} auksionda, o'tkazildi")
-                                await asyncio.sleep(0.5)  # fragment.com ga haddan ko'p so'rov yubormaslik uchun
-                                    
-                            if is_free:
-                                async with aiosqlite.connect(DB_PATH) as db:
-                                    await db.execute(
-                                        "INSERT INTO search_results (search_id, username) VALUES (?,?)",
-                                        (search_id, username)
-                                    )
-                                    await db.commit()
-                                found_count += 1
-                                
-                except Exception as e:
-                    logger.debug(f"HTTP request xato @{username}: {e}")
-                    
-                await asyncio.sleep(0.3)
-                
-        await client.disconnect()
-        
+                        if is_free:
+                            async with aiosqlite.connect(DB_PATH) as db:
+                                await db.execute("INSERT INTO search_results (search_id, username) VALUES (?,?)", (search_id, username))
+                                await db.commit()
+                            found_count += 1
+            except Exception:
+                pass
+
+        async with aiohttp.ClientSession(headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}) as session:
+            batch_size = 10
+            for i in range(0, len(targets), batch_size):
+                if found_count >= 20:
+                    break
+                batch = targets[i:i+batch_size]
+                await asyncio.gather(*[check_single(session, u) for u in batch])
+                await asyncio.sleep(0.1)
+
+        if client:
+            try: await client.disconnect()
+            except: pass
+            
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
             await db.commit()
