@@ -1346,13 +1346,19 @@ async def deferred_claim_loop(bot):
         await asyncio.sleep(60)  # Har 60 soniyada tekshirish
 
 async def monitoring_loop(bot):
-    """Orqa fonda barcha monitoring_tasks larni aylanib chiqadi."""
-    from telethon import TelegramClient
-    from telethon.sessions import StringSession
+    """Orqa fonda barcha monitoring_tasks larni ultra-tezkor va xavfsiz poylaydi."""
     from telethon.tl.functions.account import CheckUsernameRequest
     from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest, DeleteChannelRequest
     from telethon.errors import FloodWaitError
+    import aiohttp
     
+    headers_list = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1'
+    ]
+    
+    hdr_idx = 0
     while True:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
@@ -1360,26 +1366,33 @@ async def monitoring_loop(bot):
                 async with db.execute("SELECT t.id, t.telegram_id, t.username, u.session_string FROM monitoring_tasks t JOIN users u ON t.telegram_id=u.telegram_id WHERE t.status='monitoring'") as c:
                     tasks = await c.fetchall()
             
-            import aiohttp
-            async with aiohttp.ClientSession(headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}) as http_session:
+            if not tasks:
+                await asyncio.sleep(1.5)
+                continue
+
+            hdr_idx = (hdr_idx + 1) % len(headers_list)
+            async with aiohttp.ClientSession(headers={'User-Agent': headers_list[hdr_idx]}) as http_session:
                 for task in tasks:
                     uname = task["username"]
+                    
+                    # 1-qadam: HTTP t.me orqali tezkor va xavfsiz profil bor-yo'qligini tekshiramiz
                     try:
-                        # 1-qadam: Telegram foydalanuvchisini blokdan asrash uchun HTTP t.me orqali tekshiramiz
-                        async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                            if resp.status == 429: continue
+                        async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=2.5)) as resp:
+                            if resp.status == 429:
+                                await asyncio.sleep(0.5)
+                                continue
                             text = await resp.text()
-                            if 'tgme_page_title' in text:
-                                # Username band — foydalanuvchi akkauntiga bitta ham so'rov yuborilmaydi (100% XAVFSIZ!)
+                            
+                            # Profil yoki kanal mavjud bo'lsa — hali bo'shamagan
+                            if 'tgme_page_title' in text or 'tgme_page_extra' in text:
                                 continue
                     except Exception:
                         continue
 
-                    # 2-qadam: Faqat username bo'shaganda foydalanuvchi akkaunti orqali lahzada band qilamiz
+                    # 2-qadam: Profil HTTP da yo'q bo'lsa (BO'SHAGAN) — Keshdagi tezkor klient bilan lahzada band qilamiz!
                     if not task["session_string"]: continue
                     try:
-                        client = TelegramClient(StringSession(task["session_string"]), API_ID, API_HASH)
-                        await client.connect()
+                        client = await _get_fast_client(task["session_string"])
                         try:
                             is_free = await client(CheckUsernameRequest(username=uname))
                             if is_free:
@@ -1415,14 +1428,12 @@ async def monitoring_loop(bot):
                             await asyncio.sleep(e.seconds)
                         except Exception as e:
                             logger.error(f"Nishon tekshirishda xato (@{uname}): {e}")
-                        finally:
-                            await client.disconnect()
                     except Exception as e:
-                        logger.error(f"Nishon ulanishda xato: {e}")
-                    await asyncio.sleep(0.2)
+                        logger.error(f"Nishon client ulanishda xato: {e}")
         except Exception as e:
             logger.error(f"Monitoring loop xato: {e}")
-        await asyncio.sleep(2)
+            
+        await asyncio.sleep(0.3)
 
 # ─── FASTAPI APP ──────────────────────────────
 app = FastAPI()
