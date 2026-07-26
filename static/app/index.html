@@ -1316,7 +1316,7 @@ async function loadMyUsernames() {
           </div>
           <div style="display:flex; gap:6px; flex-shrink:0;">
             ${u.title !== 'Shaxsiy profil' 
-              ? `<button class="btn btn-outline" style="padding:6px 10px; width:auto; font-size:12px; margin:0; background:linear-gradient(135deg,rgba(99,102,241,0.2),rgba(6,182,212,0.15)); border-color:rgba(99,102,241,0.5); color:#a5b4fc;" onclick="setUsernameToProfile('${u.username}', this)" title="Profilimga almashtir">🔄 Almashtirish</button>`
+              ? `<button class="btn btn-outline" style="padding:6px 10px; width:auto; font-size:12px; margin:0; background:linear-gradient(135deg,rgba(99,102,241,0.2),rgba(6,182,212,0.15)); border-color:rgba(99,102,241,0.5); color:#a5b4fc;" onclick="setUsernameToProfile('${u.username}', ${u.channel_id || 'null'}, this)" title="Profilimga almashtir">🔄 Almashtirish</button>`
               : `<div style="font-size:11px; padding:6px 10px; color:#34d399; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.3); border-radius:10px; white-space:nowrap;">✅ Joriy profil</div>`
             }
             ${u.is_listed 
@@ -1334,31 +1334,36 @@ async function loadMyUsernames() {
   }
 }
 
-async function setUsernameToProfile(username, btn) {
-  if (!confirm(`@${username} username ni Telegram profilingizga o'rnatmoqchimisiz?\n\nJoriy profil username ingiz uning o'rniga o'tadi.`)) return;
-  
+async function setUsernameToProfile(username, channelId, btn) {
+  // Tasdiqlash yo'q — darhol boshlaymiz! (tezlik muhim)
   const origText = btn.innerText;
   btn.disabled = true;
-  btn.innerText = '⏳...';
+  btn.style.opacity = '0.6';
+  btn.innerText = '⚡...';
   
   try {
+    const body = { init_data: tg.initData, username };
+    if (channelId) body.channel_id = channelId; // Backend kanal qidiruv bosqichini o'tkazib yuboradi
+    
     const res = await fetch(`${API}/api/account/set_username`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ init_data: tg.initData, username })
+      body: JSON.stringify(body)
     });
     const d = await res.json();
     if (d.ok) {
-      showToast(`✅ @${username} profilingizga o'rnatildi!`, 'success');
-      await loadMyUsernames(); // Ro'yxatni yangilaymiz
+      showToast(`⚡ @${username} profilingizga o'rnatildi!`, 'success');
+      await loadMyUsernames();
     } else {
       showToast(d.error || 'Xato yuz berdi', 'error');
       btn.disabled = false;
+      btn.style.opacity = '1';
       btn.innerText = origText;
     }
   } catch(e) {
     showToast('Xato yuz berdi', 'error');
     btn.disabled = false;
+    btn.style.opacity = '1';
     btn.innerText = origText;
   }
 }

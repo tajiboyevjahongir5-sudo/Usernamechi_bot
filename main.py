@@ -1513,14 +1513,33 @@ async def api_user(init_data: str = ""):
             "monitor_price": monitor_price,
             "listing_price": listing_price}
 
+# Tezlik uchun Telethon clientlarni kesh saqlaymiz
+_telethon_cache: dict = {}
+
+async def _get_fast_client(session_string: str):
+    """Keshdan tezkor Telethon client qaytaradi yoki yangisini yaratadi."""
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    
+    if session_string in _telethon_cache:
+        client = _telethon_cache[session_string]
+        if client.is_connected():
+            return client
+    
+    client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
+    await client.connect()
+    _telethon_cache[session_string] = client
+    return client
+
 @app.post("/api/account/set_username")
 async def api_account_set_username(request: Request):
-    """Foydalanuvchi tanlagan username ni uning Telegram profiliga o'rnatadi."""
+    """Foydalanuvchi tanlagan username ni uning Telegram profiliga TEZKOR o'rnatadi."""
     data = await request.json()
     user = verify_init_data(data.get('init_data', ''))
     if not user: raise HTTPException(403)
     tid = user['id']
     username = data.get('username', '').strip().lstrip('@')
+    source_channel_id = data.get('channel_id')  # Frontend dari yuborilsa ishlatamiz
     if not username:
         return {"ok": False, "error": "Username kiritilmadi"}
 
@@ -1528,49 +1547,51 @@ async def api_account_set_username(request: Request):
     if not row or not row.get('session_string'):
         return {"ok": False, "error": "Akkaunt ulanmagan"}
 
-    from telethon import TelegramClient
-    from telethon.sessions import StringSession
     from telethon.tl.functions.account import UpdateUsernameRequest as AccountUpdateUsernameRequest
     from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest, UpdateUsernameRequest as ChannelUpdateUsernameRequest
 
-    client = TelegramClient(StringSession(row['session_string']), API_ID, API_HASH)
     try:
-        await client.connect()
-        me = await client.get_me()
-        old_username = me.username or ""
-
-        # Kanaldan username ni olish (agar kanal username si bo'lsa)
-        # Avval kanalda username bo'lsa, uni bo'shating
-        req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
-        res_ch = await client(req)
-        source_channel_id = None
-        for ch in res_ch.chats:
-            if getattr(ch, 'username', '').lower() == username.lower():
-                source_channel_id = ch.id
-                break
+        client = await _get_fast_client(row['session_string'])
+        
+        # Agar kanal ID frontend dan kelmasa — kanal ro'yxatidan topamiz
+        if not source_channel_id:
+            req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
+            res_ch = await client(req)
+            for ch in res_ch.chats:
+                if getattr(ch, 'username', '').lower() == username.lower():
+                    source_channel_id = ch.id
+                    break
 
         if source_channel_id:
-            # Kanaldan username ni olib profilga o'rnatamiz
-            await client(ChannelUpdateUsernameRequest(channel=source_channel_id, username=""))
-            await asyncio.sleep(0.5)
-
-        # Profilga yangi username o'rnatish
-        await client(AccountUpdateUsernameRequest(username=username))
-
-        # Eski profil username ini kanalga qaytarib qo'yamiz (agar eski username bor va kanal bor bo'lsa)
-        if old_username and source_channel_id:
-            try:
-                await asyncio.sleep(0.5)
-                await client(ChannelUpdateUsernameRequest(channel=source_channel_id, username=old_username))
-            except Exception:
-                pass  # Eski username ni kanalga qaytara olmasa ham davom etamiz
-
-        await client.disconnect()
-        return {"ok": True, "message": f"@{username} profilingizga muvaffaqiyatli o'rnatildi!"}
+            # Kanaldan username olib, profilga o'rnatishni PARALLEL bajaramiz
+            old_me = await client.get_me()
+            old_username = old_me.username or ""
+            
+            # 1-qadam: Kanaldan username'ni olib, profilga qo'yamiz (parallel)
+            await asyncio.gather(
+                client(ChannelUpdateUsernameRequest(channel=source_channel_id, username="")),
+                return_exceptions=True
+            )
+            # 2-qadam: Profilga o'rnatish (shu zahotiyoq)
+            await client(AccountUpdateUsernameRequest(username=username))
+            
+            # 3-qadam: Eski profil username'ini kanalga qaytarish — FONDA (kutmaydi)
+            if old_username:
+                async def restore_old():
+                    try:
+                        await client(ChannelUpdateUsernameRequest(channel=source_channel_id, username=old_username))
+                    except Exception:
+                        pass
+                asyncio.create_task(restore_old())
+        else:
+            # Oddiy profil username (kanal emas) — to'g'ridan to'g'ri o'rnatamiz
+            await client(AccountUpdateUsernameRequest(username=username))
+        
+        return {"ok": True, "message": f"@{username} profilingizga o'rnatildi!"}
     except Exception as e:
         logger.error(f"Set username error: {e}")
-        try: await client.disconnect()
-        except: pass
+        # Keshdan o'chiramiz — keyingi safar yangi ulanish bo'ladi
+        _telethon_cache.pop(row['session_string'], None)
         return {"ok": False, "error": str(e)}
 
 
@@ -1583,47 +1604,47 @@ async def api_account_usernames(init_data: str = ""):
     if not row or not row.get('session_string'):
         return {"usernames": []}
     try:
-        from telethon import TelegramClient
-        from telethon.sessions import StringSession
         from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
-        client = TelegramClient(StringSession(row['session_string']), API_ID, API_HASH)
-        await client.connect()
+        # Keshdan tezkor client olamiz (qayta ulanish yo'q!)
+        client = await _get_fast_client(row['session_string'])
         
         usernames = []
         
-        # O'zining profili username si
-        me = await client.get_me()
+        # O'zining profili username si va kanallarni PARALLEL olamiz
+        me, ch_res = await asyncio.gather(
+            client.get_me(),
+            client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False))
+        )
+        
         if me.username:
-            usernames.append({"username": me.username, "title": "Shaxsiy profil"})
+            usernames.append({"username": me.username, "title": "Shaxsiy profil", "channel_id": None})
             
-        # Admin bo'lgan ochiq kanallar/guruhlar
-        req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
-        res = await client(req)
-        for ch in res.chats:
+        # Admin bo'lgan ochiq kanallar — channel_id ni ham saqlaymiz (tezlik uchun)
+        for ch in ch_res.chats:
             uname = getattr(ch, 'username', None)
             title = getattr(ch, 'title', None)
             if uname:
-                # FAQAT creator yoki admin bo'lsa
                 if getattr(ch, 'creator', False) or getattr(ch, 'admin_rights', None):
-                    usernames.append({"username": uname, "title": title or "Kanal/Guruh"})
+                    usernames.append({"username": uname, "title": title or "Kanal/Guruh", "channel_id": ch.id})
                     
-        # Check if they are already listed
+        # Sotuvda borligini tekshirish
         async with aiosqlite.connect(DB_PATH) as db:
             for u in usernames:
                 async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (u['username'],)) as c:
                     u['is_listed'] = bool(await c.fetchone())
                     
-        await client.disconnect()
         return {"usernames": usernames}
     except Exception as e:
         logger.error(f"Account usernames error: {e}")
         from telethon.errors import AuthKeyUnregisteredError
         if isinstance(e, AuthKeyUnregisteredError) or "unregistered" in str(e).lower():
+            _telethon_cache.pop(row['session_string'], None)
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute("UPDATE users SET session_string=NULL WHERE telegram_id=?", (tid,))
                 await db.commit()
             return {"usernames": [], "error": "session_expired"}
         return {"usernames": []}
+
 
 # ── MARKETPLACE ────────────────────────────────
 @app.get("/api/marketplace")
