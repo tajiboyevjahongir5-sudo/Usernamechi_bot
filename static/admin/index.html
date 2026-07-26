@@ -4,193 +4,133 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Admin Panel — Usernamechi</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-  :root { --bg:#070711; --card:rgba(255,255,255,0.05); --border:rgba(255,255,255,0.08); --accent:#7c3aed; --accent2:#06b6d4; --success:#10b981; --danger:#ef4444; --warning:#f59e0b; --text:#f1f5f9; --muted:#64748b; }
-  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
-  body::before { content:''; position:fixed; inset:0; background:radial-gradient(ellipse at 20% 10%,rgba(124,58,237,0.12) 0%,transparent 60%),radial-gradient(ellipse at 80% 80%,rgba(6,182,212,0.08) 0%,transparent 60%); pointer-events:none; z-index:0; }
-  #login-screen { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:999; padding:20px; }
-  .login-box { background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:24px; padding:40px 28px; width:100%; max-width:360px; text-align:center; }
-  .login-logo { font-size:52px; margin-bottom:16px; }
-  .login-title { font-size:22px; font-weight:800; margin-bottom:8px; }
-  .login-sub { color:var(--muted); font-size:14px; margin-bottom:32px; line-height:1.5; }
-  .login-btn { width:100%; padding:16px; background:linear-gradient(135deg,#7c3aed,#06b6d4); border:none; border-radius:14px; color:#fff; font-size:16px; font-weight:600; cursor:pointer; text-decoration:none; display:flex; align-items:center; justify-content:center; gap:10px; }
-  nav { position:fixed; bottom:0; left:0; right:0; background:rgba(7,7,17,0.95); backdrop-filter:blur(20px); border-top:1px solid var(--border); display:flex; z-index:100; padding:8px 0 max(8px,env(safe-area-inset-bottom)); }
-  nav button { flex:1; background:none; border:none; color:var(--muted); display:flex; flex-direction:column; align-items:center; gap:3px; font-size:9px; font-weight:500; cursor:pointer; padding:6px 0; transition:color 0.2s; position:relative; }
-  nav button.active { color:var(--accent); }
-  nav button svg { width:22px; height:22px; }
-  .nav-badge { position:absolute; top:2px; right:calc(50% - 18px); background:var(--danger); color:#fff; border-radius:10px; padding:1px 5px; font-size:9px; font-weight:700; display:none; }
-  .page { display:none; padding:16px 16px 90px; position:relative; z-index:1; }
-  .page.active { display:block; }
-  .page-title { font-size:22px; font-weight:800; margin-bottom:16px; padding-top:8px; }
-  .page-title span { background:linear-gradient(135deg,#a78bfa,#67e8f9); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-  .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
-  .stat-box { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; }
-  .stat-box .s-icon { font-size:24px; margin-bottom:8px; }
-  .stat-box .s-val { font-size:26px; font-weight:800; margin-bottom:2px; }
-  .stat-box .s-lbl { color:var(--muted); font-size:11px; }
-  .stat-box.purple { border-color:rgba(124,58,237,0.3); } .stat-box.purple .s-val { color:#a78bfa; }
-  .stat-box.cyan { border-color:rgba(6,182,212,0.3); } .stat-box.cyan .s-val { color:#67e8f9; }
-  .stat-box.green { border-color:rgba(16,185,129,0.3); } .stat-box.green .s-val { color:#34d399; }
-  .stat-box.yellow { border-color:rgba(245,158,11,0.3); } .stat-box.yellow .s-val { color:#fbbf24; }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:12px; }
-  .payment-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:10px; }
-  .payment-card.pending-card { border-color:rgba(245,158,11,0.3); }
-  .payment-card .p-id { color:var(--muted); font-size:11px; margin-bottom:4px; }
-  .payment-card .p-user { font-weight:700; font-size:15px; margin-bottom:4px; }
-  .payment-card .p-amount { font-size:20px; font-weight:800; color:var(--success); margin-bottom:8px; }
-  .payment-card .p-date { color:var(--muted); font-size:11px; margin-bottom:12px; }
-  .payment-card .p-actions { display:flex; gap:8px; }
-  .user-card {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 18px;
-    padding: 16px;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    position: relative;
-    overflow: hidden;
-  }
-  .user-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(167,139,250,0.3), transparent);
-  }
-  .user-card:hover { border-color: rgba(124,58,237,0.3); box-shadow: 0 4px 20px rgba(124,58,237,0.1); }
-  .user-card.stealth-card {
-    border-color: rgba(124,58,237,0.4);
-    background: rgba(124,58,237,0.06);
-    box-shadow: 0 4px 20px rgba(124,58,237,0.12), inset 0 0 30px rgba(124,58,237,0.04);
-  }
-  .user-avatar {
-    width: 48px; height: 48px;
-    border-radius: 14px;
-    flex-shrink: 0;
-    background: linear-gradient(135deg, #7c3aed, #06b6d4);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 18px; font-weight: 800;
-    box-shadow: 0 4px 14px rgba(124,58,237,0.4);
-    letter-spacing: -0.5px;
-  }
-  .user-avatar.stealth-avatar {
-    background: linear-gradient(135deg, #4c1d95, #7c3aed);
-    box-shadow: 0 4px 14px rgba(124,58,237,0.6);
-    font-size: 22px;
-  }
-  .user-info { flex: 1; min-width: 0; }
-  .user-info .u-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
-  .user-info .u-username { color: #a78bfa; font-size: 12px; font-weight: 500; }
-  .user-info .u-bal { color: #34d399; font-size: 13px; font-weight: 700; margin-top: 5px; }
-  .user-info .u-status { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .user-info .u-phone { color: rgba(255,255,255,0.6); font-size: 12px; margin-top: 3px; }
-  .u-action-col { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; flex-shrink: 0; }
-  .btn-action {
-    border: none; border-radius: 10px;
-    padding: 7px 12px;
-    font-size: 11px; font-weight: 600;
-    cursor: pointer; white-space: nowrap;
-    transition: all 0.2s;
-    font-family: 'Inter', sans-serif;
-  }
-  .btn-action:active { transform: scale(0.96); }
-  .btn-balance { background: rgba(124,58,237,0.2); color: #c084fc; border: 1px solid rgba(124,58,237,0.3); }
-  .btn-balance:hover { background: rgba(124,58,237,0.35); }
-  .btn-stealth-on { background: rgba(124,58,237,0.18); color: #a78bfa; border: 1px solid rgba(124,58,237,0.3); }
-  .btn-stealth-on:hover { background: rgba(124,58,237,0.32); }
-  .btn-stealth-off { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
-  .btn-stealth-off:hover { background: rgba(239,68,68,0.28); }
-  .stealth-badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    background: rgba(124,58,237,0.25);
-    border: 1px solid rgba(167,139,250,0.4);
-    border-radius: 20px; padding: 3px 10px;
-    font-size: 10px; font-weight: 700; color: #c084fc;
-    animation: stealth-pulse 2s infinite;
-  }
-  @keyframes stealth-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.4); }
-    50% { box-shadow: 0 0 0 4px rgba(124,58,237,0); }
-  }
-  .connected-badge { display: inline-flex; align-items: center; gap: 3px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); border-radius: 20px; padding: 2px 8px; font-size: 10px; font-weight: 600; color: #34d399; }
-  .disconnected-badge { display: inline-flex; align-items: center; gap: 3px; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.25); border-radius: 20px; padding: 2px 8px; font-size: 10px; font-weight: 600; color: #f87171; }
-  .user-search {
-    width: 100%;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 14px;
-    padding: 13px 16px;
-    color: var(--text);
-    font-size: 14px;
-    outline: none;
-    font-family: 'Inter', sans-serif;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    margin-bottom: 14px;
-  }
-  .user-search:focus { border-color: rgba(124,58,237,0.5); box-shadow: 0 0 0 3px rgba(124,58,237,0.12); }
-  .users-header {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 16px;
-  }
-  .users-stats {
-    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
-  }
-  .u-stat-chip {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 20px; padding: 5px 12px;
-    font-size: 11px; font-weight: 600; color: var(--muted);
-    display: flex; align-items: center; gap: 5px;
-  }
-  .u-stat-chip.chip-purple { border-color: rgba(124,58,237,0.3); color: #c084fc; background: rgba(124,58,237,0.1); }
-  .u-stat-chip.chip-green { border-color: rgba(16,185,129,0.3); color: #34d399; background: rgba(16,185,129,0.08); }
-  .u-stat-chip.chip-red { border-color: rgba(239,68,68,0.3); color: #f87171; background: rgba(239,68,68,0.08); }
-  .order-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:10px; }
-  .order-card .o-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
-  .order-card .o-cat { font-weight:700; font-size:14px; }
-  .order-card .o-meta { color:var(--muted); font-size:12px; }
-  .badge { padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-  .b-pending { background:rgba(245,158,11,0.15); color:#fbbf24; }
-  .b-processing { background:rgba(59,130,246,0.15); color:#60a5fa; }
-  .b-completed,.b-approved { background:rgba(16,185,129,0.15); color:#34d399; }
-  .b-rejected { background:rgba(239,68,68,0.15); color:#f87171; }
-  .btn { padding:10px 16px; border:none; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; transition:opacity 0.2s; flex:1; }
-  .btn:active { transform:scale(0.97); }
-  .btn-approve { background:rgba(16,185,129,0.2); color:#34d399; }
-  .btn-reject { background:rgba(239,68,68,0.2); color:#f87171; }
-  .btn-edit { background:rgba(124,58,237,0.2); color:#a78bfa; }
-  .btn-primary { background:linear-gradient(135deg,#7c3aed,#06b6d4); color:#fff; width:100%; padding:14px; border-radius:12px; font-size:15px; border:none; cursor:pointer; font-weight:600; font-family:'Inter',sans-serif; }
-  .chart-card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:12px; }
-  .chart-title { font-weight:700; font-size:14px; margin-bottom:14px; }
-  .set-group { margin-bottom:16px; }
-  .set-group label { display:block; margin-bottom:8px; color:var(--muted); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; }
-  .set-group input { width:100%; background:rgba(255,255,255,0.05); border:1px solid var(--border); border-radius:12px; padding:14px; color:var(--text); outline:none; font-size:15px; font-family:'Inter',sans-serif; }
-  .set-group input:focus { border-color:var(--accent); }
-  .toast { position:fixed; top:16px; left:50%; transform:translateX(-50%); background:rgba(20,20,35,0.97); backdrop-filter:blur(20px); border:1px solid var(--border); border-radius:12px; padding:12px 20px; font-size:13px; font-weight:500; z-index:9999; opacity:0; transition:opacity 0.3s; white-space:nowrap; }
-  .toast.show { opacity:1; } .toast.success { border-color:var(--success); } .toast.error { border-color:var(--danger); }
-  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); display:none; align-items:flex-end; justify-content:center; z-index:500; padding:16px; }
-  .modal-bg.open { display:flex; }
-  .modal { background:#0f0f1f; border:1px solid var(--border); border-radius:20px; padding:24px; width:100%; max-width:420px; }
-  .modal h3 { font-size:17px; font-weight:700; margin-bottom:16px; }
-  .modal input { width:100%; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px; color:var(--text); font-size:15px; outline:none; margin-bottom:10px; font-family:'Inter',sans-serif; }
-  .modal-btns { display:flex; gap:10px; margin-top:8px; }
-  .empty { text-align:center; padding:40px 20px; color:var(--muted); }
-  .empty .e-icon { font-size:48px; margin-bottom:12px; }
-  .empty .e-text { font-size:14px; }
+:root{--bg:#06060f;--card:rgba(255,255,255,0.04);--border:rgba(255,255,255,0.08);--accent:#7c3aed;--accent2:#06b6d4;--success:#10b981;--danger:#ef4444;--warning:#f59e0b;--text:#f1f5f9;--muted:#64748b}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;overscroll-behavior:none}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 15% 10%,rgba(124,58,237,0.18) 0%,transparent 55%),radial-gradient(ellipse at 85% 80%,rgba(6,182,212,0.12) 0%,transparent 55%);pointer-events:none;z-index:0;animation:ambientShift 14s ease-in-out infinite alternate}
+@keyframes ambientShift{0%{transform:scale(1)}100%{transform:scale(1.06)}}
+#login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999;padding:24px}
+.login-box{background:rgba(255,255,255,0.04);border:1px solid rgba(167,139,250,0.2);border-radius:28px;padding:48px 32px;width:100%;max-width:380px;text-align:center;backdrop-filter:blur(24px);box-shadow:0 40px 80px rgba(0,0,0,0.6),0 0 60px rgba(124,58,237,0.1);animation:loginIn 0.5s cubic-bezier(0.16,1,0.3,1)}
+@keyframes loginIn{from{opacity:0;transform:translateY(24px) scale(0.96)}to{opacity:1;transform:none}}
+.login-icon{width:80px;height:80px;border-radius:24px;background:linear-gradient(135deg,#7c3aed,#06b6d4);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 20px;box-shadow:0 8px 32px rgba(124,58,237,0.5);animation:iconPulse 3s ease-in-out infinite}
+@keyframes iconPulse{0%,100%{box-shadow:0 8px 32px rgba(124,58,237,0.5)}50%{box-shadow:0 8px 48px rgba(124,58,237,0.8)}}
+.login-title{font-size:26px;font-weight:900;margin-bottom:8px}
+.login-title span{background:linear-gradient(135deg,#a78bfa,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.login-sub{color:var(--muted);font-size:14px;margin-bottom:36px;line-height:1.6}
+.login-btn{width:100%;padding:17px;background:linear-gradient(135deg,#7c3aed,#06b6d4);border:none;border-radius:16px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 8px 24px rgba(124,58,237,0.4);transition:transform 0.2s;font-family:'Inter',sans-serif}
+.login-btn:active{transform:scale(0.97)}
+nav{position:fixed;bottom:0;left:0;right:0;background:rgba(6,6,15,0.94);backdrop-filter:blur(28px);border-top:1px solid rgba(255,255,255,0.08);display:flex;z-index:100;padding:8px 0 max(10px,env(safe-area-inset-bottom))}
+nav button{flex:1;background:none;border:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9px;font-weight:600;cursor:pointer;padding:6px 4px;transition:color 0.2s,transform 0.2s;position:relative;font-family:'Inter',sans-serif}
+nav button.active{color:#a78bfa}
+nav button.active svg{filter:drop-shadow(0 0 6px rgba(167,139,250,0.8));transform:scale(1.15) translateY(-1px)}
+nav button svg{width:22px;height:22px;transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1)}
+nav button:active{transform:scale(0.9)}
+.nav-badge{position:absolute;top:2px;right:calc(50% - 20px);background:var(--danger);color:#fff;border-radius:10px;padding:1px 5px;font-size:9px;font-weight:700;display:none;border:1.5px solid var(--bg)}
+.page{display:none;padding:16px 16px 100px;position:relative;z-index:1}
+.page.active{display:block;animation:pageIn 0.3s cubic-bezier(0.16,1,0.3,1)}
+@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.page-header{padding:12px 0 20px;display:flex;justify-content:space-between;align-items:center}
+.page-title{font-size:24px;font-weight:900;letter-spacing:-0.5px}
+.page-title span{background:linear-gradient(135deg,#a78bfa,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.page-badge{background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.stat-box{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:18px 16px;position:relative;overflow:hidden;transition:transform 0.2s}
+.stat-box:active{transform:scale(0.97)}
+.stat-box::before{content:'';position:absolute;top:-40%;left:-20%;width:80%;height:80%;border-radius:50%;opacity:0.15;pointer-events:none}
+.stat-box.purple{border-color:rgba(124,58,237,0.3)}.stat-box.purple::before{background:#7c3aed}.stat-box.purple .s-val{color:#a78bfa}
+.stat-box.cyan{border-color:rgba(6,182,212,0.3)}.stat-box.cyan::before{background:#06b6d4}.stat-box.cyan .s-val{color:#67e8f9}
+.stat-box.green{border-color:rgba(16,185,129,0.3)}.stat-box.green::before{background:#10b981}.stat-box.green .s-val{color:#34d399}
+.stat-box.yellow{border-color:rgba(245,158,11,0.3)}.stat-box.yellow::before{background:#f59e0b}.stat-box.yellow .s-val{color:#fbbf24}
+.stat-box .s-icon{font-size:22px;margin-bottom:10px}
+.stat-box .s-val{font-size:28px;font-weight:800;margin-bottom:3px;letter-spacing:-1px}
+.stat-box .s-lbl{color:var(--muted);font-size:11px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:18px;margin-bottom:14px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(167,139,250,0.3),transparent)}
+.card-title{font-weight:700;font-size:14px;margin-bottom:14px}
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:18px;margin-bottom:14px}
+.payment-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;margin-bottom:10px}
+.payment-card.pending-card{border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.04)}
+.payment-card .p-id{color:var(--muted);font-size:11px;font-weight:600;margin-bottom:6px}
+.payment-card .p-user{font-weight:700;font-size:15px;margin-bottom:4px}
+.payment-card .p-amount{font-size:22px;font-weight:800;color:var(--success);margin-bottom:6px}
+.payment-card .p-date{color:var(--muted);font-size:12px;margin-bottom:12px}
+.payment-card .p-actions{display:flex;gap:8px}
+.user-card{background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.07);border-radius:20px;padding:16px;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px;position:relative;overflow:hidden;animation:cardIn 0.3s cubic-bezier(0.16,1,0.3,1) both}
+.user-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(167,139,250,0.2),transparent)}
+.user-card.stealth-card{border-color:rgba(124,58,237,0.4);background:rgba(124,58,237,0.07)}
+@keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.user-avatar{width:48px;height:48px;border-radius:16px;flex-shrink:0;background:linear-gradient(135deg,#7c3aed,#06b6d4);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;box-shadow:0 4px 16px rgba(124,58,237,0.4)}
+.user-avatar.stealth-avatar{background:linear-gradient(135deg,#4c1d95,#7c3aed);font-size:22px}
+.user-info{flex:1;min-width:0}
+.user-info .u-name{font-size:14px;font-weight:700;margin-bottom:2px}
+.user-info .u-username{color:#a78bfa;font-size:12px;font-weight:500}
+.user-info .u-bal{color:#34d399;font-size:13px;font-weight:700;margin-top:5px}
+.user-info .u-status{font-size:11px;color:var(--muted);margin-top:5px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.user-info .u-phone{color:rgba(255,255,255,0.55);font-size:11px;margin-top:3px}
+.u-action-col{display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex-shrink:0}
+.badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.b-pending{background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.25)}
+.b-processing{background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.25)}
+.b-completed,.b-approved{background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.25)}
+.b-rejected{background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.25)}
+.connected-badge{display:inline-flex;align-items:center;gap:3px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:600;color:#34d399}
+.disconnected-badge{display:inline-flex;align-items:center;gap:3px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:600;color:#f87171}
+.stealth-badge{display:inline-flex;align-items:center;gap:3px;background:rgba(124,58,237,0.2);border:1px solid rgba(167,139,250,0.35);border-radius:20px;padding:2px 9px;font-size:10px;font-weight:700;color:#c084fc;animation:stealthPulse 2s infinite}
+@keyframes stealthPulse{0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,0.4)}50%{box-shadow:0 0 0 4px rgba(124,58,237,0)}}
+.btn{padding:10px 16px;border:none;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;flex:1;font-family:'Inter',sans-serif}
+.btn:active{transform:scale(0.96)}
+.btn-approve{background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.25)}
+.btn-reject{background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.2)}
+.btn-primary{background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;width:100%;padding:15px;border-radius:14px;font-size:15px;border:none;cursor:pointer;font-weight:700;font-family:'Inter',sans-serif;box-shadow:0 6px 20px rgba(124,58,237,0.35);transition:transform 0.2s}
+.btn-primary:active{transform:scale(0.97)}
+.btn-action{border-radius:10px;padding:7px 11px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all 0.2s;font-family:'Inter',sans-serif;border:1px solid transparent}
+.btn-action:active{transform:scale(0.93)}
+.btn-balance{background:rgba(124,58,237,0.18);color:#c084fc;border-color:rgba(124,58,237,0.3)}
+.btn-stealth-on{background:rgba(124,58,237,0.15);color:#a78bfa;border-color:rgba(124,58,237,0.25)}
+.btn-stealth-off{background:rgba(239,68,68,0.12);color:#f87171;border-color:rgba(239,68,68,0.2)}
+.user-search{width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:13px 16px;color:var(--text);font-size:14px;outline:none;font-family:'Inter',sans-serif;transition:border-color 0.2s,box-shadow 0.2s;margin-bottom:12px}
+.user-search:focus{border-color:rgba(124,58,237,0.5);box-shadow:0 0 0 3px rgba(124,58,237,0.12)}
+.filter-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.chip{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:20px;padding:6px 13px;font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;transition:all 0.2s;display:flex;align-items:center;gap:5px;font-family:'Inter',sans-serif}
+.chip:active{transform:scale(0.95)}
+.chip.chip-green{border-color:rgba(16,185,129,0.3);color:#34d399;background:rgba(16,185,129,0.08)}
+.chip.chip-red{border-color:rgba(239,68,68,0.3);color:#f87171;background:rgba(239,68,68,0.08)}
+.chip.chip-purple{border-color:rgba(124,58,237,0.3);color:#c084fc;background:rgba(124,58,237,0.1)}
+.chip.chip-active{box-shadow:0 0 0 2px currentColor}
+.order-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px;margin-bottom:10px}
+.order-card .o-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.order-card .o-cat{font-weight:700;font-size:14px}
+.order-card .o-meta{color:var(--muted);font-size:12px}
+.set-group{margin-bottom:16px}
+.set-group label{display:block;margin-bottom:8px;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em}
+.set-group input{width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:13px;padding:14px 16px;color:var(--text);outline:none;font-size:15px;font-family:'Inter',sans-serif;transition:border-color 0.2s}
+.set-group input:focus{border-color:rgba(124,58,237,0.5);box-shadow:0 0 0 3px rgba(124,58,237,0.12)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);display:none;align-items:flex-end;justify-content:center;z-index:500;padding:16px}
+.modal-bg.open{display:flex}
+.modal{background:rgba(12,12,24,0.98);border:1px solid rgba(167,139,250,0.2);border-radius:24px;padding:28px;width:100%;max-width:440px;box-shadow:0 32px 64px rgba(0,0,0,0.7);animation:modalIn 0.3s cubic-bezier(0.34,1.56,0.64,1)}
+@keyframes modalIn{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.modal h3{font-size:18px;font-weight:800;margin-bottom:18px}
+.modal input{width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:13px;padding:14px 16px;color:var(--text);font-size:15px;outline:none;margin-bottom:10px;font-family:'Inter',sans-serif}
+.modal-btns{display:flex;gap:10px;margin-top:10px}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(12,12,24,0.97);backdrop-filter:blur(24px);border:1px solid var(--border);border-radius:14px;padding:13px 22px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);max-width:90%;text-align:center;white-space:nowrap;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(4px)}
+.toast.success{border-color:var(--success);color:#34d399}
+.toast.error{border-color:var(--danger);color:#f87171}
+.empty{text-align:center;padding:48px 20px;color:var(--muted)}
+.empty .e-icon{font-size:52px;margin-bottom:14px;opacity:0.7}
+.empty .e-text{font-size:14px;font-weight:500}
+.section-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px}
 </style>
 </head>
 <body>
-
+<div id="toast"></div>
 <div id="login-screen">
   <div class="login-box">
-    <div class="login-logo">🛡️</div>
-    <div class="login-title">Admin Panel</div>
+    <div class="login-icon">&#128737;&#65039;</div>
+    <div class="login-title">Admin <span>Panel</span></div>
     <div class="login-sub">Kirish uchun Telegram orqali tasdiqlang</div>
     <a href="/api/admin/auth" class="login-btn">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
@@ -201,479 +141,119 @@
 
 <nav>
   <button class="active" id="nav-dashboard" onclick="goPage('dashboard',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-    Bosh
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Bosh
   </button>
   <button id="nav-payments" onclick="goPage('payments',this)">
     <div class="nav-badge" id="pending-badge"></div>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-    Tolovlar
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>To'lovlar
   </button>
   <button id="nav-users" onclick="goPage('users',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    Foydalanuvchi
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Foydalanuvchi
   </button>
   <button id="nav-orders" onclick="goPage('orders',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-    Buyurtma
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Buyurtma
   </button>
   <button id="nav-withdrawals" onclick="goPage('withdrawals',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
-    Pul yechish
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Yechish
   </button>
   <button id="nav-settings" onclick="goPage('settings',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    Sozlama
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Sozlama
   </button>
 </nav>
 
 <div class="page active" id="page-dashboard">
-  <div class="page-title">Dashboard <span>📊</span></div>
+  <div class="page-header"><div class="page-title">Dashboard <span>&#128202;</span></div></div>
   <div class="stat-grid">
-    <div class="stat-box purple"><div class="s-icon">👥</div><div class="s-val" id="d-users">-</div><div class="s-lbl">Foydalanuvchi</div></div>
-    <div class="stat-box cyan"><div class="s-icon">📋</div><div class="s-val" id="d-orders">-</div><div class="s-lbl">Buyurtmalar</div></div>
-    <div class="stat-box green"><div class="s-icon">✅</div><div class="s-val" id="d-usernames">-</div><div class="s-lbl">Band qilingan</div></div>
-    <div class="stat-box yellow"><div class="s-icon">💰</div><div class="s-val" id="d-revenue">-</div><div class="s-lbl">Daromad</div></div>
+    <div class="stat-box purple"><div class="s-icon">&#128101;</div><div class="s-val" id="d-users">&#8212;</div><div class="s-lbl">Foydalanuvchi</div></div>
+    <div class="stat-box cyan"><div class="s-icon">&#128203;</div><div class="s-val" id="d-orders">&#8212;</div><div class="s-lbl">Buyurtmalar</div></div>
+    <div class="stat-box green"><div class="s-icon">&#9989;</div><div class="s-val" id="d-usernames">&#8212;</div><div class="s-lbl">Band qilingan</div></div>
+    <div class="stat-box yellow"><div class="s-icon">&#128176;</div><div class="s-val" id="d-revenue">&#8212;</div><div class="s-lbl">Daromad</div></div>
   </div>
-  <div class="chart-card">
-    <div class="chart-title">📈 Kunlik daromad (7 kun)</div>
-    <canvas id="revenue-chart" height="100"></canvas>
-  </div>
-  <div style="font-weight:700;font-size:14px;margin-bottom:10px;">⏳ Kutilayotgan tolovlar</div>
-  <div id="pending-payments-list"><div class="empty"><div class="e-icon">⏳</div><div class="e-text">Yuklanmoqda...</div></div></div>
+  <div class="chart-card"><div class="card-title">&#128200; Kunlik daromad (7 kun)</div><canvas id="revenue-chart" height="110"></canvas></div>
+  <div class="section-label">&#9203; Kutilayotgan to'lovlar</div>
+  <div id="pending-payments-list"><div class="empty"><div class="e-icon">&#9203;</div><div class="e-text">Yuklanmoqda...</div></div></div>
 </div>
 
 <div class="page" id="page-payments">
-  <div class="page-title"><span>Tolovlar</span> 💳</div>
-  <div id="all-payments-list"><div class="empty"><div class="e-icon">💳</div><div class="e-text">Yuklanmoqda...</div></div></div>
+  <div class="page-header"><div class="page-title"><span>To'lovlar</span> &#128179;</div></div>
+  <div id="all-payments-list"><div class="empty"><div class="e-icon">&#128179;</div><div class="e-text">Yuklanmoqda...</div></div></div>
 </div>
 
 <div class="page" id="page-users">
-  <div class="page-title" style="display:flex; justify-content:space-between; align-items:center;">
-    <div>👥 <span>Foydalanuvchilar</span></div>
-    <div class="u-stat-chip chip-purple" id="users-count-badge" style="font-size:11px;">0 ta</div>
+  <div class="page-header"><div class="page-title">&#128101; <span>Foydalanuvchilar</span></div><div class="page-badge" id="users-count-badge">0 ta</div></div>
+  <div class="filter-chips">
+    <div class="chip chip-green" id="filter-connected" onclick="setAdminFilter('connected')">&#128994; <span id="chip-connected">0</span> ulangan</div>
+    <div class="chip chip-red" id="filter-disconnected" onclick="setAdminFilter('disconnected')">&#128308; <span id="chip-disconnected">0</span> uzilgan</div>
+    <div class="chip chip-purple" id="filter-stealth" onclick="setAdminFilter('stealth')">&#128373;&#65039; <span id="chip-stealth">0</span> stealth</div>
   </div>
-  
-  <!-- Stats chips -->
-  <div class="users-stats" id="users-stats-row" style="cursor:pointer; display:flex; gap:10px; margin-bottom: 12px; overflow-x: auto;">
-    <div class="u-stat-chip chip-green" id="filter-connected" onclick="setAdminFilter('connected')" style="transition:0.2s;"><span>🟢</span> <span id="chip-connected">0</span> ulangan</div>
-    <div class="u-stat-chip chip-red" id="filter-disconnected" onclick="setAdminFilter('disconnected')" style="transition:0.2s;"><span>🔴</span> <span id="chip-disconnected">0</span> seans uzilgan</div>
-    <div class="u-stat-chip chip-purple" id="filter-stealth" onclick="setAdminFilter('stealth')" style="transition:0.2s;"><span>🕵️</span> <span id="chip-stealth">0</span> stealth</div>
-  </div>
-
-  <!-- Search -->
-  <input type="text" class="user-search" id="user-search-input" onkeyup="filterAdminUsers()" placeholder="🔍 Ism, ID, @username yoki tel raqam orqali qidiring...">
-
-  <div id="users-list"><div class="empty"><div class="e-icon">👥</div><div class="e-text">Yuklanmoqda...</div></div></div>
+  <input type="text" class="user-search" id="user-search-input" onkeyup="filterAdminUsers()" placeholder="&#128269; Ism, ID, @username yoki tel raqam...">
+  <div id="users-list"><div class="empty"><div class="e-icon">&#128101;</div><div class="e-text">Yuklanmoqda...</div></div></div>
 </div>
 
 <div class="page" id="page-orders">
-  <div class="page-title"><span>Buyurtmalar</span> 📋</div>
-  <div id="orders-list"><div class="empty"><div class="e-icon">📋</div><div class="e-text">Yuklanmoqda...</div></div></div>
+  <div class="page-header"><div class="page-title"><span>Buyurtmalar</span> &#128203;</div></div>
+  <div id="orders-list"><div class="empty"><div class="e-icon">&#128203;</div><div class="e-text">Yuklanmoqda...</div></div></div>
 </div>
 
 <div class="page" id="page-withdrawals">
-  <div class="page-title"><span>Pul yechish so'rovlari</span> 💸</div>
-  <div id="withdrawals-list"><div class="empty"><div class="e-icon">💸</div><div class="e-text">Yuklanmoqda...</div></div></div>
+  <div class="page-header"><div class="page-title"><span>Pul yechish</span> &#128184;</div></div>
+  <div id="withdrawals-list"><div class="empty"><div class="e-icon">&#128184;</div><div class="e-text">Yuklanmoqda...</div></div></div>
 </div>
 
 <div class="page" id="page-settings">
-  <div class="page-title"><span>Sozlamalar</span> ⚙️</div>
+  <div class="page-header"><div class="page-title"><span>Sozlamalar</span> &#9881;&#65039;</div></div>
   <div class="card">
-    <div class="set-group"><label>💳 Karta raqami</label><input type="text" id="set-card" placeholder="8600 0000 0000 0000"></div>
-    <div class="set-group"><label>📢 Tolov kanali ID</label><input type="text" id="set-channel" placeholder="-100123456789"></div>
-    <div class="set-group"><label>💰 Username izlash narxi (som)</label><input type="number" id="set-price" placeholder="5000"></div>
-    <div class="set-group"><label>👑 Premium narxi (som / 30 kun)</label><input type="number" id="set-premium-price" placeholder="20000"></div>
-    <div class="set-group"><label>🎯 Nishon olish narxi (som)</label><input type="number" id="set-monitor-price" placeholder="10000"></div>
-    <div class="set-group"><label>📢 E'lon berish komissiyasi (som)</label><input type="number" id="set-listing-price" placeholder="1000"></div>
-    <button class="btn-primary" onclick="saveSettings()">💾 Saqlash</button>
+    <div class="set-group"><label>&#128179; Karta raqami</label><input type="text" id="set-card" placeholder="8600 0000 0000 0000"></div>
+    <div class="set-group"><label>&#128226; To'lov kanali ID</label><input type="text" id="set-channel" placeholder="-100123456789"></div>
+    <div class="set-group"><label>&#128176; Username izlash narxi (so'm)</label><input type="number" id="set-price" placeholder="5000"></div>
+    <div class="set-group"><label>&#128081; Premium narxi (so'm / 30 kun)</label><input type="number" id="set-premium-price" placeholder="20000"></div>
+    <div class="set-group"><label>&#127919; Nishon olish narxi (so'm)</label><input type="number" id="set-monitor-price" placeholder="10000"></div>
+    <div class="set-group"><label>&#128226; E'lon berish komissiyasi (so'm)</label><input type="number" id="set-listing-price" placeholder="1000"></div>
+    <button class="btn-primary" onclick="saveSettings()">&#128190; Saqlash</button>
   </div>
 </div>
 
-<div class="modal-bg" id="edit-modal">
+<div class="modal-bg" id="edit-modal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
-    <h3>💰 Balans tahrirlash</h3>
-    <input type="number" id="edit-user-id" readonly style="opacity:0.5;">
-    <input type="number" id="edit-amount" placeholder="Yangi balans (som)">
+    <h3>&#128176; Balans tahrirlash</h3>
+    <input type="number" id="edit-user-id" readonly style="opacity:0.4;cursor:not-allowed">
+    <input type="number" id="edit-amount" placeholder="Yangi balans (so'm)">
     <div class="modal-btns">
-      <button class="btn btn-approve" onclick="saveBalance()">Saqlash</button>
-      <button class="btn" style="background:var(--card);color:var(--muted);" onclick="closeModal()">Bekor</button>
+      <button class="btn btn-approve" onclick="saveBalance()">&#9989; Saqlash</button>
+      <button class="btn" style="background:rgba(255,255,255,0.06);color:var(--muted)" onclick="closeModal()">Bekor</button>
     </div>
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
-
 <script>
-let ADMIN_TOKEN = localStorage.getItem('admin_token') || '';
-const h = () => ({'X-Admin-Token': localStorage.getItem('admin_token') || ''});
-
-async function checkAuth() {
-  const params = new URLSearchParams(location.search);
-  const token = params.get('token');
-  if (token) { ADMIN_TOKEN = token; localStorage.setItem('admin_token', token); history.replaceState({}, '', '/admin'); }
-  try {
-    const res = await fetch('/api/admin/check', {headers: h()});
-    if (res.ok) { document.getElementById('login-screen').style.display = 'none'; loadDashboard(); }
-  } catch(e) {}
-}
-
-function goPage(pageId, btn) {
-  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
-  document.getElementById(`page-${pageId}`).classList.add('active');
-  if(btn) btn.classList.add('active');
-  if(pageId === 'dashboard') { loadDashboard(); }
-  if(pageId === 'payments') loadPayments();
-  if(pageId === 'users') loadUsers();
-  if(pageId === 'orders') loadAdminOrders();
-  if(pageId === 'withdrawals') loadWithdrawals();
-  if(pageId === 'settings') loadSettings();
-}
-
-async function loadDashboard() {
-  try {
-    const res = await fetch('/api/admin/stats', {headers: h()});
-    const d = await res.json();
-    document.getElementById('d-users').textContent = d.users||0;
-    document.getElementById('d-orders').textContent = d.orders||0;
-    document.getElementById('d-usernames').textContent = d.usernames||0;
-    document.getElementById('d-revenue').textContent = (d.revenue||0).toLocaleString();
-    drawChart('revenue-chart', d.daily_labels||[], d.daily_revenue||[], '#7c3aed', 'Daromad (so\'m)');
-    
-    // Extra Analytics
-    const aRes = await fetch('/api/admin/analytics', {headers: h()});
-    if (aRes.ok) {
-      const a = await aRes.json();
-      if(a.chart_labels && a.chart_labels.length) {
-        drawChart('revenue-chart', a.chart_labels, a.chart_data, '#06b6d4', 'Sotilgan e\'lonlar tushumi');
-      }
-    }
-  } catch(e) {}
-  loadPendingPayments();
-}
-
-async function loadPendingPayments() {
-  try {
-    const res = await fetch('/api/admin/payments?status=pending', {headers: h()});
-    const payments = await res.json();
-    const badge = document.getElementById('pending-badge');
-    if (payments.length) { badge.textContent = payments.length; badge.style.display = 'block'; } else { badge.style.display = 'none'; }
-    const el = document.getElementById('pending-payments-list');
-    if (!payments.length) { el.innerHTML = '<div class="empty"><div class="e-icon">🎉</div><div class="e-text">Kutilayotgan tolovlar yoq</div></div>'; return; }
-    el.innerHTML = payments.map(p => `
-      <div class="payment-card pending-card">
-        <div class="p-id">Tolov #${p.id}</div>
-        <div class="p-user">👤 ${p.telegram_id}</div>
-        <div class="p-date">🕐 ${new Date(p.created_at*1000).toLocaleString()}</div>
-        <div class="p-actions">
-          <button class="btn btn-approve" onclick="approvePayment(${p.id},${p.telegram_id})">✅ Tasdiqlash</button>
-          <button class="btn btn-reject" onclick="rejectPayment(${p.id},${p.telegram_id})">❌ Rad</button>
-        </div>
-      </div>`).join('');
-  } catch(e) {}
-}
-
-async function loadPayments() {
-  try {
-    const res = await fetch('/api/admin/payments', {headers: h()});
-    const payments = await res.json();
-    const el = document.getElementById('all-payments-list');
-    if (!payments.length) { el.innerHTML = '<div class="empty"><div class="e-icon">💳</div><div class="e-text">Tolovlar yoq</div></div>'; return; }
-    const sTxt = {pending:'⏳ Kutilmoqda', approved:'✅ Tasdiqlandi', rejected:'❌ Rad etildi'};
-    const sCls = {pending:'b-pending', approved:'b-approved', rejected:'b-rejected'};
-    el.innerHTML = payments.map(p => `
-      <div class="payment-card">
-        <div class="p-id">Tolov #${p.id}</div>
-        <div class="p-user">👤 ${p.telegram_id}</div>
-        <div class="p-amount">${(p.amount||0).toLocaleString()} som</div>
-        <div class="p-date">🕐 ${new Date(p.created_at*1000).toLocaleString()}</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;">
-          <span class="badge ${sCls[p.status]||''}">${sTxt[p.status]||p.status}</span>
-          ${p.status==='pending'?`<div style="display:flex;gap:8px;"><button class="btn btn-approve" style="flex:none;padding:8px 14px;" onclick="approvePayment(${p.id},${p.telegram_id})">✅</button><button class="btn btn-reject" style="flex:none;padding:8px 14px;" onclick="rejectPayment(${p.id},${p.telegram_id})">❌</button></div>`:''}
-        </div>
-      </div>`).join('');
-  } catch(e) {}
-}
-
-async function approvePayment(id, userId) {
-  const amt = prompt("Qancha som tasdiqlaysiz?", "50000");
-  if (!amt) return;
-  try { await fetch('/api/admin/payment/approve', {method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({payment_id:id,telegram_id:userId,amount:parseInt(amt)})}); showToast('✅ Tolov tasdiqlandi'); loadDashboard(); loadPayments(); } catch(e) { showToast('Xato','error'); }
-}
-
-async function rejectPayment(id, userId) {
-  if (!confirm("Rad etishni tasdiqlaysizmi?")) return;
-  try { await fetch('/api/admin/payment/reject', {method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({payment_id:id,telegram_id:userId})}); showToast("Tolov rad etildi"); loadDashboard(); loadPayments(); } catch(e) { showToast('Xato','error'); }
-}
-
-async function loadWithdrawals() {
-  try {
-    const res = await fetch('/api/admin/withdrawals', {headers: h()});
-    const withdrawals = await res.json();
-    const el = document.getElementById('withdrawals-list');
-    if (!withdrawals.length) { el.innerHTML = '<div class="empty"><div class="e-icon">💸</div><div class="e-text">Pul yechish so\'rovlari yo\'q</div></div>'; return; }
-    const sTxt = {pending:'⏳ Kutilmoqda', paid:'✅ To\'landi', rejected:'❌ Rad etildi'};
-    const sCls = {pending:'b-pending', paid:'b-approved', rejected:'b-rejected'};
-    el.innerHTML = withdrawals.map(w => `
-      <div class="payment-card">
-        <div class="p-id">So'rov #${w.id}</div>
-        <div class="p-user">👤 ${w.first_name || w.telegram_id}</div>
-        <div class="p-amount">${(w.amount||0).toLocaleString()} so'm</div>
-        <div class="p-date" style="color:var(--text);margin-bottom:4px;">💳 Karta: ${w.card_number}</div>
-        <div class="p-date" style="color:var(--text);margin-bottom:12px;">👤 Egasi: ${w.card_owner}</div>
-        <div class="p-date">🕐 ${new Date(w.created_at*1000).toLocaleString()}</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;">
-          <span class="badge ${sCls[w.status]||''}">${sTxt[w.status]||w.status}</span>
-          ${w.status==='pending'?`<div style="display:flex;gap:8px;">
-            <button class="btn btn-approve" style="flex:none;padding:8px 14px;" onclick="confirmWithdrawal(${w.id})">✅ To'ladim</button>
-            <button class="btn btn-reject" style="flex:none;padding:8px 14px;" onclick="rejectWithdrawal(${w.id})">❌ Rad</button>
-          </div>`:''}
-        </div>
-      </div>`).join('');
-  } catch(e) {}
-}
-
-async function confirmWithdrawal(id) {
-  if (!confirm("Haqiqatdan ham pulni karta raqamiga o'tkazib bo'ldingizmi?")) return;
-  try {
-    const res = await fetch('/api/admin/withdrawal/confirm', {
-      method:'POST', headers:{...h(),'Content-Type':'application/json'},
-      body: JSON.stringify({withdrawal_id: id})
-    });
-    const d = await res.json();
-    if(d.ok) { showToast("Tasdiqlandi", "success"); loadWithdrawals(); }
-    else showToast(d.error, "error");
-  } catch(e) { showToast("Xato", "error"); }
-}
-
-async function rejectWithdrawal(id) {
-  if (!confirm("Pul yechishni rad etasizmi? (Pul sotuvchiga qaytadi)")) return;
-  try {
-    const res = await fetch('/api/admin/withdrawal/reject', {
-      method:'POST', headers:{...h(),'Content-Type':'application/json'},
-      body: JSON.stringify({withdrawal_id: id})
-    });
-    const d = await res.json();
-    if(d.ok) { showToast("Rad etildi", "success"); loadWithdrawals(); }
-    else showToast(d.error, "error");
-  } catch(e) { showToast("Xato", "error"); }
-}
-
-let allUsersData = [];
-
-async function loadUsers() {
-  try {
-    const res = await fetch('/api/admin/users', {headers: h()});
-    allUsersData = await res.json();
-    renderAdminUsers(allUsersData);
-  } catch(e) {}
-}
-
-function renderAdminUsers(users) {
-  const el = document.getElementById('users-list');
-  const countBadge = document.getElementById('users-count-badge');
-  
-  // Update stat chips
-  const total = users.length;
-  const connected = users.filter(u => u.session_string).length;
-  const stealth = users.filter(u => u.is_stealth === 1).length;
-  if (countBadge) countBadge.textContent = `${total} ta`;
-  const cc = document.getElementById('chip-connected');
-  const cd = document.getElementById('chip-disconnected');
-  const cs = document.getElementById('chip-stealth');
-  if (cc) cc.textContent = connected;
-  if (cd) cd.textContent = total - connected;
-  if (cs) cs.textContent = stealth;
-  
-  if (!users.length) { 
-    el.innerHTML = '<div class="empty"><div class="e-icon">👥</div><div class="e-text">Foydalanuvchilar topilmadi</div></div>'; 
-    return; 
-  }
-  
-  el.innerHTML = users.map(u => {
-    const isStealth = u.is_stealth === 1;
-    const isConnected = !!u.session_string;
-    
-    // Get initials / avatar content
-    const displayName = u.first_name || String(u.telegram_id);
-    const initials = displayName.slice(0,2).toUpperCase();
-    const avatarContent = isStealth ? '🕵️' : initials;
-    
-    // Connection badge
-    const connBadge = isConnected
-      ? `<span class="connected-badge">🟢 Ulangan</span>`
-      : `<span class="disconnected-badge">🔴 Seans uzilgan</span>`;
-    
-    // Stealth badge
-    const stealthBadge = isStealth
-      ? `<span class="stealth-badge">🕵️ Stealth</span>`
-      : '';
-    
-    // Username link
-    const nameLink = u.username
-      ? `<a href="javascript:void(0)" onclick="window.Telegram.WebApp.openTelegramLink('https://t.me/${u.username}')" style="color:inherit;text-decoration:none;">${displayName}</a>`
-      : `<a href="javascript:void(0)" onclick="window.location.href='tg://user?id=${u.telegram_id}'" style="color:inherit;text-decoration:none;">${displayName}</a>`;
-    
-    return `
-    <div class="user-card ${isStealth ? 'stealth-card' : ''}">
-      <div class="user-avatar ${isStealth ? 'stealth-avatar' : ''}">${avatarContent}</div>
-      <div class="user-info">
-        <div class="u-name">${nameLink}</div>
-        ${u.username ? `<div class="u-username">@${u.username} · ID: ${u.telegram_id}</div>` : `<div class="u-username">ID: ${u.telegram_id}</div>`}
-        ${u.phone ? `<div class="u-phone" style="color:var(--text); font-size:12px; margin-top:4px;">📱 +${u.phone.replace('+','')}</div>` : '<div class="u-phone" style="color:var(--muted); font-size:12px; margin-top:4px;">📱 Raqam yo\'q</div>'}
-        <div class="u-bal">💰 <b>${(u.balance||0).toLocaleString()}</b> so'm</div>
-        <div class="u-status" style="margin-top:5px;">
-          ${connBadge}
-          ${stealthBadge}
-          <span style="color:var(--muted);">${u.order_count||0} buyurtma</span>
-        </div>
-      </div>
-      <div class="u-action-col">
-        <button class="btn-action btn-balance" onclick="openEditBalance(${u.id},${u.telegram_id},${u.balance||0})">✏️ Balans</button>
-        <button class="btn-action ${isStealth ? 'btn-stealth-off' : 'btn-stealth-on'}" onclick="toggleStealth(${u.telegram_id})">
-          ${isStealth ? '🔓 Stealth off' : '🕵️ Stealth on'}
-        </button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-let activeUserFilter = null; // null, 'connected', 'disconnected', 'stealth'
-
-function setAdminFilter(filterType) {
-  if (activeUserFilter === filterType) {
-    activeUserFilter = null; // Toggle off
-  } else {
-    activeUserFilter = filterType;
-  }
-  
-  // Update UI for filters
-  document.getElementById('filter-connected').style.opacity = (activeUserFilter === null || activeUserFilter === 'connected') ? '1' : '0.4';
-  document.getElementById('filter-disconnected').style.opacity = (activeUserFilter === null || activeUserFilter === 'disconnected') ? '1' : '0.4';
-  document.getElementById('filter-stealth').style.opacity = (activeUserFilter === null || activeUserFilter === 'stealth') ? '1' : '0.4';
-  
-  filterAdminUsers();
-}
-
-function filterAdminUsers() {
-  const query = (document.getElementById('user-search-input').value || '').toLowerCase().trim();
-  
-  const filtered = allUsersData.filter(u => {
-    // Text search
-    const name = (u.first_name || '').toLowerCase();
-    const uname = (u.username || '').toLowerCase();
-    const tid = String(u.telegram_id);
-    const phone = (u.phone || '').toLowerCase();
-    const matchesQuery = !query || name.includes(query) || uname.includes(query) || tid.includes(query) || phone.includes(query);
-    
-    // Status filter
-    let matchesStatus = true;
-    if (activeUserFilter === 'connected') {
-      matchesStatus = !!u.session_string;
-    } else if (activeUserFilter === 'disconnected') {
-      matchesStatus = !u.session_string;
-    } else if (activeUserFilter === 'stealth') {
-      matchesStatus = u.is_stealth === 1;
-    }
-    
-    return matchesQuery && matchesStatus;
-  });
-  
-  renderAdminUsers(filtered);
-}
-
-async function toggleStealth(telegramId) {
-  try {
-    const res = await fetch('/api/admin/user/toggle_stealth', {
-      method: 'POST',
-      headers: {...h(), 'Content-Type':'application/json'},
-      body: JSON.stringify({ telegram_id: telegramId })
-    });
-    const d = await res.json();
-    if (d.ok) {
-      const statusText = d.is_stealth === 1 ? '🕵️ Yashirin rejim yoqildi!' : '🔓 Yashirin rejim o\'chirildi!';
-      showToast(statusText, 'success');
-      loadUsers();
-    } else {
-      showToast(d.error || 'Xato yuz berdi', 'error');
-    }
-  } catch(e) {
-    showToast('Xatolik yuz berdi', 'error');
-  }
-}
-
-function openEditBalance(id, telegramId, currentBal) { document.getElementById('edit-user-id').value = telegramId; document.getElementById('edit-amount').value = currentBal; document.getElementById('edit-modal').classList.add('open'); }
-function closeModal() { document.getElementById('edit-modal').classList.remove('open'); }
-
-async function refreshPhones() {
-  showToast('⏳ Raqamlar yangilanmoqda...');
-  try {
-    const res = await fetch('/api/admin/refresh_phones', {method:'POST', headers: h()});
-    const d = await res.json();
-    if (d.ok) {
-      showToast(`✅ ${d.updated} ta raqam yangilandi`, 'success');
-      loadUsers();
-    } else {
-      showToast('Xato yuz berdi', 'error');
-    }
-  } catch(e) { showToast('Xato', 'error'); }
-}
-
-async function saveBalance() {
-  const tid = document.getElementById('edit-user-id').value;
-  const amt = parseInt(document.getElementById('edit-amount').value);
-  try { await fetch('/api/admin/user/balance', {method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({telegram_id:parseInt(tid),amount:amt})}); showToast('✅ Balans yangilandi'); closeModal(); loadUsers(); } catch(e) { showToast('Xato','error'); }
-}
-
-async function loadAdminOrders() {
-  try {
-    const res = await fetch('/api/admin/orders', {headers: h()});
-    const orders = await res.json();
-    const el = document.getElementById('orders-list');
-    if (!orders.length) { el.innerHTML = '<div class="empty"><div class="e-icon">📋</div><div class="e-text">Buyurtmalar yoq</div></div>'; return; }
-    const sTxt = {pending:'⏳ Kutilmoqda', processing:'🔄 Qidirilmoqda', completed:'✅ Bajarildi'};
-    const sCls = {pending:'b-pending', processing:'b-processing', completed:'b-completed'};
-    el.innerHTML = orders.map(o => `
-      <div class="order-card">
-        <div class="o-top"><div class="o-cat">📂 ${o.category}</div><span class="badge ${sCls[o.status]||'b-pending'}">${sTxt[o.status]||o.status}</span></div>
-        <div class="o-meta">👤 ${o.telegram_id} • ${o.registered_count}/${o.quantity} band • ${(o.price||0).toLocaleString()} som</div>
-      </div>`).join('');
-  } catch(e) {}
-}
-
-async function loadSettings() {
-  try { const res = await fetch('/api/admin/settings', {headers: h()}); const d = await res.json(); 
-  document.getElementById('set-card').value = d.payment_card||''; 
-  document.getElementById('set-channel').value = d.payment_channel_id||''; 
-  document.getElementById('set-price').value = d.username_price||'5000'; 
-  document.getElementById('set-premium-price').value = d.premium_price||'20000'; 
-  document.getElementById('set-monitor-price').value = d.monitor_price||'10000'; 
-  document.getElementById('set-listing-price').value = d.listing_price||'1000'; 
-  } catch(e) {}
-}
-
-async function saveSettings() {
-  const data = {
-    payment_card: document.getElementById('set-card').value, 
-    payment_channel_id: document.getElementById('set-channel').value, 
-    username_price: document.getElementById('set-price').value,
-    premium_price: document.getElementById('set-premium-price').value,
-    monitor_price: document.getElementById('set-monitor-price').value,
-    listing_price: document.getElementById('set-listing-price').value
-  };
-  try { await fetch('/api/admin/settings', {method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify(data)}); showToast('✅ Sozlamalar saqlandi'); } catch(e) { showToast('Xato yuz berdi','error'); }
-}
-
-const charts = {};
-function drawChart(id, labels, data, color, label) {
-  if (charts[id]) charts[id].destroy();
-  const ctx = document.getElementById(id).getContext('2d');
-  charts[id] = new Chart(ctx, {type:'line', data:{labels, datasets:[{label, data, borderColor:color, backgroundColor:color+'22', tension:0.4, fill:true, pointBackgroundColor:color, pointRadius:4}]}, options:{responsive:true, plugins:{legend:{display:false}}, scales:{x:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b',font:{size:10}}}, y:{grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b',font:{size:10}}}}}});
-}
-
-function showToast(msg, type='success') { const t = document.getElementById('toast'); t.textContent = msg; t.className = `toast show ${type}`; setTimeout(()=>t.classList.remove('show'), 3000); }
-
+let ADMIN_TOKEN=localStorage.getItem('admin_token')||'';
+const h=()=>({'X-Admin-Token':localStorage.getItem('admin_token')||''});
+async function checkAuth(){const p=new URLSearchParams(location.search);const t=p.get('token');if(t){ADMIN_TOKEN=t;localStorage.setItem('admin_token',t);history.replaceState({},'','/admin')}try{const r=await fetch('/api/admin/check',{headers:h()});if(r.ok){document.getElementById('login-screen').style.display='none';loadDashboard()}}catch(e){}}
+function goPage(id,btn){document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));document.querySelectorAll('nav button').forEach(el=>el.classList.remove('active'));document.getElementById('page-'+id).classList.add('active');if(btn)btn.classList.add('active');if(id==='dashboard')loadDashboard();if(id==='payments')loadPayments();if(id==='users')loadUsers();if(id==='orders')loadAdminOrders();if(id==='withdrawals')loadWithdrawals();if(id==='settings')loadSettings()}
+function animateCount(id,target,isMoney){const el=document.getElementById(id);if(!el)return;let s=0;const step=Math.max(1,target/30);const t=setInterval(()=>{s=Math.min(s+step,target);el.textContent=isMoney?Math.round(s).toLocaleString():Math.round(s);if(s>=target)clearInterval(t)},30)}
+async function loadDashboard(){try{const r=await fetch('/api/admin/stats',{headers:h()});const d=await r.json();animateCount('d-users',d.users||0);animateCount('d-orders',d.orders||0);animateCount('d-usernames',d.usernames||0);animateCount('d-revenue',d.revenue||0,true);drawChart('revenue-chart',d.daily_labels||[],d.daily_revenue||[],'#7c3aed',"Daromad");try{const ar=await fetch('/api/admin/analytics',{headers:h()});if(ar.ok){const a=await ar.json();if(a.chart_labels&&a.chart_labels.length)drawChart('revenue-chart',a.chart_labels,a.chart_data,'#06b6d4',"Tushum")}}catch(e2){}}catch(e){}loadPendingPayments()}
+async function loadPendingPayments(){try{const r=await fetch('/api/admin/payments?status=pending',{headers:h()});const payments=await r.json();const badge=document.getElementById('pending-badge');if(payments.length){badge.textContent=payments.length;badge.style.display='block'}else badge.style.display='none';const el=document.getElementById('pending-payments-list');if(!payments.length){el.innerHTML='<div class="empty"><div class="e-icon">&#127881;</div><div class="e-text">Barcha to\'lovlar ko\'rib chiqilgan!</div></div>';return}el.innerHTML=payments.map(p=>'<div class="payment-card pending-card"><div class="p-id">#'+p.id+' &middot; '+new Date(p.created_at*1000).toLocaleString()+'</div><div class="p-user">&#128100; '+p.telegram_id+'</div><div class="p-amount">'+(p.amount||0).toLocaleString()+' so\'m</div><div class="p-actions"><button class="btn btn-approve" onclick="approvePayment('+p.id+','+p.telegram_id+')">&#9989; Tasdiqlash</button><button class="btn btn-reject" onclick="rejectPayment('+p.id+','+p.telegram_id+')">&#10060; Rad</button></div></div>').join('')}catch(e){}}
+async function loadPayments(){try{const r=await fetch('/api/admin/payments',{headers:h()});const payments=await r.json();const el=document.getElementById('all-payments-list');if(!payments.length){el.innerHTML='<div class="empty"><div class="e-icon">&#128179;</div><div class="e-text">To\'lovlar yo\'q</div></div>';return}const sT={pending:'&#9203; Kutilmoqda',approved:'&#9989; Tasdiqlandi',rejected:'&#10060; Rad etildi'};const sC={pending:'b-pending',approved:'b-approved',rejected:'b-rejected'};el.innerHTML=payments.map(p=>'<div class="payment-card '+(p.status==='pending'?'pending-card':'')+'"><div class="p-id">#'+p.id+'</div><div class="p-user">&#128100; '+p.telegram_id+'</div><div class="p-amount">'+(p.amount||0).toLocaleString()+' so\'m</div><div class="p-date">&#128336; '+new Date(p.created_at*1000).toLocaleString()+'</div><div style="display:flex;align-items:center;justify-content:space-between"><span class="badge '+(sC[p.status]||'')+'">'+(sT[p.status]||p.status)+'</span>'+(p.status==='pending'?'<div style="display:flex;gap:8px"><button class="btn btn-approve" style="flex:none;padding:8px 14px" onclick="approvePayment('+p.id+','+p.telegram_id+')">&#9989;</button><button class="btn btn-reject" style="flex:none;padding:8px 14px" onclick="rejectPayment('+p.id+','+p.telegram_id+')">&#10060;</button></div>':'')+'</div></div>').join('')}catch(e){}}
+async function approvePayment(id,uid){const amt=prompt("Qancha so'm tasdiqlaysiz?","50000");if(!amt)return;try{await fetch('/api/admin/payment/approve',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({payment_id:id,telegram_id:uid,amount:parseInt(amt)})});showToast("&#9989; To'lov tasdiqlandi",'success');loadDashboard();loadPayments()}catch(e){showToast('Xato','error')}}
+async function rejectPayment(id,uid){if(!confirm("Rad etishni tasdiqlaysizmi?"))return;try{await fetch('/api/admin/payment/reject',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({payment_id:id,telegram_id:uid})});showToast("To'lov rad etildi");loadDashboard();loadPayments()}catch(e){showToast('Xato','error')}}
+async function loadWithdrawals(){try{const r=await fetch('/api/admin/withdrawals',{headers:h()});const ws=await r.json();const el=document.getElementById('withdrawals-list');if(!ws.length){el.innerHTML='<div class="empty"><div class="e-icon">&#128184;</div><div class="e-text">Pul yechish so\'rovlari yo\'q</div></div>';return}const sT={pending:'&#9203; Kutilmoqda',paid:"&#9989; To'landi",rejected:'&#10060; Rad etildi'};const sC={pending:'b-pending',paid:'b-approved',rejected:'b-rejected'};el.innerHTML=ws.map(w=>'<div class="payment-card '+(w.status==='pending'?'pending-card':'')+'"><div class="p-id">So\'rov #'+w.id+'</div><div class="p-user">&#128100; '+(w.first_name||w.telegram_id)+'</div><div class="p-amount">'+(w.amount||0).toLocaleString()+' so\'m</div><div class="p-date" style="color:var(--text);margin-bottom:3px">&#128179; '+w.card_number+'</div><div class="p-date" style="color:var(--text);margin-bottom:10px">&#128100; '+w.card_owner+'</div><div class="p-date">&#128336; '+new Date(w.created_at*1000).toLocaleString()+'</div><div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px"><span class="badge '+(sC[w.status]||'')+'">'+(sT[w.status]||w.status)+'</span>'+(w.status==='pending'?'<div style="display:flex;gap:8px"><button class="btn btn-approve" style="flex:none;padding:8px 14px" onclick="confirmWithdrawal('+w.id+')">&#9989; To\'ladim</button><button class="btn btn-reject" style="flex:none;padding:8px 14px" onclick="rejectWithdrawal('+w.id+')">&#10060; Rad</button></div>':'')+'</div></div>').join('')}catch(e){}}
+async function confirmWithdrawal(id){if(!confirm("Pulni karta raqamiga o'tkazib bo'ldingizmi?"))return;try{const r=await fetch('/api/admin/withdrawal/confirm',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({withdrawal_id:id})});const d=await r.json();if(d.ok){showToast("&#9989; Tasdiqlandi",'success');loadWithdrawals()}else showToast(d.error,'error')}catch(e){showToast("Xato",'error')}}
+async function rejectWithdrawal(id){if(!confirm("Pul yechishni rad etasizmi? (Pul sotuvchiga qaytadi)"))return;try{const r=await fetch('/api/admin/withdrawal/reject',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({withdrawal_id:id})});const d=await r.json();if(d.ok){showToast("Rad etildi",'success');loadWithdrawals()}else showToast(d.error,'error')}catch(e){showToast("Xato",'error')}}
+let allUsersData=[],activeUserFilter=null;
+async function loadUsers(){try{const r=await fetch('/api/admin/users',{headers:h()});allUsersData=await r.json();renderAdminUsers(allUsersData)}catch(e){}}
+function renderAdminUsers(users){const el=document.getElementById('users-list');const cb=document.getElementById('users-count-badge');const total=users.length,connected=users.filter(u=>u.session_string).length,stealth=users.filter(u=>u.is_stealth===1).length;if(cb)cb.textContent=total+' ta';const cc=document.getElementById('chip-connected'),cd=document.getElementById('chip-disconnected'),cs=document.getElementById('chip-stealth');if(cc)cc.textContent=connected;if(cd)cd.textContent=total-connected;if(cs)cs.textContent=stealth;if(!users.length){el.innerHTML='<div class="empty"><div class="e-icon">&#128101;</div><div class="e-text">Foydalanuvchilar topilmadi</div></div>';return}el.innerHTML=users.map((u,i)=>{const isStealth=u.is_stealth===1,isConn=!!u.session_string,dn=u.first_name||String(u.telegram_id),init=dn.slice(0,2).toUpperCase(),av=isStealth?'&#128373;&#65039;':init,connB=isConn?'<span class="connected-badge">&#128994; Ulangan</span>':'<span class="disconnected-badge">&#128308; Uzilgan</span>',stB=isStealth?'<span class="stealth-badge">&#128373;&#65039; Stealth</span>':'';return'<div class="user-card '+(isStealth?'stealth-card':'')+'" style="animation-delay:'+(i*25)+'ms"><div class="user-avatar '+(isStealth?'stealth-avatar':'')+'">'+av+'</div><div class="user-info"><div class="u-name">'+dn+'</div>'+(u.username?'<div class="u-username">@'+u.username+' &middot; '+u.telegram_id+'</div>':'<div class="u-username">ID: '+u.telegram_id+'</div>')+(u.phone?'<div class="u-phone">&#128241; +'+u.phone.replace('+','')+'</div>':'<div class="u-phone" style="color:var(--muted)">&#128241; Raqam yo\'q</div>')+'<div class="u-bal">&#128176; <b>'+(u.balance||0).toLocaleString()+"</b> so'm</div><div class=\"u-status\">"+connB+stB+'<span>'+(u.order_count||0)+' buyurtma</span></div></div><div class="u-action-col"><button class="btn-action btn-balance" onclick="openEditBalance('+u.id+','+u.telegram_id+','+(u.balance||0)+')">&#9999;&#65039; Balans</button><button class="btn-action '+(isStealth?'btn-stealth-off':'btn-stealth-on')+'" onclick="toggleStealth('+u.telegram_id+')">'+(isStealth?'&#128275; Off':'&#128373;&#65039; On')+'</button></div></div>'}).join('')}
+function setAdminFilter(f){activeUserFilter=activeUserFilter===f?null:f;['connected','disconnected','stealth'].forEach(x=>{const el=document.getElementById('filter-'+x);if(!el)return;el.style.opacity=(!activeUserFilter||activeUserFilter===x)?'1':'0.4';el.classList.toggle('chip-active',activeUserFilter===x)});filterAdminUsers()}
+function filterAdminUsers(){const q=(document.getElementById('user-search-input').value||'').toLowerCase().trim();const filtered=allUsersData.filter(u=>{const n=(u.first_name||'').toLowerCase(),un=(u.username||'').toLowerCase(),tid=String(u.telegram_id),ph=(u.phone||'').toLowerCase(),mQ=!q||n.includes(q)||un.includes(q)||tid.includes(q)||ph.includes(q);let mS=true;if(activeUserFilter==='connected')mS=!!u.session_string;else if(activeUserFilter==='disconnected')mS=!u.session_string;else if(activeUserFilter==='stealth')mS=u.is_stealth===1;return mQ&&mS});renderAdminUsers(filtered)}
+async function toggleStealth(tid){try{const r=await fetch('/api/admin/user/toggle_stealth',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({telegram_id:tid})});const d=await r.json();if(d.ok){showToast(d.is_stealth===1?'&#128373;&#65039; Stealth yoqildi!':'&#128275; Stealth o\'chirildi!','success');loadUsers()}else showToast(d.error||'Xato','error')}catch(e){showToast('Xatolik','error')}}
+function openEditBalance(id,tid,bal){document.getElementById('edit-user-id').value=tid;document.getElementById('edit-amount').value=bal;document.getElementById('edit-modal').classList.add('open')}
+function closeModal(){document.getElementById('edit-modal').classList.remove('open')}
+async function saveBalance(){const tid=document.getElementById('edit-user-id').value,amt=parseInt(document.getElementById('edit-amount').value);try{await fetch('/api/admin/user/balance',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify({telegram_id:parseInt(tid),amount:amt})});showToast('&#9989; Balans yangilandi','success');closeModal();loadUsers()}catch(e){showToast('Xato','error')}}
+async function loadAdminOrders(){try{const r=await fetch('/api/admin/orders',{headers:h()});const orders=await r.json();const el=document.getElementById('orders-list');if(!orders.length){el.innerHTML='<div class="empty"><div class="e-icon">&#128203;</div><div class="e-text">Buyurtmalar yo\'q</div></div>';return}const sT={pending:'&#9203; Kutilmoqda',processing:'&#128260; Qidirilmoqda',completed:'&#9989; Bajarildi'};const sC={pending:'b-pending',processing:'b-processing',completed:'b-completed'};el.innerHTML=orders.map(o=>'<div class="order-card"><div class="o-top"><div class="o-cat">&#128193; '+o.category+'</div><span class="badge '+(sC[o.status]||'b-pending')+'">'+(sT[o.status]||o.status)+'</span></div><div class="o-meta">&#128100; '+o.telegram_id+' &middot; '+o.registered_count+'/'+o.quantity+' band &middot; '+(o.price||0).toLocaleString()+' so\'m</div></div>').join('')}catch(e){}}
+async function loadSettings(){try{const r=await fetch('/api/admin/settings',{headers:h()});const d=await r.json();document.getElementById('set-card').value=d.payment_card||'';document.getElementById('set-channel').value=d.payment_channel_id||'';document.getElementById('set-price').value=d.username_price||'5000';document.getElementById('set-premium-price').value=d.premium_price||'20000';document.getElementById('set-monitor-price').value=d.monitor_price||'10000';document.getElementById('set-listing-price').value=d.listing_price||'1000'}catch(e){}}
+async function saveSettings(){const data={payment_card:document.getElementById('set-card').value,payment_channel_id:document.getElementById('set-channel').value,username_price:document.getElementById('set-price').value,premium_price:document.getElementById('set-premium-price').value,monitor_price:document.getElementById('set-monitor-price').value,listing_price:document.getElementById('set-listing-price').value};try{await fetch('/api/admin/settings',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:JSON.stringify(data)});showToast('&#9989; Sozlamalar saqlandi','success')}catch(e){showToast('Xato yuz berdi','error')}}
+const charts={};
+function drawChart(id,labels,data,color,label){if(charts[id])charts[id].destroy();const ctx=document.getElementById(id).getContext('2d');const g=ctx.createLinearGradient(0,0,0,180);g.addColorStop(0,color+'55');g.addColorStop(1,color+'00');charts[id]=new Chart(ctx,{type:'line',data:{labels,datasets:[{label,data,borderColor:color,backgroundColor:g,tension:0.4,fill:true,pointBackgroundColor:color,pointRadius:4,pointHoverRadius:6,borderWidth:2}]},options:{responsive:true,plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(12,12,24,0.95)',borderColor:color,borderWidth:1,titleColor:'#f1f5f9',bodyColor:'#94a3b8',padding:12,cornerRadius:10}},scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#64748b',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#64748b',font:{size:10}}}}}})}
+function showToast(msg,type){type=type||'success';const t=document.getElementById('toast');t.innerHTML=msg;t.className='toast show '+type;setTimeout(()=>t.classList.remove('show'),3000)}
 checkAuth();
 </script>
 </body>
