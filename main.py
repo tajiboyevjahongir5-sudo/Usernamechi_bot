@@ -1710,7 +1710,7 @@ async def api_auction_bid(request: Request):
                 await bot_inst.send_message(prev_bidder, f"⚡ <b>Stavka oshirildi!</b>\n\n@{listing['username']} auksionida sizning stavkangizdan yuqori (<b>{bid_amount:,} so'm</b>) stavka berildi.")
             except Exception: pass
             
-        return {"ok": True, "new_bid": bid_amount}
+@app.post("/api/check_username")
 async def api_check_username(request: Request):
     data = await request.json()
     user = verify_init_data(data.get('init_data',''))
@@ -1723,8 +1723,12 @@ async def api_check_username(request: Request):
     row = await get_user(tid)
     session_str = row.get('session_string') if row else None
     
+    # Foydalanuvchida session bo'lmasa, stealth clientlardan birini ishlatamiz
     if not session_str:
-        return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
+        if STEALTH_SESSIONS:
+            session_str = STEALTH_SESSIONS[0]
+        else:
+            return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
         
     try:
         from telethon import TelegramClient
