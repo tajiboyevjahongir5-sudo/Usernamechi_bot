@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Admin Command Center — Usernamechi</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 :root {
@@ -35,7 +36,10 @@ html, body {
   color: var(--text-main);
   min-height: 100vh;
   overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
   overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Background mesh */
@@ -592,6 +596,17 @@ body::before {
 </div>
 
 <script>
+// Initialize Telegram WebApp if available
+try {
+  if (window.Telegram && window.Telegram.WebApp) {
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+    if (tg.requestFullscreen) tg.requestFullscreen();
+    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+  }
+} catch(e) {}
+
 let ADMIN_TOKEN = localStorage.getItem('admin_token') || '';
 const headers = () => ({ 'X-Admin-Token': localStorage.getItem('admin_token') || '' });
 
