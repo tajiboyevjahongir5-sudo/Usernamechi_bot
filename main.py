@@ -1089,8 +1089,9 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                         return
                     text = await resp.text()
                     
-                    # 1-Bosqich: HTTP orqali profil/kanal mavjud emasligini tekshirish
-                    if 'tgme_page_title' not in text and 'tgme_page_extra' not in text:
+                    # 1-Bosqich: HTTP orqali profil/kanal mavjud emasligini to'liq tekshirish
+                    # Telegramda mavjud profillar <div class="tgme_page_title" tegiga ega bo'ladi
+                    if '<div class="tgme_page_title"' not in text and 'tgme_page_extra' not in text:
                         is_free = False
                         
                         # 2-Bosqich: TELEGRAM OFFICIAL API BILAN TEKSHIRISH (Agar seans ulansa)
@@ -1105,9 +1106,8 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                             except Exception:
                                 is_free = False
                         else:
-                            # Telethon seansi ulanmagan bo'lsa, HTTP orqali bo'sh nomligini tasdiqlaymiz
-                            # Profil nomi yo'q va auksion iboralari bo'lmasa — BO'SH NOM
-                            if 'tgme_page_description' not in text:
+                            # Telethon seansi ulanmagan bo'lsa: profil sarlavhasi elementi yo'q bo'lsa — 100% BO'SH NOM!
+                            if 'Fragment' not in text and 'Auction' not in text:
                                 is_free = True
                         
                         if is_free:
