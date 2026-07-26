@@ -144,6 +144,8 @@
     touch-action: manipulation;
     -webkit-user-select: none;
     user-select: none;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* AMBIENT GLOW BACKGROUND */
@@ -212,27 +214,30 @@
     100% { transform: rotate(360deg); }
   }
 
-  /* LIQUID DROPLET INDICATOR (TOUCH DRAGGABLE & HIGH VISIBILITY) */
+  /* LIQUID DROPLET INDICATOR - FULLY VISIBLE & DRAGGABLE */
   .nav-droplet {
     position: absolute;
     top: 50%;
     left: 0;
-    width: 65px;
-    height: 46px;
-    background: linear-gradient(135deg, rgba(167, 139, 250, 0.85), rgba(56, 189, 248, 0.75));
-    border: 1.5px solid rgba(255, 255, 255, 0.8);
-    border-radius: 28px;
-    box-shadow: 0 4px 30px rgba(167, 139, 250, 0.85), inset 0 1px 4px rgba(255,255,255,0.9);
+    width: 72px;
+    height: 50px;
+    transform: translate(0px, -50%);
+    background: linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #22d3ee 100%);
+    border-radius: 30px;
+    box-shadow:
+      0 0 0 2px rgba(255,255,255,0.3),
+      0 6px 24px rgba(139, 92, 246, 1),
+      0 0 40px rgba(139, 92, 246, 0.6),
+      inset 0 1px 0 rgba(255,255,255,0.5);
     pointer-events: none;
-    transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.25s ease, opacity 0.2s ease;
     z-index: 1;
-    opacity: 1 !important;
     will-change: transform, width;
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+                width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   .nav-droplet.dragging {
-    transition: transform 0.05s ease-out, width 0.08s ease-out, border-radius 0.08s ease-out;
-    border-radius: 40% 60% 65% 35% / 55% 45% 55% 45%;
-    box-shadow: 0 6px 32px rgba(6, 182, 212, 0.8), inset 0 1px 4px rgba(255,255,255,0.8);
+    transition: none;
+    border-radius: 40% 60% 60% 40% / 50%;
   }
   .nav-droplet.snap {
     animation: dropSnap 0.4s cubic-bezier(0.34, 1.6, 0.64, 1);
@@ -1227,7 +1232,8 @@
 </div>
 
 <!-- BOTTOM NAV -->
-<nav>
+<nav id="main-nav">
+  <div class="nav-droplet" id="nav-droplet"></div>
   <button class="active" id="nav-home" onclick="goPage('home')">
     <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/House/3D/house_3d.png" class="icon-3d-img" alt="Bosh">
     Bosh
@@ -1261,7 +1267,34 @@ try {
   tg.setHeaderColor('#0a0a0f');
   tg.setBackgroundColor('#0a0a0f');
   tg.enableClosingConfirmation();
+  // Prevent swipe-down-to-close on Android/iOS Telegram
+  if (tg.disableVerticalSwipes) {
+    tg.disableVerticalSwipes();
+  }
 } catch(e) {}
+
+// Prevent overscroll / bounce that triggers app close
+document.addEventListener('touchmove', function(e) {
+  // Allow scrolling inside scrollable containers only
+  let el = e.target;
+  let canScroll = false;
+  while (el && el !== document.body) {
+    const style = getComputedStyle(el);
+    const overflow = style.overflowY;
+    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) {
+      canScroll = true;
+      break;
+    }
+    el = el.parentElement;
+  }
+  if (!canScroll) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+// Prevent browser pull-to-refresh / overscroll
+document.body.style.overscrollBehavior = 'none';
+document.documentElement.style.overscrollBehavior = 'none';
 
 const API = '';  // same origin
 let userData = {};
@@ -1827,25 +1860,26 @@ let isDraggingNav = false;
 function moveDropletTo(navBtn, animate = true) {
   const droplet = document.getElementById('nav-droplet');
   if (!droplet || !navBtn) return;
-  const navContainer = navBtn.parentElement;
+  const navContainer = document.getElementById('main-nav');
   const btnRect = navBtn.getBoundingClientRect();
   const navRect = navContainer.getBoundingClientRect();
-  
+
   const left = btnRect.left - navRect.left;
   const width = btnRect.width;
   currentDropletX = left;
-  
-  droplet.style.opacity = '1';
+
   droplet.style.setProperty('--snap-x', `${left}px`);
-  
+
   if (animate) {
     droplet.classList.remove('dragging');
-    droplet.style.transform = `translate(${left}px, -50%)`;
-    droplet.style.width = `${width}px`;
     droplet.classList.remove('snap');
     void droplet.offsetWidth;
+    droplet.style.transition = 'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+    droplet.style.transform = `translate(${left}px, -50%)`;
+    droplet.style.width = `${width}px`;
     droplet.classList.add('snap');
   } else {
+    droplet.style.transition = 'none';
     droplet.style.transform = `translate(${left}px, -50%)`;
     droplet.style.width = `${width}px`;
   }
@@ -1853,9 +1887,13 @@ function moveDropletTo(navBtn, animate = true) {
 
 // TOUCH / MOUSE DRAG LISTENERS FOR NAV
 function initNavDragPhysics() {
-  const navEl = document.querySelector('nav');
+  const navEl = document.getElementById('main-nav');
   const droplet = document.getElementById('nav-droplet');
-  if (!navEl || !droplet) return;
+  if (!navEl || !droplet) { setTimeout(initNavDragPhysics, 200); return; }
+
+  // Position droplet on active button immediately
+  const activeBtn = document.querySelector('nav button.active');
+  if (activeBtn) moveDropletTo(activeBtn, false);
 
   let startTouchX = 0;
   let initialLeft = 0;
@@ -1864,12 +1902,14 @@ function initNavDragPhysics() {
   function onDragStart(clientX) {
     isDraggingNav = true;
     startTouchX = clientX;
-    const activeBtn = document.querySelector('nav button.active');
-    if (activeBtn) {
-      const btnRect = activeBtn.getBoundingClientRect();
-      const navRect = navEl.getBoundingClientRect();
-      initialLeft = btnRect.left - navRect.left;
+    lastX = clientX;
+    const ab = document.querySelector('nav button.active');
+    if (ab) {
+      const bRect = ab.getBoundingClientRect();
+      const nRect = navEl.getBoundingClientRect();
+      initialLeft = bRect.left - nRect.left;
     }
+    droplet.style.transition = 'none';
     droplet.classList.add('dragging');
     droplet.classList.remove('snap');
   }
@@ -1878,31 +1918,28 @@ function initNavDragPhysics() {
     if (!isDraggingNav) return;
     const deltaX = clientX - startTouchX;
     const navRect = navEl.getBoundingClientRect();
-    const maxLeft = navRect.width - 65;
+    const dropW = parseInt(droplet.style.width) || 72;
+    const maxLeft = navRect.width - dropW;
     let targetX = Math.max(0, Math.min(maxLeft, initialLeft + deltaX));
-    
-    // Calculate speed for liquid stretch physics
+
     const speed = clientX - lastX;
     lastX = clientX;
-    const stretch = Math.min(20, Math.abs(speed) * 1.2);
-    
-    droplet.style.transform = `translate(${targetX}px, -50%) scaleX(${1 + stretch/60}) scaleY(${1 - stretch/100})`;
-    
+    const stretch = Math.min(28, Math.abs(speed) * 1.5);
+    const skewDir = speed > 0 ? 1 : -1;
+
+    // Liquid stretch: wider + flatter when moving fast
+    droplet.style.transform = `translate(${targetX}px, -50%) scaleX(${1 + stretch/50}) scaleY(${1 - stretch/120})`;
+
     // Highlight nearest button while dragging
-    const buttons = Array.from(document.querySelectorAll('nav button'));
+    const buttons = Array.from(document.querySelectorAll('#main-nav button'));
     let closestBtn = null;
     let minDist = Infinity;
-    
     buttons.forEach(btn => {
       const bRect = btn.getBoundingClientRect();
       const center = bRect.left - navRect.left + bRect.width / 2;
-      const dist = Math.abs(center - (targetX + 32));
-      if (dist < minDist) {
-        minDist = dist;
-        closestBtn = btn;
-      }
+      const dist = Math.abs(center - (targetX + dropW / 2));
+      if (dist < minDist) { minDist = dist; closestBtn = btn; }
     });
-
     if (closestBtn && !closestBtn.classList.contains('active')) {
       buttons.forEach(b => b.classList.remove('active'));
       closestBtn.classList.add('active');
@@ -1913,24 +1950,24 @@ function initNavDragPhysics() {
     if (!isDraggingNav) return;
     isDraggingNav = false;
     droplet.classList.remove('dragging');
-    
-    const activeBtn = document.querySelector('nav button.active');
+    const activeBtn = document.querySelector('#main-nav button.active');
     if (activeBtn) {
+      moveDropletTo(activeBtn, true);
       const pageId = activeBtn.id.replace('nav-', '');
       goPage(pageId);
     }
   }
 
-  navEl.addEventListener('touchstart', (e) => onDragStart(e.touches[0].clientX), {passive: true});
-  navEl.addEventListener('touchmove', (e) => onDragMove(e.touches[0].clientX), {passive: true});
-  navEl.addEventListener('touchend', onDragEnd);
+  navEl.addEventListener('touchstart', (e) => { e.stopPropagation(); onDragStart(e.touches[0].clientX); }, {passive: true});
+  navEl.addEventListener('touchmove', (e) => { onDragMove(e.touches[0].clientX); }, {passive: true});
+  navEl.addEventListener('touchend', onDragEnd, {passive: true});
   navEl.addEventListener('mousedown', (e) => onDragStart(e.clientX));
   window.addEventListener('mousemove', (e) => isDraggingNav && onDragMove(e.clientX));
   window.addEventListener('mouseup', onDragEnd);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(initNavDragPhysics, 300);
+  setTimeout(initNavDragPhysics, 100);
 });
 
 function goPage(name) {
