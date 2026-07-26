@@ -1086,21 +1086,28 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             url = f"https://t.me/{username}"
             try:
                 async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                    if resp.status == 429:
-                        return
+                    if resp.status == 429: return
                     text = await resp.text()
-                    if 'tgme_page_title' not in text:
-                        is_free = True
+                    # HTTP orqali profil yo'qligi tekshiriladi
+                    if 'tgme_page_title' not in text and 'tgme_page_extra' not in text:
+                        is_free = False
                         if client and not api_blocked:
                             try:
-                                is_free = await client(CheckUsernameRequest(username))
-                                await asyncio.sleep(0.3)
+                                res = await client(CheckUsernameRequest(username))
+                                is_free = bool(res)
+                                await asyncio.sleep(0.2)
                             except UsernamePurchaseAvailableError:
+                                # Fragment Auksionida pulga sotilayotgan nom — TAShLAB YUBORAMIZ!
                                 is_free = False
                             except FloodWaitError:
                                 api_blocked = True
+                                is_free = False
                             except Exception:
-                                pass
+                                is_free = False
+                        else:
+                            # Client bo'lmasa yoki API blokda bo'lsa, xavfsizlik uchun auksion iboralari yo'qligini HTTP dan tekshiramiz
+                            if 'Fragment' not in text and 'Auction' not in text:
+                                is_free = True
                         
                         if is_free:
                             async with aiosqlite.connect(DB_PATH) as db:
