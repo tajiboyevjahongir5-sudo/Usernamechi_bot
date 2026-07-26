@@ -2010,6 +2010,11 @@ async def api_monitor_start(request: Request):
     if not row or not row['session_string']:
         return {"ok": False, "error": "Akkaunt ulanmagan"}
         
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id FROM monitoring_tasks WHERE telegram_id=? AND username=? AND status='monitoring'", (tid, username)) as c:
+            if await c.fetchone():
+                return {"ok": False, "error": f"@{username} allaqachon nishonga qo'shilgan!"}
+
     price = int(await get_setting("monitor_price", 10000)) # Kafolat puli (monitor qilish uchun)
     if (row['balance'] or 0) < price:
         return {"ok": False, "error": f"Balans yetarli emas (Kerak: {price:,} so'm)"}
