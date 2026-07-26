@@ -1056,9 +1056,10 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
 
 # ── TELETHON CLIENT CACHE ────────────────────────
 _telethon_cache: dict = {}
+_active_search_tasks: set = set()  # Task'lar garbage collect bo'lmasin uchun
 
 async def _get_fast_client(session_string: str):
-    """Keshdan tezkor Telethon client qaytaradi yoki yangisini yaratadi."""
+    """Keshdan tezkor Telethon client qaytaradi yoki yangisini yaratadi. 15s timeout."""
     from telethon import TelegramClient
     from telethon.sessions import StringSession
     
@@ -1066,9 +1067,14 @@ async def _get_fast_client(session_string: str):
         client = _telethon_cache[session_string]
         if client.is_connected():
             return client
+        # Ulanmagan — o'chirib yangi yaratamiz
+        del _telethon_cache[session_string]
     
     client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
-    await client.connect()
+    try:
+        await asyncio.wait_for(client.connect(), timeout=15.0)
+    except asyncio.TimeoutError:
+        raise Exception("Telethon connect timeout (15s)")
     _telethon_cache[session_string] = client
     return client
 
@@ -2291,7 +2297,17 @@ async def api_search_start(request: Request):
         search_id = cur.lastrowid
         await db.commit()
 
-    asyncio.create_task(search_sniper(tid, search_id, cat, lang=lang))
+    async def _run_search_safe():
+        try:
+            await asyncio.wait_for(search_sniper(tid, search_id, cat, lang=lang), timeout=130)
+        except asyncio.TimeoutError:
+            logger.error(f"search_sniper timeout for search_id={search_id}")
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
+                await db.commit()
+    t = asyncio.create_task(_run_search_safe())
+    _active_search_tasks.add(t)
+    t.add_done_callback(_active_search_tasks.discard)
     return {"ok": True, "search_id": search_id, "paid_qty": qty, "charged": total_price}
 
 @app.post("/api/search/refresh")
@@ -2321,7 +2337,17 @@ async def api_search_refresh(request: Request):
         await db.execute("UPDATE search_tasks SET status='searching' WHERE id=?", (search_id,))
         await db.commit()
         
-    asyncio.create_task(search_sniper(tid, search_id, cat, lang=lang))
+    async def _run_search_safe2():
+        try:
+            await asyncio.wait_for(search_sniper(tid, search_id, cat, lang=lang), timeout=130)
+        except asyncio.TimeoutError:
+            logger.error(f"search_sniper refresh timeout for search_id={search_id}")
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
+                await db.commit()
+    t2 = asyncio.create_task(_run_search_safe2())
+    _active_search_tasks.add(t2)
+    t2.add_done_callback(_active_search_tasks.discard)
     return {"ok": True, "search_id": search_id}
 
 @app.get("/api/search/results")
