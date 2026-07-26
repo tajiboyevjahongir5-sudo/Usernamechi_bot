@@ -1054,6 +1054,24 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
             await db.commit()
         await bot.send_message(telegram_id, "❌ Afsuski, siz so'ragan kategoriyada bo'sh username topilmadi. Pulingiz qaytarildi.")
 
+# ── TELETHON CLIENT CACHE ────────────────────────
+_telethon_cache: dict = {}
+
+async def _get_fast_client(session_string: str):
+    """Keshdan tezkor Telethon client qaytaradi yoki yangisini yaratadi."""
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    
+    if session_string in _telethon_cache:
+        client = _telethon_cache[session_string]
+        if client.is_connected():
+            return client
+    
+    client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
+    await client.connect()
+    _telethon_cache[session_string] = client
+    return client
+
 async def search_sniper(telegram_id: int, search_id: int, category: str, lang: str = 'uz'):
     """Fon rejimida faqat usernamesni tekshiradi va bazaga yozadi."""
     try:
@@ -1530,24 +1548,6 @@ async def api_user(init_data: str = ""):
             "premium_price": premium_price,
             "monitor_price": monitor_price,
             "listing_price": listing_price}
-
-# Tezlik uchun Telethon clientlarni kesh saqlaymiz
-_telethon_cache: dict = {}
-
-async def _get_fast_client(session_string: str):
-    """Keshdan tezkor Telethon client qaytaradi yoki yangisini yaratadi."""
-    from telethon import TelegramClient
-    from telethon.sessions import StringSession
-    
-    if session_string in _telethon_cache:
-        client = _telethon_cache[session_string]
-        if client.is_connected():
-            return client
-    
-    client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
-    await client.connect()
-    _telethon_cache[session_string] = client
-    return client
 
 @app.post("/api/account/set_username")
 async def api_account_set_username(request: Request):
