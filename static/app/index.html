@@ -2158,7 +2158,16 @@ function renderSearchResults(results) {
   cachedFreeResults = results.filter(r => r.status !== 'claimed');
   
   if(cachedFreeResults.length === 0) {
-    list.innerHTML = `<div style="padding:16px; text-align:center; color:var(--muted);">Hozircha natija yo'q...</div>`;
+    const isCompleted = document.getElementById('search-status-text').innerHTML.includes('yakunlandi');
+    if (isCompleted) {
+      list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--muted); font-size:13px; line-height:1.6;">
+        ⚠️ <b>Afsuski, bo'sh nom topilmadi.</b><br>
+        Barcha bo'sh bo'lishi mumkin bo'lgan variantlar band ekan.<br>
+        <span style="color:#34d399; font-weight:700;">✅ Imkoniyat va pulingiz balansingizga qaytarildi!</span>
+      </div>`;
+    } else {
+      list.innerHTML = `<div style="padding:16px; text-align:center; color:var(--muted);">Hozircha natija yo'q...</div>`;
+    }
     updateSelectionUI();
     return;
   }
