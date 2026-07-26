@@ -518,10 +518,6 @@ body::before {
       </div>
       <div style="max-width:600px;">
         <div class="form-group">
-          <label class="form-label">💳 Karta Raqami (To'lovlar uchun)</label>
-          <input type="text" id="set-card" class="form-input" placeholder="8600 0000 0000 0000">
-        </div>
-        <div class="form-group">
           <label class="form-label">📢 To'lovlar Kanali ID</label>
           <input type="text" id="set-channel" class="form-input" placeholder="-100123456789">
         </div>
@@ -542,6 +538,21 @@ body::before {
           <input type="number" id="set-listing-price" class="form-input" placeholder="1000">
         </div>
         <button class="action-btn btn-primary" style="padding:14px 28px; width:100%; justify-content:center; margin-top:10px;" onclick="saveSettings()">💾 Saqlash</button>
+      </div>
+    </div>
+
+    <!-- MULTI-CARD MANAGEMENT PANEL -->
+    <div class="glass-panel" style="margin-top:24px;">
+      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div class="panel-title">💳 Multi-Karta Boshqaruvi</div>
+          <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Har bir kartaga 1 kunda belgilangan miqdorda (masalan, 40 ta) to'lov tushganda, keyingi karta avtomatik taqdim etiladi.</div>
+        </div>
+        <button class="action-btn btn-emerald" onclick="openAddCardModal()">➕ Yangi Karta Qo'shish</button>
+      </div>
+      
+      <div id="cards-list-container" style="display:flex; flex-direction:column; gap:12px; margin-top:16px;">
+        <div style="text-align:center; padding:20px; color:var(--text-muted);">Kartalar yuklanmoqda...</div>
       </div>
     </div>
   </div>
@@ -594,6 +605,27 @@ body::before {
     <div style="display:flex; gap:10px; margin-top:20px;">
       <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="saveUserBalance()">Saqlash</button>
       <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-balance')">Bekor Qilish</button>
+    </div>
+  </div>
+<!-- ADD CARD MODAL -->
+<div class="modal-overlay" id="modal-card">
+  <div class="modal-box">
+    <h3 style="font-size:18px; font-weight:800; margin-bottom:16px;">💳 Yangi Karta Qo'shish</h3>
+    <div class="form-group">
+      <label class="form-label">Karta Raqami</label>
+      <input type="text" id="new-card-number" class="form-input" placeholder="8600 1234 5678 9012">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Karta Egasi Ismi (Ixtiyoriy)</label>
+      <input type="text" id="new-card-owner" class="form-input" placeholder="Ali Valiyev">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Kunlik To'lovlar Limiti (default: 40 ta)</label>
+      <input type="number" id="new-card-limit" class="form-input" value="40" placeholder="40">
+    </div>
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitAddCard()">➕ Qo'shish</button>
+      <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-card')">Bekor Qilish</button>
     </div>
   </div>
 </div>
@@ -1108,17 +1140,143 @@ async function rejectWithdrawal(id) {
   } catch(e) { showToast("Xatolik", "error"); }
 }
 
-/* SETTINGS */
+/* SETTINGS & MULTI-CARD */
 async function loadSettings() {
   try {
     const res = await fetch('/api/admin/settings', { headers: headers() });
     const s = await res.json();
-    document.getElementById('set-card').value = s.payment_card || '';
     document.getElementById('set-channel').value = s.payment_channel_id || '';
     document.getElementById('set-price').value = s.username_price || '5000';
     document.getElementById('set-premium-price').value = s.premium_price || '20000';
     document.getElementById('set-monitor-price').value = s.monitor_price || '10000';
     document.getElementById('set-listing-price').value = s.listing_price || '1000';
+    loadCards();
+  } catch(e) {}
+}
+
+async function loadCards() {
+  try {
+    const res = await fetch('/api/admin/cards', { headers: headers() });
+    const cards = await res.json();
+    const container = document.getElementById('cards-list-container');
+    if (!cards.length) {
+      container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted);">Karta qo\'shilmagan. Yuqoridagi tugma orqali karta qo\'shing.</div>';
+      return;
+    }
+    container.innerHTML = cards.map((c, idx) => {
+      const isFull = c.today_count >= c.daily_limit;
+      const statusBadge = c.is_active 
+        ? (isFull ? '<span class="status-chip chip-warning">⚠️ Kunlik limit to\'lgan ('+c.today_count+'/'+c.daily_limit+')</span>' : '<span class="status-chip chip-success">⚡ Faol ('+c.today_count+'/'+c.daily_limit+')</span>')
+        : '<span class="status-chip chip-danger">🔴 O\'chirilgan</span>';
+      
+      return `
+        <div class="user-item" style="flex-direction:column; align-items:stretch; gap:12px; background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div class="user-left">
+              <div class="user-avatar" style="background:rgba(16,185,129,0.2); color:var(--accent-emerald); font-weight:800;">#${idx+1}</div>
+              <div class="user-details">
+                <div class="user-name" style="font-family:'JetBrains Mono',monospace; font-size:15px; color:#38bdf8;">${c.card_number}</div>
+                <div class="user-meta">Egasi: <b>${c.card_owner || 'Ko\'rsatilmagan'}</b></div>
+              </div>
+            </div>
+            <div class="user-right" style="border:none; padding:0; gap:8px;">
+              ${statusBadge}
+            </div>
+          </div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:10px;">
+            <div style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
+              <span>Kunlik limit:</span>
+              <input type="number" value="${c.daily_limit}" style="width:65px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#fff; padding:4px 8px; font-size:12px;" onchange="updateCardLimit(${c.id}, this.value)">
+              <span>ta</span>
+            </div>
+
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="action-btn ${c.is_active ? 'btn-secondary' : 'btn-emerald'}" style="font-size:11px; padding:6px 12px;" onclick="toggleCardStatus(${c.id}, ${c.is_active ? 0 : 1})">
+                ${c.is_active ? '⏸️ Pauza' : '▶️ Yoqish'}
+              </button>
+              <button class="action-btn btn-secondary" style="font-size:11px; padding:6px 12px;" onclick="resetCardCount(${c.id})">
+                🔄 Hisobni nolga tushirish
+              </button>
+              <button class="action-btn btn-rose" style="font-size:11px; padding:6px 12px;" onclick="deleteCard(${c.id})">
+                🗑️ O'chirish
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch(e) {}
+}
+
+function openAddCardModal() {
+  document.getElementById('new-card-number').value = '';
+  document.getElementById('new-card-owner').value = '';
+  document.getElementById('new-card-limit').value = '40';
+  document.getElementById('modal-card').classList.add('show');
+}
+
+async function submitAddCard() {
+  const card_number = document.getElementById('new-card-number').value.trim();
+  const card_owner = document.getElementById('new-card-owner').value.trim();
+  const daily_limit = parseInt(document.getElementById('new-card-limit').value) || 40;
+  if (!card_number) { showToast("Karta raqami kiritilmadi", "error"); return; }
+  try {
+    const res = await fetch('/api/admin/cards', {
+      method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ card_number, card_owner, daily_limit })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Karta qo'shildi", "success");
+      closeModal('modal-card');
+      loadCards();
+    } else {
+      showToast(d.error || "Xatolik", "error");
+    }
+  } catch(e) { showToast("Xatolik", "error"); }
+}
+
+async function toggleCardStatus(id, is_active) {
+  try {
+    await fetch(`/api/admin/cards/${id}`, {
+      method: 'PUT', headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active })
+    });
+    loadCards();
+  } catch(e) {}
+}
+
+async function updateCardLimit(id, daily_limit) {
+  try {
+    await fetch(`/api/admin/cards/${id}`, {
+      method: 'PUT', headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ daily_limit: parseInt(daily_limit) || 40 })
+    });
+    showToast("Limit yangilandi", "success");
+    loadCards();
+  } catch(e) {}
+}
+
+async function resetCardCount(id) {
+  if (!confirm("Ushbu kartaning bugungi to'lovlar hisobini 0 ga tushirasizmi?")) return;
+  try {
+    await fetch(`/api/admin/cards/${id}/reset`, {
+      method: 'POST', headers: headers()
+    });
+    showToast("Hisob 0 ga tushirildi", "success");
+    loadCards();
+  } catch(e) {}
+}
+
+async function deleteCard(id) {
+  if (!confirm("Ushbu kartani o'chirib tashlaysizmi?")) return;
+  try {
+    await fetch(`/api/admin/cards/${id}`, {
+      method: 'DELETE', headers: headers()
+    });
+    showToast("Karta o'chirildi", "success");
+    loadCards();
   } catch(e) {}
 }
 

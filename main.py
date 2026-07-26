@@ -217,6 +217,32 @@ async def init_db():
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('listing_price', '1000')")
         await db.commit()
 
+        # Payment cards table (multi-card with daily rotation)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS payment_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_number TEXT NOT NULL,
+                card_owner TEXT DEFAULT '',
+                daily_limit INTEGER DEFAULT 40,
+                today_count INTEGER DEFAULT 0,
+                last_reset_date TEXT DEFAULT '',
+                is_active INTEGER DEFAULT 1,
+                sort_order INTEGER DEFAULT 0
+            )
+        """)
+        # Eski payment_card sozlamasidan birinchi karta sifatida ko'chirish
+        async with db.execute("SELECT value FROM settings WHERE key='payment_card'") as _c:
+            _old_card = await _c.fetchone()
+        if _old_card and _old_card[0]:
+            async with db.execute("SELECT COUNT(*) FROM payment_cards") as _c:
+                _cnt = (await _c.fetchone())[0]
+            if _cnt == 0:
+                await db.execute(
+                    "INSERT INTO payment_cards (card_number, card_owner, daily_limit, sort_order) VALUES (?, ?, 40, 0)",
+                    (_old_card[0], 'Karta egasi')
+                )
+        await db.commit()
+
         # Migration: mavjud jadvallarni yangi ustunlar bilan yangilash
         try:
             await db.execute("ALTER TABLE users ADD COLUMN referred_by INTEGER DEFAULT 0")
@@ -251,6 +277,48 @@ async def get_setting(key, default=None):
 async def set_setting(key, value):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=?", (key, str(value), str(value)))
+        await db.commit()
+
+async def get_active_card():
+    """Kunlik limiti (40 ta) to'lmagan birinchi faol kartani qaytaradi.
+    Agar hamma kartalar limitga yetgan bo'lsa — oxirgi faol kartani qaytaradi."""
+    import datetime
+    today = datetime.date.today().isoformat()  # '2025-07-26'
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # Bugungi sanani tekshirib, eski kunlarda reset qilish
+        await db.execute(
+            "UPDATE payment_cards SET today_count=0, last_reset_date=? WHERE last_reset_date != ? AND is_active=1",
+            (today, today)
+        )
+        await db.commit()
+        # Limiti to'lmagan birinchi faol karta
+        async with db.execute(
+            "SELECT * FROM payment_cards WHERE is_active=1 AND today_count < daily_limit ORDER BY sort_order ASC, id ASC LIMIT 1"
+        ) as c:
+            row = await c.fetchone()
+            if row:
+                return dict(row)
+        # Hammalimiti to'lgan — oxirgi faol kartani qaytar
+        async with db.execute(
+            "SELECT * FROM payment_cards WHERE is_active=1 ORDER BY sort_order ASC, id ASC LIMIT 1"
+        ) as c:
+            row = await c.fetchone()
+            if row:
+                return dict(row)
+    # Jadval bo'sh bo'lsa — eski sozlamadan ol
+    old_card = await get_setting("payment_card", "")
+    return {"card_number": old_card, "card_owner": "", "id": None} if old_card else None
+
+async def increment_card_count(card_id: int):
+    """To'lov qabul qilinganda kartaning kunlik hisobini 1 ga oshiradi."""
+    import datetime
+    today = datetime.date.today().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE payment_cards SET today_count=today_count+1, last_reset_date=? WHERE id=?",
+            (today, card_id)
+        )
         await db.commit()
 
 async def get_user(telegram_id):
@@ -1933,8 +2001,10 @@ async def admin_withdrawal_reject(request: Request, x_admin_token: str = Header(
 
 @app.get("/api/card")
 async def api_card():
-    card = await get_setting("payment_card", "")
-    return {"card": card}
+    card = await get_active_card()
+    if card:
+        return {"card": card.get("card_number", ""), "card_owner": card.get("card_owner", ""), "card_id": card.get("id")}
+    return {"card": "", "card_owner": "", "card_id": None}
 
 @app.post("/api/topup/request")
 async def api_topup_request(request: Request):
@@ -2290,6 +2360,87 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
         await set_setting("monitor_price", data['monitor_price'])
     if 'listing_price' in data:
         await set_setting("listing_price", data['listing_price'])
+    return {"ok": True}
+
+# ── ADMIN CARDS (Multi-Card Management) ────────
+@app.get("/api/admin/cards")
+async def api_admin_cards_get(x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    import datetime
+    today = datetime.date.today().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # Reset today_count for old dates
+        await db.execute(
+            "UPDATE payment_cards SET today_count=0, last_reset_date=? WHERE last_reset_date != ? AND last_reset_date != ''",
+            (today, today)
+        )
+        await db.commit()
+        async with db.execute("SELECT * FROM payment_cards ORDER BY sort_order ASC, id ASC") as c:
+            return [dict(r) for r in await c.fetchall()]
+
+@app.post("/api/admin/cards")
+async def api_admin_cards_add(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    data = await request.json()
+    card_number = data.get('card_number', '').strip()
+    card_owner = data.get('card_owner', '').strip()
+    daily_limit = int(data.get('daily_limit', 40))
+    if not card_number:
+        return {"ok": False, "error": "Karta raqami kiritilmadi"}
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT MAX(sort_order) FROM payment_cards") as c:
+            row = await c.fetchone()
+            next_order = (row[0] or 0) + 1
+        await db.execute(
+            "INSERT INTO payment_cards (card_number, card_owner, daily_limit, sort_order) VALUES (?,?,?,?)",
+            (card_number, card_owner, daily_limit, next_order)
+        )
+        await db.commit()
+    return {"ok": True}
+
+@app.put("/api/admin/cards/{card_id}")
+async def api_admin_cards_update(card_id: int, request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    data = await request.json()
+    async with aiosqlite.connect(DB_PATH) as db:
+        if 'card_number' in data:
+            await db.execute("UPDATE payment_cards SET card_number=? WHERE id=?", (data['card_number'], card_id))
+        if 'card_owner' in data:
+            await db.execute("UPDATE payment_cards SET card_owner=? WHERE id=?", (data['card_owner'], card_id))
+        if 'daily_limit' in data:
+            await db.execute("UPDATE payment_cards SET daily_limit=? WHERE id=?", (int(data['daily_limit']), card_id))
+        if 'is_active' in data:
+            await db.execute("UPDATE payment_cards SET is_active=? WHERE id=?", (int(data['is_active']), card_id))
+        if 'sort_order' in data:
+            await db.execute("UPDATE payment_cards SET sort_order=? WHERE id=?", (int(data['sort_order']), card_id))
+        await db.commit()
+    return {"ok": True}
+
+@app.delete("/api/admin/cards/{card_id}")
+async def api_admin_cards_delete(card_id: int, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM payment_cards WHERE id=?", (card_id,))
+        await db.commit()
+    return {"ok": True}
+
+@app.post("/api/admin/cards/{card_id}/reset")
+async def api_admin_cards_reset(card_id: int, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE payment_cards SET today_count=0 WHERE id=?", (card_id,))
+        await db.commit()
     return {"ok": True}
 
 @app.get("/api/admin/analytics")
