@@ -522,6 +522,10 @@ body::before {
           <input type="text" id="set-channel" class="form-input" placeholder="-100123456789">
         </div>
         <div class="form-group">
+          <label class="form-label">🛒 Bozor E'lonlari Kanali ID (Auto-Broadcast)</label>
+          <input type="text" id="set-mkt-channel" class="form-input" placeholder="-1001987654321">
+        </div>
+        <div class="form-group">
           <label class="form-label">💰 Username Izlash Narxi (so'm)</label>
           <input type="number" id="set-price" class="form-input" placeholder="5000">
         </div>
@@ -557,6 +561,43 @@ body::before {
     </div>
   </div>
 
+  <!-- BROADCAST PAGE -->
+  <div class="page" id="page-broadcast">
+    <div class="glass-panel">
+      <div class="panel-header">
+        <div class="panel-title">📢 Ommaviy Xabarnoma Yuborish (Mass Mailing)</div>
+      </div>
+      <div style="max-width:650px;">
+        <div style="font-size:13px; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
+          Botdagi barcha foydalanuvchilarga bir vaqtning o'zida matnli, rasmli yoki tugmali e'lon xabarini yuborish paneli.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">📝 Xabar Matni (HTML formatida)</label>
+          <textarea id="bc-message" class="form-input" rows="5" style="resize:vertical;" placeholder="Salom! Yangi aksiya boshlandi..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">🖼️ Rasm URL havolasi (Ixtiyoriy)</label>
+          <input type="text" id="bc-photo" class="form-input" placeholder="https://example.com/photo.jpg">
+        </div>
+
+        <div style="display:flex; gap:12px; margin-bottom:16px;">
+          <div class="form-group" style="flex:1; margin:0;">
+            <label class="form-label">🔗 Tugma Matni</label>
+            <input type="text" id="bc-btn-text" class="form-input" placeholder="Boshlash 🚀">
+          </div>
+          <div class="form-group" style="flex:1; margin:0;">
+            <label class="form-label">🌐 Tugma URL Havolasi</label>
+            <input type="text" id="bc-btn-url" class="form-input" placeholder="https://t.me/your_bot">
+          </div>
+        </div>
+
+        <button class="action-btn btn-primary" id="btn-send-bc" style="padding:14px 28px; width:100%; justify-content:center;" onclick="sendBroadcast()">🚀 Barcha Userlarga Yuborish</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- FLOATING DRAGGABLE DROPLET NAV BAR -->
@@ -583,6 +624,10 @@ body::before {
   <button class="nav-item" onclick="switchTab('withdrawals', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
     Yechish
+  </button>
+  <button class="nav-item" onclick="switchTab('broadcast', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+    Xabarnoma
   </button>
   <button class="nav-item" onclick="switchTab('settings', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -1179,12 +1224,62 @@ async function loadSettings() {
     const res = await fetch('/api/admin/settings', { headers: headers() });
     const s = await res.json();
     document.getElementById('set-channel').value = s.payment_channel_id || '';
+    document.getElementById('set-mkt-channel').value = s.marketplace_channel_id || '';
     document.getElementById('set-price').value = s.username_price || '5000';
     document.getElementById('set-premium-price').value = s.premium_price || '20000';
     document.getElementById('set-monitor-price').value = s.monitor_price || '10000';
     document.getElementById('set-listing-price').value = s.listing_price || '1000';
     loadCards();
   } catch(e) {}
+}
+
+async function saveSettings() {
+  const data = {
+    payment_channel_id: document.getElementById('set-channel').value,
+    marketplace_channel_id: document.getElementById('set-mkt-channel').value,
+    username_price: document.getElementById('set-price').value,
+    premium_price: document.getElementById('set-premium-price').value,
+    monitor_price: document.getElementById('set-monitor-price').value,
+    listing_price: document.getElementById('set-listing-price').value
+  };
+  try {
+    await fetch('/api/admin/settings', {
+      method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    showToast("💾 Sozlamalar saqlandi", "success");
+  } catch(e) { showToast("Xatolik", "error"); }
+}
+
+async function sendBroadcast() {
+  const message = document.getElementById('bc-message').value.trim();
+  const photo_url = document.getElementById('bc-photo').value.trim();
+  const button_text = document.getElementById('bc-btn-text').value.trim();
+  const button_url = document.getElementById('bc-btn-url').value.trim();
+  
+  if (!message) { showToast("Xabar matnini kiriting!", "error"); return; }
+  if (!confirm("Barcha foydalanuvchilarga ushbu xabarni yuborishni tasdiqlaysizmi?")) return;
+  
+  const btn = document.getElementById('btn-send-bc');
+  btn.disabled = true;
+  btn.innerText = "⏳ Yuborilmoqda... Kuting...";
+  
+  try {
+    const res = await fetch('/api/admin/broadcast', {
+      method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, photo_url, button_text, button_url })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`✅ Yuborildi: ${d.sent} ta user, Xato: ${d.failed} ta`, "success");
+      document.getElementById('bc-message').value = '';
+    } else {
+      showToast(d.error || "Xatolik", "error");
+    }
+  } catch(e) { showToast("Xatolik yuz berdi", "error"); }
+  
+  btn.disabled = false;
+  btn.innerText = "🚀 Barcha Userlarga Yuborish";
 }
 
 async function loadCards() {

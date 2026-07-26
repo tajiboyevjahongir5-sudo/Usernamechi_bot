@@ -211,6 +211,7 @@ async def init_db():
         # Sozlamalarni kiritish
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payment_card', '8600123456789012')")
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payment_channel_id', '0')")
+        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('marketplace_channel_id', '0')")
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('username_price', '5000')")
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('premium_price', '20000')")
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('monitor_price', '10000')")
@@ -1632,6 +1633,31 @@ async def api_marketplace_list(request: Request):
                          (tid, username, price, is_auction, price if is_auction else 0, auction_ends_at))
         await db.commit()
         
+        # 1. AUTO-BROADCAST TO TELEGRAM MARKETPLACE CHANNEL
+        mkt_channel = await get_setting("marketplace_channel_id", "0")
+        if mkt_channel and mkt_channel != "0":
+            try:
+                bot_inst = Bot(token=BOT_TOKEN)
+                bot_username = (await bot_inst.get_me()).username
+                app_link = f"https://t.me/{bot_username}?start=market"
+                
+                type_tag = "⚡ AUKSION (24 Soat)" if is_auction else "🛒 BUYURTMA BOZORI"
+                post_text = (
+                    f"🔥 <b>YANGI E'LON ({type_tag})</b>\n\n"
+                    f"🏷 Username: <b>@{username}</b>\n"
+                    f"💰 Narxi: <b>{price:,} so'm</b>\n"
+                    f"👤 Sotuvchi: <b>{user.get('first_name','Foydalanuvchi')}</b>\n\n"
+                    f"👇 Sotib olish yoki stavka berish uchun bosing:"
+                )
+                m_markup = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🛒 Mini-Appda Ochiq Sotib Olish", url=app_link)]
+                ])
+                await bot_inst.send_message(mkt_channel, post_text, reply_markup=m_markup, parse_mode="HTML")
+                await bot_inst.session.close()
+            except Exception as e:
+                logger.error(f"Marketplace channel broadcast xato: {e}")
+
+        # 2. KEYWORD SUBSCRIPTION NOTIFICATIONS
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT DISTINCT user_id FROM keyword_subscriptions WHERE ? LIKE '%' || keyword || '%'", (username,)) as c:
             subs = await c.fetchall()
@@ -2351,6 +2377,7 @@ async def api_admin_settings_get(x_admin_token: str = Header(default="")):
     
     card = await get_setting("payment_card", "")
     channel = await get_setting("payment_channel_id", "")
+    mkt_channel = await get_setting("marketplace_channel_id", "0")
     price = await get_setting("username_price", "5000")
     premium_price = await get_setting("premium_price", "20000")
     monitor_price = await get_setting("monitor_price", "10000")
@@ -2358,6 +2385,7 @@ async def api_admin_settings_get(x_admin_token: str = Header(default="")):
     return {
         "payment_card": card, 
         "payment_channel_id": channel, 
+        "marketplace_channel_id": mkt_channel,
         "username_price": price,
         "premium_price": premium_price,
         "monitor_price": monitor_price,
@@ -2375,6 +2403,8 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
         await set_setting("payment_card", data['payment_card'])
     if 'payment_channel_id' in data:
         await set_setting("payment_channel_id", data['payment_channel_id'])
+    if 'marketplace_channel_id' in data:
+        await set_setting("marketplace_channel_id", data['marketplace_channel_id'])
     if 'username_price' in data:
         await set_setting("username_price", data['username_price'])
     if 'premium_price' in data:
@@ -2384,6 +2414,50 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
     if 'listing_price' in data:
         await set_setting("listing_price", data['listing_price'])
     return {"ok": True}
+
+# ── ADMIN MASS BROADCAST (OMMAVIY XABARNOMA) ────
+@app.post("/api/admin/broadcast")
+async def api_admin_broadcast(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    
+    data = await request.json()
+    message_text = data.get("message", "").strip()
+    photo_url = data.get("photo_url", "").strip()
+    button_text = data.get("button_text", "").strip()
+    button_url = data.get("button_url", "").strip()
+    
+    if not message_text:
+        return {"ok": False, "error": "Xabar matni kiritilmadi"}
+        
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT telegram_id FROM users") as c:
+            users = [r[0] for r in await c.fetchall()]
+            
+    bot_inst = Bot(token=BOT_TOKEN)
+    sent_count = 0
+    fail_count = 0
+    
+    markup = None
+    if button_text and button_url:
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=button_text, url=button_url)]
+        ])
+        
+    for tid in users:
+        try:
+            if photo_url:
+                await bot_inst.send_photo(tid, photo=photo_url, caption=message_text, reply_markup=markup, parse_mode="HTML")
+            else:
+                await bot_inst.send_message(tid, message_text, reply_markup=markup, parse_mode="HTML")
+            sent_count += 1
+            await asyncio.sleep(0.04) # Telegram flood limits
+        except Exception:
+            fail_count += 1
+            
+    await bot_inst.session.close()
+    return {"ok": True, "sent": sent_count, "failed": fail_count, "total": len(users)}
 
 # ── ADMIN CARDS (Multi-Card Management) ────────
 @app.get("/api/admin/cards")
