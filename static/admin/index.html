@@ -1166,43 +1166,57 @@ async function loadCards() {
     }
     container.innerHTML = cards.map((c, idx) => {
       const isFull = c.today_count >= c.daily_limit;
+      const progressPercent = Math.min(100, Math.round((c.today_count / (c.daily_limit || 1)) * 100));
+      
       const statusBadge = c.is_active 
-        ? (isFull ? '<span class="status-chip chip-warning">⚠️ Kunlik limit to\'lgan ('+c.today_count+'/'+c.daily_limit+')</span>' : '<span class="status-chip chip-success">⚡ Faol ('+c.today_count+'/'+c.daily_limit+')</span>')
-        : '<span class="status-chip chip-danger">🔴 O\'chirilgan</span>';
+        ? (isFull ? '<span class="status-chip chip-warning" style="box-shadow:0 0 12px rgba(245,158,11,0.3); border:1px solid rgba(245,158,11,0.4);">⚠️ Limit to\'lgan ('+c.today_count+'/'+c.daily_limit+')</span>' : '<span class="status-chip chip-success" style="box-shadow:0 0 12px rgba(16,185,129,0.3); border:1px solid rgba(16,185,129,0.4);">⚡ Faol ('+c.today_count+'/'+c.daily_limit+')</span>')
+        : '<span class="status-chip chip-danger" style="box-shadow:0 0 12px rgba(239,68,68,0.2);">🔴 O\'chirilgan</span>';
       
       return `
-        <div class="user-item" style="flex-direction:column; align-items:stretch; gap:12px; background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.08);">
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-            <div class="user-left">
-              <div class="user-avatar" style="background:rgba(16,185,129,0.2); color:var(--accent-emerald); font-weight:800;">#${idx+1}</div>
-              <div class="user-details">
-                <div class="user-name" style="font-family:'JetBrains Mono',monospace; font-size:15px; color:#38bdf8;">${c.card_number}</div>
-                <div class="user-meta">Egasi: <b>${c.card_owner || 'Ko\'rsatilmagan'}</b></div>
+        <div style="background:linear-gradient(135deg, rgba(30,41,59,0.7) 0%, rgba(15,23,42,0.85) 100%); border:1px solid rgba(255,255,255,0.12); border-radius:18px; padding:16px; backdrop-filter:blur(16px); box-shadow:0 10px 30px rgba(0,0,0,0.3); position:relative; overflow:hidden; transition:transform 0.2s ease, border-color 0.2s ease;">
+          <div style="position:absolute; top:0; left:0; height:3px; width:${progressPercent}%; background:linear-gradient(90deg, #10b981, #06b6d4, #8b5cf6); transition:width 0.4s ease;"></div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="width:42px; height:42px; border-radius:12px; background:linear-gradient(135deg, rgba(6,182,212,0.25), rgba(139,92,246,0.25)); border:1px solid rgba(56,189,248,0.3); display:flex; align-items:center; justify-content:center; font-family:'JetBrains Mono',monospace; font-weight:800; color:#38bdf8; font-size:15px; box-shadow:0 4px 12px rgba(6,182,212,0.2);">
+                #${idx+1}
+              </div>
+              <div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:800; color:#f8fafc; letter-spacing:1px; display:flex; align-items:center; gap:8px;">
+                  💳 ${c.card_number}
+                </div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:3px; display:flex; align-items:center; gap:6px;">
+                  👤 Egasi: <b style="color:#cbd5e1;">${c.card_owner || 'Ko\'rsatilmagan'}</b>
+                </div>
               </div>
             </div>
-            <div class="user-right" style="border:none; padding:0; gap:8px;">
+            
+            <div style="display:flex; align-items:center; gap:8px;">
               ${statusBadge}
             </div>
           </div>
           
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-top:1px solid rgba(255,255,255,0.05); padding-top:10px;">
-            <div style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:8px;">
-              <span>Kunlik limit:</span>
-              <input type="number" value="${c.daily_limit}" style="width:65px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.15); border-radius:6px; color:#fff; padding:4px 8px; font-size:12px;" onchange="updateCardLimit(${c.id}, this.value)">
-              <span>ta</span>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; border-top:1px solid rgba(255,255,255,0.07); padding-top:12px; margin-top:6px;">
+            <div style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:8px; background:rgba(0,0,0,0.25); padding:6px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.06);">
+              <span>📊 Kunlik limit:</span>
+              <input type="number" value="${c.daily_limit}" style="width:60px; background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.3); border-radius:6px; color:#38bdf8; padding:3px 6px; font-size:13px; font-weight:700; text-align:center; outline:none;" onchange="updateCardLimit(${c.id}, this.value)">
+              <span style="font-weight:600; color:#94a3b8;">ta</span>
             </div>
 
-            <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="action-btn btn-primary" style="font-size:11px; padding:6px 12px;" onclick="openEditCardModal(${c.id}, '${c.card_number.replace(/'/g, "\\'")}', '${(c.card_owner || '').replace(/'/g, "\\'")}', ${c.daily_limit})">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="action-btn" style="background:linear-gradient(135deg, rgba(139,92,246,0.3), rgba(167,139,250,0.15)); border:1px solid rgba(167,139,250,0.4); color:#c084fc; font-size:11px; padding:7px 14px; border-radius:10px; font-weight:700;" onclick="openEditCardModal(${c.id}, '${c.card_number.replace(/'/g, "\\'")}', '${(c.card_owner || '').replace(/'/g, "\\'")}', ${c.daily_limit})">
                 ✏️ Tahrirlash
               </button>
-              <button class="action-btn ${c.is_active ? 'btn-secondary' : 'btn-emerald'}" style="font-size:11px; padding:6px 12px;" onclick="toggleCardStatus(${c.id}, ${c.is_active ? 0 : 1})">
+              
+              <button class="action-btn" style="background:${c.is_active ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)'}; border:1px solid ${c.is_active ? 'rgba(245,158,11,0.4)' : 'rgba(16,185,129,0.4)'}; color:${c.is_active ? '#fbbf24' : '#34d399'}; font-size:11px; padding:7px 14px; border-radius:10px; font-weight:700;" onclick="toggleCardStatus(${c.id}, ${c.is_active ? 0 : 1})">
                 ${c.is_active ? '⏸️ Pauza' : '▶️ Yoqish'}
               </button>
-              <button class="action-btn btn-secondary" style="font-size:11px; padding:6px 12px;" onclick="resetCardCount(${c.id})">
+
+              <button class="action-btn" style="background:rgba(6,182,212,0.15); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-size:11px; padding:7px 14px; border-radius:10px; font-weight:700;" onclick="resetCardCount(${c.id})">
                 🔄 Reset
               </button>
-              <button class="action-btn btn-rose" style="font-size:11px; padding:6px 12px;" onclick="deleteCard(${c.id})">
+
+              <button class="action-btn btn-rose" style="font-size:11px; padding:7px 14px; border-radius:10px; font-weight:700;" onclick="deleteCard(${c.id})">
                 🗑️ O'chirish
               </button>
             </div>
