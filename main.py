@@ -2159,7 +2159,7 @@ async def api_search_start(request: Request):
 
 @app.post("/api/search/refresh")
 async def api_search_refresh(request: Request):
-    """Balansdan pul yechmasdan yangi qidiruv boshlaydi (foydalanuvchi allaqachon to'lagan)."""
+    """Balansdan pul yechmasdan yangi qidiruv boshlaydi (eski natijalarni tozalaydi)."""
     data = await request.json()
     user = verify_init_data(data.get('init_data',''))
     if not user: raise HTTPException(403)
@@ -2179,6 +2179,8 @@ async def api_search_refresh(request: Request):
             paid_qty = task[1]
             lang = task[2]
             
+        # Eski natijalarni tozalash (yangi variantlar uchun)
+        await db.execute("DELETE FROM search_results WHERE search_id=?", (search_id,))
         await db.execute("UPDATE search_tasks SET status='searching' WHERE id=?", (search_id,))
         await db.commit()
         
