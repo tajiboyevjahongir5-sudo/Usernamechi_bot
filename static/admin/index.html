@@ -97,7 +97,7 @@ body::before {
 .app-container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: calc(70px + env(safe-area-inset-top, 20px)) 16px calc(var(--nav-height) + 50px);
+  padding: calc(var(--nav-height) + 60px + env(safe-area-inset-top, 20px)) 16px calc(var(--nav-height) + 50px);
   position: relative; z-index: 1;
 }
 
@@ -577,9 +577,20 @@ body::before {
           <textarea id="bc-message" class="form-input" rows="5" style="resize:vertical;" placeholder="Salom! Yangi aksiya boshlandi..."></textarea>
         </div>
 
+        <!-- RASM YUKLASH (GALLERIYADAN) -->
         <div class="form-group">
-          <label class="form-label">🖼️ Rasm URL havolasi (Ixtiyoriy)</label>
-          <input type="text" id="bc-photo" class="form-input" placeholder="https://example.com/photo.jpg">
+          <label class="form-label">🖼️ Rasm (Galleriyadan tanlash, ixtiyoriy)</label>
+          <div id="bc-photo-area" onclick="document.getElementById('bc-photo-file').click()" style="cursor:pointer; border:2px dashed rgba(139,92,246,0.4); border-radius:14px; padding:20px; text-align:center; background:rgba(139,92,246,0.06); transition:all 0.2s; min-height:80px; display:flex; align-items:center; justify-content:center; gap:12px; flex-direction:column;">
+            <img id="bc-photo-preview" src="" alt="" style="display:none; max-height:140px; max-width:100%; border-radius:10px; object-fit:cover;">
+            <div id="bc-photo-placeholder" style="display:flex; flex-direction:column; align-items:center; gap:6px; pointer-events:none;">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span style="font-size:13px; color:rgba(139,92,246,0.8); font-weight:600;">Galleriyadan rasm tanlash</span>
+              <span style="font-size:11px; color:var(--text-muted);">JPG, PNG, WEBP (max 10MB)</span>
+            </div>
+          </div>
+          <input type="file" id="bc-photo-file" accept="image/*" style="display:none;" onchange="previewBroadcastPhoto(this)">
+          <button id="bc-photo-clear" onclick="clearBroadcastPhoto()" style="display:none; margin-top:8px; width:100%; padding:8px; border-radius:10px; background:rgba(244,63,94,0.12); border:1px solid rgba(244,63,94,0.3); color:#f87171; font-size:12px; font-weight:600; cursor:pointer;">❌ Rasmni olib tashlash</button>
+          <input type="hidden" id="bc-photo" value="">
         </div>
 
         <div style="display:flex; gap:12px; margin-bottom:16px;">
@@ -1251,11 +1262,35 @@ async function saveSettings() {
   } catch(e) { showToast("Xatolik", "error"); }
 }
 
+function previewBroadcastPhoto(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  if (file.size > 10 * 1024 * 1024) { showToast("Rasm hajmi 10MB dan oshmasin!", "error"); input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('bc-photo-preview').src = e.target.result;
+    document.getElementById('bc-photo-preview').style.display = 'block';
+    document.getElementById('bc-photo-placeholder').style.display = 'none';
+    document.getElementById('bc-photo-clear').style.display = 'block';
+    document.getElementById('bc-photo-area').style.border = '2px solid rgba(139,92,246,0.6)';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearBroadcastPhoto() {
+  document.getElementById('bc-photo-file').value = '';
+  document.getElementById('bc-photo-preview').src = '';
+  document.getElementById('bc-photo-preview').style.display = 'none';
+  document.getElementById('bc-photo-placeholder').style.display = 'flex';
+  document.getElementById('bc-photo-clear').style.display = 'none';
+  document.getElementById('bc-photo-area').style.border = '2px dashed rgba(139,92,246,0.4)';
+}
+
 async function sendBroadcast() {
   const message = document.getElementById('bc-message').value.trim();
-  const photo_url = document.getElementById('bc-photo').value.trim();
   const button_text = document.getElementById('bc-btn-text').value.trim();
   const button_url = document.getElementById('bc-btn-url').value.trim();
+  const fileInput = document.getElementById('bc-photo-file');
   
   if (!message) { showToast("Xabar matnini kiriting!", "error"); return; }
   if (!confirm("Barcha foydalanuvchilarga ushbu xabarni yuborishni tasdiqlaysizmi?")) return;
@@ -1265,16 +1300,42 @@ async function sendBroadcast() {
   btn.innerText = "⏳ Yuborilmoqda... Kuting...";
   
   try {
-    const res = await fetch('/api/admin/broadcast', {
-      method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, photo_url, button_text, button_url })
-    });
-    const d = await res.json();
-    if (d.ok) {
-      showToast(`✅ Yuborildi: ${d.sent} ta user, Xato: ${d.failed} ta`, "success");
-      document.getElementById('bc-message').value = '';
+    let photo_url = '';
+    
+    // Agar rasm tanlangan bo'lsa, FormData orqali yuklaymiz
+    if (fileInput.files && fileInput.files[0]) {
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      formData.append('message', message);
+      formData.append('button_text', button_text);
+      formData.append('button_url', button_url);
+      
+      const res = await fetch('/api/admin/broadcast', {
+        method: 'POST',
+        headers: headers(),
+        body: formData
+      });
+      const d = await res.json();
+      if (d.ok) {
+        showToast(`✅ Yuborildi: ${d.sent} ta user, Xato: ${d.failed} ta`, "success");
+        document.getElementById('bc-message').value = '';
+        clearBroadcastPhoto();
+      } else {
+        showToast(d.error || "Xatolik", "error");
+      }
     } else {
-      showToast(d.error || "Xatolik", "error");
+      // Rasmsiz yuborish
+      const res = await fetch('/api/admin/broadcast', {
+        method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, photo_url, button_text, button_url })
+      });
+      const d = await res.json();
+      if (d.ok) {
+        showToast(`✅ Yuborildi: ${d.sent} ta user, Xato: ${d.failed} ta`, "success");
+        document.getElementById('bc-message').value = '';
+      } else {
+        showToast(d.error || "Xatolik", "error");
+      }
     }
   } catch(e) { showToast("Xatolik yuz berdi", "error"); }
   

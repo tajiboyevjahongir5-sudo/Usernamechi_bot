@@ -2483,11 +2483,26 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
     
-    data = await request.json()
-    message_text = data.get("message", "").strip()
-    photo_url = data.get("photo_url", "").strip()
-    button_text = data.get("button_text", "").strip()
-    button_url = data.get("button_url", "").strip()
+    content_type = request.headers.get("content-type", "")
+    photo_bytes = None
+    photo_filename = "photo.jpg"
+    
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        message_text = (form.get("message") or "").strip()
+        button_text = (form.get("button_text") or "").strip()
+        button_url = (form.get("button_url") or "").strip()
+        file_field = form.get("file")
+        if file_field and hasattr(file_field, "read"):
+            photo_bytes = await file_field.read()
+            photo_filename = file_field.filename or "photo.jpg"
+        photo_url = ""
+    else:
+        data = await request.json()
+        message_text = data.get("message", "").strip()
+        photo_url = data.get("photo_url", "").strip()
+        button_text = data.get("button_text", "").strip()
+        button_url = data.get("button_url", "").strip()
     
     if not message_text:
         return {"ok": False, "error": "Xabar matni kiritilmadi"}
@@ -2508,7 +2523,11 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
         
     for tid in users:
         try:
-            if photo_url:
+            if photo_bytes:
+                from aiogram.types import BufferedInputFile
+                photo_file = BufferedInputFile(photo_bytes, filename=photo_filename)
+                await bot_inst.send_photo(tid, photo=photo_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
+            elif photo_url:
                 await bot_inst.send_photo(tid, photo=photo_url, caption=message_text, reply_markup=markup, parse_mode="HTML")
             else:
                 await bot_inst.send_message(tid, message_text, reply_markup=markup, parse_mode="HTML")
@@ -2519,6 +2538,7 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
             
     await bot_inst.session.close()
     return {"ok": True, "sent": sent_count, "failed": fail_count, "total": len(users)}
+
 
 # ── ADMIN CARDS (Multi-Card Management) ────────
 @app.get("/api/admin/cards")
