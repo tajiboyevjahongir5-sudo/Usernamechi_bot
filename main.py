@@ -1271,51 +1271,66 @@ async def monitoring_loop(bot):
                 async with db.execute("SELECT t.id, t.telegram_id, t.username, u.session_string FROM monitoring_tasks t JOIN users u ON t.telegram_id=u.telegram_id WHERE t.status='monitoring'") as c:
                     tasks = await c.fetchall()
             
-            for task in tasks:
-                if not task["session_string"]: continue
-                try:
-                    client = TelegramClient(StringSession(task["session_string"]), API_ID, API_HASH)
-                    await client.connect()
+            import aiohttp
+            async with aiohttp.ClientSession(headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}) as http_session:
+                for task in tasks:
+                    uname = task["username"]
                     try:
-                        is_free = await client(CheckUsernameRequest(username=task["username"]))
-                        if is_free:
-                            ch = None
-                            try:
-                                ch = await client(CreateChannelRequest(title=task["username"].capitalize(), about="@usernamechi_bot orqali band qilingan", megagroup=False))
-                                ch_id = ch.chats[0].id
-                                await client(UpdateUsernameRequest(channel=ch_id, username=task["username"]))
-                                
-                                async with aiosqlite.connect(DB_PATH) as db:
-                                    await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
-                                    await db.commit()
-                                    
+                        # 1-qadam: Telegram foydalanuvchisini blokdan asrash uchun HTTP t.me orqali tekshiramiz
+                        async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                            if resp.status == 429: continue
+                            text = await resp.text()
+                            if 'tgme_page_title' in text:
+                                # Username band — foydalanuvchi akkauntiga bitta ham so'rov yuborilmaydi (100% XAVFSIZ!)
+                                continue
+                    except Exception:
+                        continue
+
+                    # 2-qadam: Faqat username bo'shaganda foydalanuvchi akkaunti orqali lahzada band qilamiz
+                    if not task["session_string"]: continue
+                    try:
+                        client = TelegramClient(StringSession(task["session_string"]), API_ID, API_HASH)
+                        await client.connect()
+                        try:
+                            is_free = await client(CheckUsernameRequest(username=uname))
+                            if is_free:
+                                ch = None
                                 try:
-                                    await bot.send_message(
-                                        task["telegram_id"],
-                                        f"🎯 <b>Nishon olindi!</b>\n\nKutgan usernamengiz bo'shadi va Siz uchun band qilindi: <b>@{task['username']}</b>",
-                                        parse_mode="HTML"
-                                    )
-                                except: pass
-                            except Exception as inner_e:
-                                if ch:
-                                    try: await client(DeleteChannelRequest(channel=ch.chats[0].id))
-                                    except: pass
-                                if "ChannelsAdminPublicTooMuchError" in str(type(inner_e)):
+                                    ch = await client(CreateChannelRequest(title=uname.capitalize(), about="@usernamechi_bot orqali band qilingan", megagroup=False))
+                                    ch_id = ch.chats[0].id
+                                    await client(UpdateUsernameRequest(channel=ch_id, username=uname))
+                                    
                                     async with aiosqlite.connect(DB_PATH) as db:
-                                        await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
+                                        await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
                                         await db.commit()
+                                        
                                     try:
-                                        await bot.send_message(task["telegram_id"], f"❌ @{task['username']} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
+                                        await bot.send_message(
+                                            task["telegram_id"],
+                                            f"🎯 <b>Nishon olindi!</b>\n\nKutgan usernamengiz bo'shadi va Siz uchun band qilindi: <b>@{uname}</b>",
+                                            parse_mode="HTML"
+                                        )
                                     except: pass
-                    except FloodWaitError as e:
-                        await asyncio.sleep(e.seconds)
+                                except Exception as inner_e:
+                                    if ch:
+                                        try: await client(DeleteChannelRequest(channel=ch.chats[0].id))
+                                        except: pass
+                                    if "ChannelsAdminPublicTooMuchError" in str(type(inner_e)):
+                                        async with aiosqlite.connect(DB_PATH) as db:
+                                            await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
+                                            await db.commit()
+                                        try:
+                                            await bot.send_message(task["telegram_id"], f"❌ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
+                                        except: pass
+                        except FloodWaitError as e:
+                            await asyncio.sleep(e.seconds)
+                        except Exception as e:
+                            logger.error(f"Nishon tekshirishda xato (@{uname}): {e}")
+                        finally:
+                            await client.disconnect()
                     except Exception as e:
-                        logger.error(f"Nishon tekshirishda xato (@{task['username']}): {e}")
-                    finally:
-                        await client.disconnect()
-                except Exception as e:
-                    logger.error(f"Nishon ulanishda xato: {e}")
-                await asyncio.sleep(0.2)
+                        logger.error(f"Nishon ulanishda xato: {e}")
+                    await asyncio.sleep(0.2)
         except Exception as e:
             logger.error(f"Monitoring loop xato: {e}")
         await asyncio.sleep(2)
