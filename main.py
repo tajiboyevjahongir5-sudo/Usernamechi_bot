@@ -1057,29 +1057,24 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
 async def search_sniper(telegram_id: int, search_id: int, category: str, lang: str = 'uz'):
     """Fon rejimida faqat usernamesni tekshiradi va bazaga yozadi."""
     try:
-        targets = generate_usernames(category, lang=lang, limit=15000)
+        targets = generate_usernames(category, lang=lang, limit=10000)
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
         
-        # Akkaunt yo'q bo'lsa stealth session bilan ishlatish
         if not session_string and STEALTH_SESSIONS:
             session_string = STEALTH_SESSIONS[0]
             
         client = None
         if session_string:
             try:
-                from telethon import TelegramClient
-                from telethon.sessions import StringSession
                 from telethon.tl.functions.account import CheckUsernameRequest
                 from telethon.errors import UsernamePurchaseAvailableError, FloodWaitError
-                client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
-                await client.connect()
-            except Exception:
+                client = await _get_fast_client(session_string)
+            except Exception as e:
+                logger.warning(f"Search sniper client connect error: {e}")
                 client = None
             
         found_count = 0
-        api_blocked = False
-        
         import aiohttp
 
         async def check_single(session, username):
@@ -1089,8 +1084,11 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             url = f"https://t.me/{username}"
             try:
                 async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                    if resp.status == 429: return
+                    if resp.status == 429:
+                        await asyncio.sleep(1.0)
+                        return
                     text = await resp.text()
+                    
                     # 1-Bosqich: HTTP orqali profil mavjud emasligini tekshirish
                     if 'tgme_page_title' not in text and 'tgme_page_extra' not in text and 'tgme_action_button_new' not in text:
                         is_free = False
@@ -1119,25 +1117,24 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             except Exception:
                 pass
 
-        async with aiohttp.ClientSession(headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}) as session:
-            batch_size = 10
+        async with aiohttp.ClientSession(headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}) as session:
+            batch_size = 8
             for i in range(0, len(targets), batch_size):
                 if found_count >= 20:
                     break
                 batch = targets[i:i+batch_size]
                 await asyncio.gather(*[check_single(session, u) for u in batch])
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.05)
 
-        if client:
-            try: await client.disconnect()
-            except: pass
-            
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
             await db.commit()
             
     except Exception as e:
         logger.error(f"Search task xato: {e}")
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
+            await db.commit()
 
 async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
     """Foydalanuvchi tanlagan aniq usernamelarni band qiladi."""
