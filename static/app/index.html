@@ -1029,6 +1029,21 @@
     </div>
   </div>
 
+  <!-- Nima uchun akkaunt ulash kerak? (Accordion) -->
+  <div style="margin-bottom:16px;">
+    <button onclick="toggleWhyConnect()" id="why-connect-btn" style="width:100%; display:flex; align-items:center; justify-content:space-between; background:rgba(124,58,237,0.12); border:1px solid rgba(124,58,237,0.3); border-radius:14px; padding:13px 16px; color:var(--text); font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.2s;">
+      <span style="display:flex; align-items:center; gap:8px;">🤔 Nima uchun akkaunt ulash kerak?</span>
+      <span id="why-connect-arrow" style="font-size:11px; color:var(--muted); transition:transform 0.3s;">▼</span>
+    </button>
+    <div id="why-connect-content" style="display:none; background:rgba(124,58,237,0.08); border:1px solid rgba(124,58,237,0.2); border-top:none; border-radius:0 0 14px 14px; padding:14px 16px; overflow:hidden;">
+      <div style="color:var(--muted); font-size:13px; line-height:1.75;">
+        Bot username qidirish jarayonida topilgan bo'sh usernamelarni <b style="color:var(--text);">sizning akkauntingiz nomidan</b> band qiladi. Shuningdek, <b style="color:var(--text);">usernamelarni sotish va sotib olish</b> uchun ham akkauntingiz ulanishi shart!
+        <br><br>
+        🔒 <b style="color:var(--text);">Xavfsizlik:</b> Parolingiz saqlanmaydi. Faqat maxsus "session" kaliti saqlanib, u orqali faqat username band qilish va sotuv amallari bajariladi.
+      </div>
+    </div>
+  </div>
+
   <!-- PREMIUM SECTION -->
   <div class="card" id="premium-wrap" style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05)); border-color:rgba(245,158,11,0.3);">
     <div style="font-weight:700; font-size:16px; margin-bottom:8px; color:#fbbf24; display:flex; align-items:center; gap:6px;"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Crown/3D/crown_3d.png" class="icon-3d-img" style="width:20px!important;height:20px!important;"> Premium Akkaunt</div>
@@ -1115,15 +1130,6 @@
     </div>
   </div>
 
-  <!-- Akkaunt ulash nima uchun kerak -->
-  <div style="background:linear-gradient(135deg,rgba(124,58,237,0.15),rgba(6,182,212,0.1));border:1px solid rgba(124,58,237,0.3);border-radius:16px;padding:16px;margin-bottom:16px;">
-    <div style="font-size:15px;font-weight:700;margin-bottom:8px;">🤔 Nima uchun akkaunt ulash kerak?</div>
-    <div style="color:var(--muted);font-size:13px;line-height:1.7;">
-      Bot username qidirish jarayonida topilgan bo'sh usernamelarni <b>sizning akkauntingiz nomidan</b> band qiladi. Shuningdek, <b>usernamelarni sotish va sotib olish</b> uchun ham akkauntingiz ulanishi shart!
-      <br><br>
-      🔒 <b>Xavfsizlik:</b> Parolingiz saqlanmaydi. Faqat maxsus "session" kaliti saqlanib, u orqali faqat username band qilish va sotuv amallari bajariladi.
-    </div>
-  </div>
 </div>
 
 <!-- BOTTOM NAV -->
@@ -1197,6 +1203,23 @@ function setLang(lang) {
   } else {
     document.getElementById('btn-lang-uz').className = 'btn btn-outline';
     document.getElementById('btn-lang-en').className = 'btn btn-primary';
+  }
+}
+
+// ── WHY CONNECT ACCORDION ─────────────────────
+function toggleWhyConnect() {
+  const content = document.getElementById('why-connect-content');
+  const arrow = document.getElementById('why-connect-arrow');
+  const btn = document.getElementById('why-connect-btn');
+  const isOpen = content.style.display !== 'none';
+  if (isOpen) {
+    content.style.display = 'none';
+    arrow.style.transform = 'rotate(0deg)';
+    btn.style.borderRadius = '14px';
+  } else {
+    content.style.display = 'block';
+    arrow.style.transform = 'rotate(180deg)';
+    btn.style.borderRadius = '14px 14px 0 0';
   }
 }
 
