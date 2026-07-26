@@ -1124,54 +1124,6 @@
       🔒 <b>Xavfsizlik:</b> Parolingiz saqlanmaydi. Faqat maxsus "session" kaliti saqlanib, u orqali faqat username band qilish va sotuv amallari bajariladi.
     </div>
   </div>
-
-  <div class="account-status" id="account-status">
-    <div class="status-dot disconnected" id="status-dot"></div>
-    <div class="account-info">
-      <div class="name" id="account-name">Akkaunt ulanmagan</div>
-      <div class="sub" id="account-sub">Username band qilish uchun ulang</div>
-    </div>
-  </div>
-
-  <div class="card" id="session-form-wrap">
-    <div class="section-title">Telegramga <span>ulanish</span></div>
-    
-    <!-- BOSQICH 1: Telefon raqam -->
-    <div id="auth-step-phone">
-      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Akkauntingizni ulash uchun Telegram telefon raqamingizni kiriting.</div>
-      <div class="form-group">
-        <label>TELEFON RAQAM</label>
-        <input type="text" id="auth-phone" placeholder="+998 90 123 45 67">
-      </div>
-      <button class="btn btn-primary" onclick="sendAuthCode()" id="btn-send-code">Kod yuborish</button>
-    </div>
-
-    <!-- BOSQICH 2: Kod kiritish -->
-    <div id="auth-step-code" style="display:none;">
-      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Telegramdan kelgan 5 xonali kodni kiriting.</div>
-      <div class="form-group">
-        <label>TASDIQLASH KODI</label>
-        <input type="number" id="auth-code" placeholder="12345">
-      </div>
-      <button class="btn btn-primary" onclick="verifyAuthCode()" id="btn-verify-code">Tasdiqlash</button>
-    </div>
-
-    <!-- BOSQICH 3: 2FA Parol -->
-    <div id="auth-step-password" style="display:none;">
-      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Akkauntingizda 2-bosqichli parol o'rnatilgan. Parolni kiriting.</div>
-      <div class="form-group">
-        <label>PAROL (2FA)</label>
-        <input type="password" id="auth-password" placeholder="Parol">
-      </div>
-      <button class="btn btn-primary" onclick="verifyAuthPassword()" id="btn-verify-pass">Kirish</button>
-    </div>
-  </div>
-
-  <div id="disconnect-wrap" style="display:none;margin-top:8px;">
-    <button class="btn btn-danger" onclick="disconnectAccount()">
-      🔌 Uzish
-    </button>
-  </div>
 </div>
 
 <!-- BOTTOM NAV -->
