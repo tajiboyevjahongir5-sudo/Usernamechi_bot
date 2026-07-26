@@ -1089,8 +1089,8 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                         return
                     text = await resp.text()
                     
-                    # 1-Bosqich: HTTP orqali profil mavjud emasligini tekshirish
-                    if 'tgme_page_title' not in text and 'tgme_page_extra' not in text and 'tgme_action_button_new' not in text:
+                    # 1-Bosqich: HTTP orqali profil/kanal mavjud emasligini tekshirish
+                    if 'tgme_page_title' not in text and 'tgme_page_extra' not in text:
                         is_free = False
                         
                         # 2-Bosqich: TELEGRAM OFFICIAL API BILAN TEKSHIRISH
