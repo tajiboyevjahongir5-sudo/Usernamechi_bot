@@ -2110,12 +2110,15 @@ async function startSearch() {
 async function pollSearchResults() {
   if(!currentSearchId) return;
   searchPollCount = (searchPollCount || 0) + 1;
-  // 3 daqiqadan oshsa (90 ta so'rov x 2s) — avtomatik to'xtatamiz
-  if (searchPollCount > 90) {
+  // 2 daqiqadan oshsa (60 ta so'rov x 2s) — avtomatik to'xtatamiz
+  if (searchPollCount > 60) {
     clearInterval(searchPollInterval);
-    document.getElementById('search-status-text').innerHTML = '⚠️ Qidiruv vaqti tugadi. Qayta urinib ko\'ring.';
+    document.getElementById('search-status-text').innerHTML = '⚠️ Server javob bermadi. Keyinroq qayta urinib ko\'ring.';
     return;
   }
+  // Vaqt ko'rsatgich
+  const elapsed = searchPollCount * 2;
+  document.getElementById('search-status-text').innerHTML = `⏳ Qidirilmoqda... (${elapsed}s)`;
   try {
     const res = await fetch(`${API}/api/search/results?search_id=${currentSearchId}&init_data=${encodeURIComponent(tg.initData)}`);
     const d = await res.json();

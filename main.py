@@ -1081,19 +1081,16 @@ async def _get_fast_client(session_string: str):
 async def search_sniper(telegram_id: int, search_id: int, category: str, lang: str = 'uz'):
     """Faqat Telethon API orqali bo'sh usernamelarni qidiradi."""
     try:
-        targets = generate_usernames(category, lang=lang, limit=5000)
+        targets = generate_usernames(category, lang=lang, limit=3000)
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
-        
+
         if not session_string and STEALTH_SESSIONS:
             session_string = STEALTH_SESSIONS[0]
 
         if not session_string:
-            logger.warning("Search sniper: no session, cannot check usernames via Telethon")
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
-                await db.commit()
-            return
+            logger.warning("Search sniper: no session")
+            return  # finally blok 'completed' qiladi
 
         from telethon.tl.functions.account import CheckUsernameRequest
         from telethon.errors import UsernamePurchaseAvailableError, FloodWaitError, UsernameInvalidError
@@ -1102,24 +1099,25 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             client = await _get_fast_client(session_string)
         except Exception as e:
             logger.error(f"Search sniper client error: {e}")
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
-                await db.commit()
-            return
+            return  # finally blok 'completed' qiladi
 
         found_count = 0
         start_time = asyncio.get_event_loop().time()
-        MAX_SECONDS = 120  # Maksimal 2 daqiqa
+        MAX_SECONDS = 90  # Maksimal 90 soniya
 
         for username in targets:
-            # 2 daqiqadan oshsa — to'xtatamiz
             if asyncio.get_event_loop().time() - start_time > MAX_SECONDS:
+                logger.info(f"Search {search_id}: 90s timeout, stopping. Found: {found_count}")
                 break
             if found_count >= 20:
                 break
 
             try:
-                res = await client(CheckUsernameRequest(username))
+                # Har bir so'rovga 5 soniya timeout — hech qachon hang qilmaydi
+                res = await asyncio.wait_for(
+                    client(CheckUsernameRequest(username)),
+                    timeout=5.0
+                )
                 if res:  # True = bo'sh!
                     async with aiosqlite.connect(DB_PATH) as db:
                         await db.execute(
@@ -1128,18 +1126,23 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                         )
                         await db.commit()
                     found_count += 1
-                await asyncio.sleep(0.07)  # FloodWait dan qochish uchun
+                await asyncio.sleep(0.05)
+            except asyncio.TimeoutError:
+                logger.warning(f"CheckUsername timeout for @{username}")
+                await asyncio.sleep(0.2)
             except UsernamePurchaseAvailableError:
-                pass  # Fragment auksionida — o'tkazib yuboramiz
+                pass
             except UsernameInvalidError:
-                pass  # Noto'g'ri format
+                pass
             except FloodWaitError as e:
-                wait = min(e.seconds, 30)
+                wait = min(e.seconds, 20)
                 logger.warning(f"FloodWait {wait}s in search_sniper")
                 await asyncio.sleep(wait)
             except Exception as e:
-                logger.warning(f"check username error: {e}")
+                logger.warning(f"check username error for @{username}: {e}")
                 await asyncio.sleep(0.1)
+
+        logger.info(f"Search {search_id} done. Found: {found_count}")
 
     except Exception as e:
         logger.error(f"Search task xato: {e}")
@@ -1149,8 +1152,10 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
                 await db.commit()
+            logger.info(f"Search {search_id}: status set to completed")
         except Exception as e:
-            logger.error(f"Search task status update failed: {e}")
+            logger.error(f"Search task status update FAILED: {e}")
+
 
 async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
     """Foydalanuvchi tanlagan aniq usernamelarni band qiladi."""
