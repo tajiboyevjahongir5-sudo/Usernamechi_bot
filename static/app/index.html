@@ -1951,6 +1951,7 @@ function goPage(name) {
   if(name==='market') loadMarketplace();
   if(name==='my-listings') loadMyListings();
   if(name==='balance'||name==='home') { loadUserData(); loadOrders(); }
+  if(name==='account') { loadUserData(); }
 }
 
 window.addEventListener('resize', () => {
