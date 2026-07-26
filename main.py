@@ -1274,6 +1274,21 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
             
     except Exception as e:
         logger.error(f"Claim task xato: {e}")
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("UPDATE orders SET status='failed' WHERE id=?", (order_id,))
+                cur = await db.execute("SELECT price FROM orders WHERE id=?", (order_id,))
+                order_row = await cur.fetchone()
+                if order_row and order_row[0]:
+                    await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (order_row[0], telegram_id))
+                await db.commit()
+            await bot.send_message(
+                telegram_id, 
+                f"❌ <b>Band qilishda xatolik yuz berdi:</b>\n<code>{e}</code>\n\n<i>To'langan pul balansingizga qaytarildi. Akkauntingiz ulanishini tekshiring!</i>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
 
 async def deferred_claim_loop(bot):
     """Blok muddati o'tgan buyurtmalarni avtomatik band qiladi."""
