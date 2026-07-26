@@ -999,21 +999,39 @@ async function loadOrders() {
       container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Buyurtmalar mavjud emas</div>';
       return;
     }
-    container.innerHTML = orders.map(o => `
-      <div class="user-item">
-        <div class="user-left">
-          <div class="user-avatar" style="background:rgba(6,182,212,0.2); color:var(--accent-cyan);">📦</div>
-          <div class="user-details">
-            <div class="user-name">Kategoriya: ${o.category}</div>
-            <div class="user-meta">User: <b>${o.telegram_id}</b> · ${o.registered_count || 0}/${o.quantity} band qilingan</div>
+    container.innerHTML = orders.map(o => {
+      const usernamesList = (o.registered_usernames && o.registered_usernames.length)
+        ? o.registered_usernames.map(u => `<span style="background:rgba(139,92,246,0.18); border:1px solid rgba(139,92,246,0.3); color:#c084fc; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700; font-family:'JetBrains Mono',monospace;">@${u}</span>`).join(' ')
+        : '<span style="color:var(--text-muted); font-size:11px;">Hali username band qilinmadi</span>';
+      
+      const userNameStr = o.first_name ? `${o.first_name} ${o.user_username ? '(@'+o.user_username+')' : ''}` : `ID: ${o.telegram_id}`;
+
+      return `
+        <div class="user-item" style="flex-direction:column; align-items:stretch; gap:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div class="user-left">
+              <div class="user-avatar" style="background:rgba(6,182,212,0.2); color:var(--accent-cyan);">📂</div>
+              <div class="user-details">
+                <div class="user-name">${o.category.toUpperCase()} category</div>
+                <div class="user-meta">
+                  👤 Buyurtmachi: <b>${userNameStr}</b> (ID: ${o.telegram_id})
+                </div>
+              </div>
+            </div>
+            <div class="user-right" style="border:none; padding:0;">
+              <div class="user-bal">${(o.price||0).toLocaleString()} so'm</div>
+              <span class="status-chip ${o.status==='completed'?'chip-success':'chip-warning'}">${o.status==='completed'?'✅ Bajarildi':'⏳ Qidirilmoqda'} (${o.registered_count || 0}/${o.quantity})</span>
+            </div>
+          </div>
+          <div style="background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.05); border-radius:12px; padding:10px 12px; margin-top:2px;">
+            <div style="font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">🎯 Band Qilingan Usernamelar (${o.registered_usernames ? o.registered_usernames.length : 0} ta):</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+              ${usernamesList}
+            </div>
           </div>
         </div>
-        <div class="user-right">
-          <div class="user-bal">${(o.price||0).toLocaleString()} so'm</div>
-          <span class="status-chip ${o.status==='completed'?'chip-success':'chip-warning'}">${o.status}</span>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   } catch(e) {}
 }
 

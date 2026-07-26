@@ -2612,8 +2612,19 @@ async def admin_orders(x_admin_token: str = Header(default="")):
     else: raise HTTPException(403)
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM orders ORDER BY id DESC LIMIT 100") as c:
-            return [dict(r) for r in await c.fetchall()]
+        async with db.execute("""
+            SELECT o.*, u.first_name, u.username as user_username
+            FROM orders o
+            LEFT JOIN users u ON o.telegram_id = u.telegram_id
+            ORDER BY o.id DESC LIMIT 100
+        """) as c:
+            orders = [dict(r) for r in await c.fetchall()]
+        
+        for order in orders:
+            async with db.execute("SELECT username FROM registered_usernames WHERE order_id=?", (order['id'],)) as c:
+                order['registered_usernames'] = [r['username'] for r in await c.fetchall()]
+                
+        return orders
 
 # ─── MAIN ─────────────────────────────────────
 async def main():
