@@ -607,6 +607,31 @@ body::before {
       <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-balance')">Bekor Qilish</button>
     </div>
   </div>
+</div>
+
+<!-- ADD CARD MODAL -->
+<div class="modal-overlay" id="modal-card">
+  <div class="modal-box">
+    <h3 style="font-size:18px; font-weight:800; margin-bottom:16px;">💳 Yangi Karta Qo'shish</h3>
+    <div class="form-group">
+      <label class="form-label">Karta Raqami</label>
+      <input type="text" id="new-card-number" class="form-input" placeholder="8600 1234 5678 9012">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Karta Egasi Ismi (Ixtiyoriy)</label>
+      <input type="text" id="new-card-owner" class="form-input" placeholder="Ali Valiyev">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Kunlik To'lovlar Limiti (default: 40 ta)</label>
+      <input type="number" id="new-card-limit" class="form-input" value="40" placeholder="40">
+    </div>
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitAddCard()">➕ Qo'shish</button>
+      <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-card')">Bekor Qilish</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT CARD MODAL -->
 <div class="modal-overlay" id="modal-edit-card">
   <div class="modal-box">
