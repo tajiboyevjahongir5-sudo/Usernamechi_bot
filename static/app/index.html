@@ -2133,14 +2133,9 @@ function calcSearchPrice() {
   const catVal = document.getElementById('buy-category').value.trim();
   const unitPrice = getCategoryPrice(catVal);
   const qty = Math.min(10, Math.max(1, parseInt(document.getElementById('buy-qty').value) || 1));
-  const free = userData.free_searches || 0;
-  const priceQty = Math.max(0, qty - free);
-  const total = priceQty * unitPrice;
+  const total = qty * unitPrice;
   
   let labelText = total.toLocaleString() + " so'm";
-  if (free > 0) {
-    labelText += ` <span style="font-size:12px; color:var(--success); font-weight:normal;">(${Math.min(qty, free)} ta bepul)</span>`;
-  }
   document.getElementById('search-total-price').innerHTML = labelText;
   
   const warn = document.getElementById('search-balance-warn');
@@ -2164,9 +2159,7 @@ async function startSearch() {
   if (!userData.session_string) { showToast('Avval akkauntni ulang!','error'); goPage('account'); return; }
 
   const unitPrice = getCategoryPrice(rawCat);
-  const free = userData.free_searches || 0;
-  const priceQty = Math.max(0, qty - free);
-  const totalPrice = priceQty * unitPrice;
+  const totalPrice = qty * unitPrice;
 
   if ((userData.balance || 0) < totalPrice) {
     showToast('Balans yetarli emas!', 'error');
@@ -2201,11 +2194,7 @@ async function startSearch() {
       if(searchPollInterval) clearInterval(searchPollInterval);
       searchPollCount = 0;
       searchPollInterval = setInterval(pollSearchResults, 2000);
-      if (totalPrice > 0) {
-        showToast(`✅ ${totalPrice.toLocaleString()} so'm yechildi!`, 'success');
-      } else {
-        showToast(`✅ Bepul qidiruv ishga tushdi!`, 'success');
-      }
+      showToast(`✅ ${totalPrice.toLocaleString()} so'm yechildi!`, 'success');
     } else {
       showToast(d.error || 'Xato yuz berdi', 'error');
     }

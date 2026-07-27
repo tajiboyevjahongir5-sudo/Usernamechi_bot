@@ -2739,29 +2739,18 @@ async def api_search_start(request: Request):
     if not row or not row['session_string']:
         return {"ok": False, "error": "Akkaunt ulanmagan"}
 
-    free_searches_count = row.get('free_searches')
-    if free_searches_count is None:
-        free_searches_count = 1
-
-    # Narxni kategoriyaga qarab hisoblash
-    total_price = max(0, (qty - free_searches_count) * unit_price)
+    # Narxni kategoriyaga qarab hisoblash (100% haqiqiy narx yechiladi)
+    total_price = qty * unit_price
     if (row['balance'] or 0) < total_price:
         return {"ok": False, "error": f"Balans yetarli emas ({total_price:,} so'm kerak)"}
 
-    used_free = min(free_searches_count, qty)
-
-    # Oldindan pulni va bepul urinishni yechib olamiz
-    if total_price > 0:
-        await deduct_balance(tid, total_price)
-    
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET free_searches = MAX(0, IFNULL(free_searches, 1) - ?) WHERE telegram_id = ?", (qty, tid))
-        await db.commit()
+    # Pulni foydalanuvchi balansidan yechamiz
+    await deduct_balance(tid, total_price)
 
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             "INSERT INTO search_tasks (telegram_id, category, paid_qty, lang, charged_amount, used_free) VALUES (?, ?, ?, ?, ?, ?)",
-            (tid, cat, qty, lang, total_price, used_free)
+            (tid, cat, qty, lang, total_price, 0)
         )
         search_id = cur.lastrowid
         await db.commit()
