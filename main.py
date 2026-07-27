@@ -148,13 +148,25 @@ async def init_db():
                 paid_qty INTEGER DEFAULT 1,
                 status TEXT DEFAULT 'searching',
                 created_at REAL DEFAULT (strftime('%s','now')),
-                lang TEXT DEFAULT 'uz'
+                lang TEXT DEFAULT 'uz',
+                charged_amount INTEGER DEFAULT 0,
+                used_free INTEGER DEFAULT 0
             )
         """)
         try:
             await db.execute("ALTER TABLE search_tasks ADD COLUMN lang TEXT DEFAULT 'uz'")
-        except Exception:
-            pass
+        except Exception: pass
+        try:
+            await db.execute("ALTER TABLE search_tasks ADD COLUMN charged_amount INTEGER DEFAULT 0")
+        except Exception: pass
+        try:
+            await db.execute("ALTER TABLE search_tasks ADD COLUMN used_free INTEGER DEFAULT 0")
+        except Exception: pass
+        
+        # Barcha foydalanuvchilarning free_searches qiymatini maksimum 1 ga tozalaymiz (xatolik tufayli oshib ketgan bo'lsa)
+        try:
+            await db.execute("UPDATE users SET free_searches = 1 WHERE free_searches > 1")
+        except Exception: pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS search_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1189,11 +1201,23 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         logger.error(f"Search task error: {e}")
     finally:
         async with aiosqlite.connect(DB_PATH) as db:
-            # Agar 0 ta topilgan bo'lsa — foydalanuvchiga pulini va imkoniyatini qaytaramiz
+            # Agar 0 ta topilgan bo'lsa — faqat haqiqatan yechilgan pul va max 1 bepul urinish qaytariladi
             if found_count == 0:
-                logger.warning(f"Search {search_id}: 0 results found, refunding user {telegram_id}")
-                await db.execute("UPDATE users SET free_searches = IFNULL(free_searches, 0) + ? WHERE telegram_id=?", (paid_qty, telegram_id))
-                await db.commit()
+                async with db.execute("SELECT charged_amount, used_free FROM search_tasks WHERE id=?", (search_id,)) as c:
+                    task_info = await c.fetchone()
+                    if task_info:
+                        charged = task_info[0] or 0
+                        used_free = task_info[1] or 0
+                        
+                        if charged > 0:
+                            logger.warning(f"Search {search_id}: 0 results, refunding {charged} so'm to user {telegram_id}")
+                            await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id=?", (charged, telegram_id))
+                        
+                        if used_free > 0:
+                            # free_searches 1 dan oshib ketmasligi shart!
+                            await db.execute("UPDATE users SET free_searches = MIN(1, IFNULL(free_searches, 0) + 1) WHERE telegram_id=?", (telegram_id,))
+                        
+                        await db.commit()
 
             await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
             await db.commit()
@@ -2340,6 +2364,8 @@ async def api_search_start(request: Request):
     if (row['balance'] or 0) < total_price:
         return {"ok": False, "error": f"Balans yetarli emas ({total_price:,} so'm kerak)"}
 
+    used_free = min(free_searches_count, qty)
+
     # Oldindan pulni va bepul urinishni yechib olamiz
     if total_price > 0:
         await deduct_balance(tid, total_price)
@@ -2350,8 +2376,8 @@ async def api_search_start(request: Request):
 
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
-            "INSERT INTO search_tasks (telegram_id, category, paid_qty, lang) VALUES (?, ?, ?, ?)",
-            (tid, cat, qty, lang)
+            "INSERT INTO search_tasks (telegram_id, category, paid_qty, lang, charged_amount, used_free) VALUES (?, ?, ?, ?, ?, ?)",
+            (tid, cat, qty, lang, total_price, used_free)
         )
         search_id = cur.lastrowid
         await db.commit()
