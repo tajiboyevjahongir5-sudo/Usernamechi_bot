@@ -370,10 +370,10 @@ body::before {
     <div class="login-badge">🛡️</div>
     <div class="login-title">Admin <span>Center</span></div>
     <div class="login-sub">Tizimga kirish uchun Telegram orqali autentifikatsiya qiling</div>
-    <a href="/api/admin/auth" class="login-btn">
+    <button class="login-btn" onclick="doTelegramLogin()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
       Telegram Bilan Kirish
-    </a>
+    </button>
   </div>
 </div>
 
@@ -783,27 +783,15 @@ try {
 let ADMIN_TOKEN = localStorage.getItem('admin_token') || '';
 const headers = () => ({ 'X-Admin-Token': localStorage.getItem('admin_token') || '' });
 
-async function checkAuth() {
-  const params = new URLSearchParams(location.search);
-  const token = params.get('token');
-  if (token) {
-    ADMIN_TOKEN = token;
-    localStorage.setItem('admin_token', token);
-    history.replaceState({}, '', '/admin');
+async function doTelegramLogin() {
+  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+    await attemptWebAuth();
+  } else {
+    window.location.href = '/api/admin/auth';
   }
+}
 
-  // 1. Agar avval saqlangan token bo'lsa tekshiramiz
-  try {
-    const res = await fetch('/api/admin/check', { headers: headers() });
-    if (res.ok) {
-      document.getElementById('login-screen').style.display = 'none';
-      loadDashboard();
-      initNavDragPhysics();
-      return;
-    }
-  } catch(e) {}
-
-  // 2. Telegram Mini-App orqali kirgan bo'lsa, initData orqali AVTOMATIK kirish
+async function attemptWebAuth() {
   try {
     if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
       const tgInit = window.Telegram.WebApp.initData;
@@ -816,10 +804,43 @@ async function checkAuth() {
       if (d.ok && d.token) {
         ADMIN_TOKEN = d.token;
         localStorage.setItem('admin_token', d.token);
-        document.getElementById('login-screen').style.display = 'none';
+        const loginEl = document.getElementById('login-screen');
+        if (loginEl) loginEl.style.display = 'none';
         loadDashboard();
         initNavDragPhysics();
+        return true;
+      } else {
+        if (d.error) showToast(d.error, 'error');
       }
+    }
+  } catch(e) {}
+  return false;
+}
+
+async function checkAuth() {
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  if (token) {
+    ADMIN_TOKEN = token;
+    localStorage.setItem('admin_token', token);
+    history.replaceState({}, '', '/admin');
+  }
+
+  // 1. WebApp ichida bo'lsa darhol avto-auth
+  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+    const success = await attemptWebAuth();
+    if (success) return;
+  }
+
+  // 2. Token orqali tekshirish
+  try {
+    const res = await fetch('/api/admin/check', { headers: headers() });
+    if (res.ok) {
+      const loginEl = document.getElementById('login-screen');
+      if (loginEl) loginEl.style.display = 'none';
+      loadDashboard();
+      initNavDragPhysics();
+      return;
     }
   } catch(e) {}
 }
