@@ -1152,6 +1152,9 @@ function renderUsers() {
             <span class="status-chip ${u.session_string ? 'chip-success' : 'chip-danger'}">${u.session_string ? '🟢 Ulangan' : '🔴 Uzilgan'}</span>
             ${u.is_stealth ? '<span class="status-chip chip-purple">🕵️ Stealth</span>' : ''}
           </div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">
+            📅 Qo'shilgan: <b>${u.created_at && u.created_at > 0 ? new Date(u.created_at * 1000).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Noma\'lum'}</b>
+          </div>
         </div>
       </div>
       <div class="user-right">

