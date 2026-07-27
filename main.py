@@ -1938,9 +1938,11 @@ async def api_account_usernames(init_data: str = ""):
         db.row_factory = aiosqlite.Row
         # Muvaffaqiyatli band qilingan usernamelar
         async with db.execute("""
-            SELECT DISTINCT username FROM orders 
-            WHERE telegram_id=? AND status='completed' AND username IS NOT NULL AND username != ''
-            ORDER BY id DESC LIMIT 50
+            SELECT DISTINCT ru.username 
+            FROM registered_usernames ru 
+            JOIN orders o ON ru.order_id = o.id 
+            WHERE o.telegram_id=? AND ru.username IS NOT NULL AND ru.username != ''
+            ORDER BY ru.id DESC LIMIT 50
         """, (tid,)) as c:
             for r in await c.fetchall():
                 u = r['username']
