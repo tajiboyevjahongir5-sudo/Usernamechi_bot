@@ -2352,6 +2352,15 @@ async def api_search_start(request: Request):
     if not cat:
         return {"ok": False, "error": "Kategoriya kiritilmadi"}
 
+    # Kategoriyaga qarab narx (server tomonda, aldab bo'lmaydi)
+    CATEGORY_PRICES = {
+        'qisqa': 15000,   # Qisqa noyob so'z
+        'turli': 10000,   # Turli ko'rinishdagi
+    }
+    # custom: o'zim kiritaman
+    cat_key = cat.split(':')[0] if ':' in cat else cat
+    unit_price = CATEGORY_PRICES.get(cat_key, 5000)  # default = custom narxi
+
     row = await get_user(tid)
     if not row or not row['session_string']:
         return {"ok": False, "error": "Akkaunt ulanmagan"}
@@ -2360,7 +2369,8 @@ async def api_search_start(request: Request):
     if free_searches_count is None:
         free_searches_count = 1
 
-    total_price = max(0, (qty - free_searches_count) * 5000)
+    # Narxni kategoriyaga qarab hisoblash
+    total_price = max(0, (qty - free_searches_count) * unit_price)
     if (row['balance'] or 0) < total_price:
         return {"ok": False, "error": f"Balans yetarli emas ({total_price:,} so'm kerak)"}
 

@@ -714,11 +714,18 @@
     <div class="form-group">
       <label>🎯 Qanday username qidiramiz?</label>
       <div style="display:flex; gap:8px; margin-bottom:8px;">
-        <button id="btn-cat-short" class="btn btn-outline" style="margin:0; flex:1; font-size:13px; padding:12px 8px; border-radius:14px;" onclick="setCategory('qisqa')">⚡ Qisqa noyob so'z</button>
-        <button id="btn-cat-smart" class="btn btn-primary" style="margin:0; flex:1; font-size:13px; padding:12px 8px; border-radius:14px;" onclick="setCategory('turli')">🎨 Turli ko'rinishdagi</button>
-      </div>
-      <div style="display:flex; gap:8px; margin-bottom:8px;">
-        <button id="btn-cat-custom" class="btn btn-outline" style="margin:0; flex:1; font-size:13px; padding:12px 8px; border-radius:14px;" onclick="setCategory('custom')">✏️ O'zim so'z kiritaman</button>
+        <button id="btn-cat-custom" class="btn btn-outline" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:2px;" onclick="setCategory('custom')">
+          <span>✍️ O'zim kiritaman</span>
+          <span style="font-size:11px; opacity:0.8; font-weight:700;">5,000 so'm</span>
+        </button>
+        <button id="btn-cat-smart" class="btn btn-primary" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:2px;" onclick="setCategory('turli')">
+          <span>✨ Turli ko'rinishdagi</span>
+          <span style="font-size:11px; opacity:0.8; font-weight:700;">10,000 so'm</span>
+        </button>
+        <button id="btn-cat-short" class="btn btn-outline" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:2px;" onclick="setCategory('qisqa')">
+          <span>💎 Qisqa noyob</span>
+          <span style="font-size:11px; opacity:0.8; font-weight:700;">15,000 so'm</span>
+        </button>
       </div>
       <div id="custom-word-container" style="display:none; margin-bottom:12px;">
         <input type="text" id="buy-custom-word" placeholder="Masalan: ali, anvar, shop..." class="input" style="width:100%;">
@@ -1195,6 +1202,7 @@ function setCategory(cat) {
   } else if (cat === 'custom') {
     document.getElementById('btn-cat-custom').className = 'btn btn-primary';
   }
+  calcSearchPrice();
 }
 function setLang(lang) {
   document.getElementById('buy-lang').value = lang;
@@ -2021,13 +2029,19 @@ let paidQty = 0;           // Oldindan to'langan miqdor
 let searchPollInterval = null;
 let searchPollCount = 0;   // Cheksiz polling oldini olish uchun
 let selectedUsernames = new Set();
-const PRICE_PER_ITEM = 5000;
+function getCategoryPrice(catVal) {
+  if (catVal.startsWith('custom')) return 5000;
+  if (catVal === 'qisqa') return 15000;
+  return 10000; // turli (default)
+}
 
 function calcSearchPrice() {
+  const catVal = document.getElementById('buy-category').value.trim();
+  const unitPrice = getCategoryPrice(catVal);
   const qty = Math.min(10, Math.max(1, parseInt(document.getElementById('buy-qty').value) || 1));
   const free = userData.free_searches || 0;
   const priceQty = Math.max(0, qty - free);
-  const total = priceQty * PRICE_PER_ITEM;
+  const total = priceQty * unitPrice;
   
   let labelText = total.toLocaleString() + " so'm";
   if (free > 0) {
@@ -2040,8 +2054,9 @@ function calcSearchPrice() {
 }
 
 async function startSearch() {
-  let cat = document.getElementById('buy-category').value.trim();
-  if (cat === 'custom') {
+  let rawCat = document.getElementById('buy-category').value.trim();
+  let cat = rawCat;
+  if (rawCat === 'custom') {
     const word = document.getElementById('buy-custom-word').value.trim();
     if (!word || word.length < 2) {
       showToast("Iltimos, eng kamida 2 ta harfdan iborat so'z kiriting!", "error");
@@ -2054,9 +2069,10 @@ async function startSearch() {
   if (!cat) { showToast('Kategoriya kiriting!','error'); return; }
   if (!userData.session_string) { showToast('Avval akkauntni ulang!','error'); goPage('account'); return; }
 
+  const unitPrice = getCategoryPrice(rawCat);
   const free = userData.free_searches || 0;
   const priceQty = Math.max(0, qty - free);
-  const totalPrice = priceQty * PRICE_PER_ITEM;
+  const totalPrice = priceQty * unitPrice;
 
   if ((userData.balance || 0) < totalPrice) {
     showToast('Balans yetarli emas!', 'error');
