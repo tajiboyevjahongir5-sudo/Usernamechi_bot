@@ -1248,6 +1248,23 @@ async function init() {
   await loadOrders();
   loadCardNumber();
   
+  // Telegram Start Param (Direct Deep Linking: listing_123)
+  const startParam = tg.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('tgWebAppStartParam') || '';
+  if (startParam && startParam.startsWith('listing_')) {
+    const listingId = parseInt(startParam.replace('listing_', ''));
+    if (listingId) {
+      goPage('market');
+      setTimeout(() => {
+        const itemEl = document.getElementById(`listing-item-${listingId}`);
+        if (itemEl) {
+          itemEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          itemEl.style.border = '2px solid #38bdf8';
+          itemEl.style.boxShadow = '0 0 20px rgba(56,189,248,0.5)';
+        }
+      }, 800);
+    }
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
   const escrowId = urlParams.get('escrow');
   if (escrowId) {
@@ -1589,7 +1606,7 @@ async function loadMarketplace(reset = true) {
         const btnFn = l.is_auction ? `placeAuctionBid(${l.id}, ${l.current_bid || l.price})` : `buyListing(${l.id})`;
         const delay = (i % 4) * 60;
         return `
-          <div class="market-card ${cls}" style="animation-delay:${delay}ms">
+          <div class="market-card ${cls}" id="listing-item-${l.id}" style="animation-delay:${delay}ms">
             ${l.is_premium ? '<div class="market-card-badge premium">👑 TOP</div>' : ''}
             ${l.is_auction ? '<div class="market-card-badge auction">⚡ AUKSION</div>' : ''}
             <div class="market-card-avatar ${cls}">${letter}</div>

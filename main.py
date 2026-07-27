@@ -2021,29 +2021,38 @@ async def api_marketplace_list(request: Request):
                          (tid, username, price, is_auction, price if is_auction else 0, auction_ends_at))
         await db.commit()
         
-        # 1. AUTO-BROADCAST TO TELEGRAM MARKETPLACE CHANNEL
+        # 1. AUTO-BROADCAST TO TELEGRAM MARKETPLACE CHANNEL (user_market)
         mkt_channel = await get_setting("marketplace_channel_id", "0")
         if mkt_channel and mkt_channel != "0":
             try:
+                # Username bo'lsa @ qo'shamiz
+                target_chan = mkt_channel.strip()
+                if not target_chan.startswith("-100") and not target_chan.startswith("@"):
+                    target_chan = f"@{target_chan}"
+
                 bot_inst = Bot(token=BOT_TOKEN)
-                bot_username = (await bot_inst.get_me()).username
-                app_link = f"https://t.me/{bot_username}?start=market"
+                bot_me = await bot_inst.get_me()
+                bot_username = bot_me.username
+                
+                # Direct Listing Link: Telegram Mini App startapp parametri
+                app_link = f"https://t.me/{bot_username}/app?startapp=listing_{cur.lastrowid}"
                 
                 type_tag = "⚡ AUKSION (24 Soat)" if is_auction else "🛒 BUYURTMA BOZORI"
                 post_text = (
-                    f"🔥 <b>YANGI E'LON ({type_tag})</b>\n\n"
-                    f"🏷 Username: <b>@{username}</b>\n"
+                    f"🛒 <b>BOZORDA YANGI E'LON!</b> ({type_tag})\n\n"
+                    f"💎 Username: <b>@{username}</b>\n"
                     f"💰 Narxi: <b>{price:,} so'm</b>\n"
                     f"👤 Sotuvchi: <b>{user.get('first_name','Foydalanuvchi')}</b>\n\n"
-                    f"👇 Sotib olish yoki stavka berish uchun bosing:"
+                    f"👇 Ushbu e'lonni sotib olish yoki stavka berish uchun bosing:"
                 )
                 m_markup = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🛒 Mini-Appda Ochiq Sotib Olish", url=app_link)]
+                    [InlineKeyboardButton(text="🛒 Sotib Olish (Mini-App)", url=app_link)]
                 ])
-                await bot_inst.send_message(mkt_channel, post_text, reply_markup=m_markup, parse_mode="HTML")
+                await bot_inst.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
                 await bot_inst.session.close()
             except Exception as e:
-                logger.error(f"Marketplace channel broadcast xato: {e}")
+                logger.error(f"Marketplace channel broadcast xato ({mkt_channel}): {e}")
+
 
         # 2. KEYWORD SUBSCRIPTION NOTIFICATIONS
         db.row_factory = aiosqlite.Row
