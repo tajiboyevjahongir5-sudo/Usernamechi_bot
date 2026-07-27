@@ -411,7 +411,7 @@ from bot.words import (
 import random
 import string
 
-def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 2000) -> list:
+def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> list:
     """
     To'liq so'z bazasidan sifatli username ro'yxati.
     Strategiya:
@@ -476,9 +476,9 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 2000) -> l
         custom_word_clean = ''.join(c for c in custom_word if c.isalnum() or c == '_')
         
         # O'zgarishlarni yaratish (prefixes, suffixes, numbers)
-        prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'its', 'iam', 'official', 'go', 'hey', 'hi', 'get', 'one', 'club', 'hub', 'app']
-        suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online']
-        numbers = ['', '1', '2', '3', '5', '7', '8', '9', '10', '11', '24', '77', '99', '100', '777', '888', '999', '2024', '2025', '007', '01', '07', '700', '900']
+        prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'its', 'iam', 'official', 'go', 'hey', 'hi', 'get', 'one', 'club', 'hub', 'app', 'new', 'old', 'hot', 'cool', 'fast', 'big', 'god', 'king', 'boss', 'ace', 'air', 'fox', 'wolf', 'dark', 'neo', 'ultra', 'max', 'all', 'any', 'hey', 'sir', 'ms', 'el', 'al', 'i_am', 'we', 'our', 'just', 'only', 'pure', 'raw']
+        suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'io', 'ok', 'go', 'gg', 'co', 'ai', 'x', 'real', 'live', 'biz', 'plus', 'elite', 'max', 'mini', 'app', 'base', 'link', 'gate', 'world', 'land', 'city', 'home', 'center', 'point', 'spot', 'place', 'space']
+        numbers = ['', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '21', '24', '25', '42', '77', '88', '99', '100', '111', '222', '333', '444', '555', '666', '777', '888', '999', '1000', '2024', '2025', '2026', '007', '01', '07', '700', '800', '900', '0', '00', '000']
         
         custom_pool = set()
         
@@ -506,21 +506,35 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 2000) -> l
         pool = list(custom_pool)
     elif cat == 'qisqa':
         pool = (
-            [u for u in curated   if u.isalpha() and 5 <= len(u) <= 9] +
-            [u for u in dict_pool if 5 <= len(u) <= 9]
+            [u for u in curated   if u.isalpha() and 4 <= len(u) <= 9] +
+            [u for u in dict_pool if 4 <= len(u) <= 9]
         )
+        # Qisqa uchun raqamli kombinatsiyalar ham qo'shamiz
+        extra_short = []
+        for u in pool[:500]:
+            for n in ['1','2','3','7','0','99','777']:
+                extra_short.append(f"{u}{n}")
+                extra_short.append(f"{n}{u}")
+        pool = pool + extra_short
     else:
         # TURLI rejim: barcha pool va chiroyli kombinatsiyalar
         pool = []
+        combo_suffixes = ['_uz', '_uzb', '_pro', '_vip', '_top', '_official', '_bot', '_tv', '_real', '_me', '_1', '_7', '_99', '_777', '1', '2', '7', '99']
+        combo_prefixes = ['the_', 'real_', 'my_', 'mr_', 'pro_', 'top_', 'uzb_', 'neo_', 'mr', 'ms', 'best_']
         for u in curated:
             pool.append(u)
+            if len(u) <= 9:
+                for sfx in combo_suffixes[:6]:
+                    if random.random() > 0.6: pool.append(f"{u}{sfx}")
+                for pfx in combo_prefixes[:4]:
+                    if random.random() > 0.7: pool.append(f"{pfx}{u}")
+        pool += dict_pool
+        # Dict so'zlariga ham kombinatsiyalar
+        for u in dict_pool[:800]:
             if len(u) <= 8:
                 if random.random() > 0.7: pool.append(f"{u}_uz")
-                if random.random() > 0.7: pool.append(f"{u}_uzb")
-                if random.random() > 0.7: pool.append(f"the_{u}")
-                if random.random() > 0.8: pool.append(f"{u}_official")
-                if random.random() > 0.8: pool.append(f"{u}_bot")
-        pool += dict_pool
+                if random.random() > 0.8: pool.append(f"{u}1")
+                if random.random() > 0.8: pool.append(f"{u}7")
 
     # To'liq aralashtiramiz, shunda ommabop va kamyob so'zlar aralashib ketadi (tezroq bo'shini topish uchun)
     random.shuffle(pool)
@@ -1280,14 +1294,17 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 row = await c.fetchone()
                 if row: paid_qty = row[0]
 
-        targets = generate_usernames(category, lang=lang, limit=3000)
+        targets = generate_usernames(category, lang=lang, limit=5000)
 
         # Generator nomlariga qo'shimcha kombinatsiyalar
         extra_targets = []
-        for t in targets[:150]:
+        for t in targets[:300]:
             extra_targets.extend([
                 f"{t}_uz", f"{t}_official", f"{t}_bot", f"{t}2025", f"{t}2026",
-                f"real_{t}", f"{t}_me", f"the_{t}", f"{t}_pro", f"{t}1", f"{t}7"
+                f"real_{t}", f"{t}_me", f"the_{t}", f"{t}_pro", f"{t}1", f"{t}7",
+                f"{t}99", f"{t}777", f"{t}_vip", f"{t}_tv", f"{t}_top",
+                f"my{t}", f"mr{t}", f"{t}hub", f"{t}lab", f"{t}hq",
+                f"go{t}", f"{t}go", f"{t}x", f"{t}ai", f"neo{t}"
             ])
         random.shuffle(extra_targets)
         all_targets = targets + extra_targets
@@ -1337,7 +1354,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 async with http_session.get(
                     f"https://t.me/{uname}",
                     allow_redirects=True,
-                    timeout=aiohttp.ClientTimeout(total=3.5)
+                    timeout=aiohttp.ClientTimeout(total=2.5)
                 ) as resp:
                     if resp.status == 429:
                         await asyncio.sleep(0.5)
@@ -1361,7 +1378,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             nonlocal found_count
 
             async with found_lock:
-                if found_count >= max(15, paid_qty * 3):
+                if found_count >= max(25, paid_qty * 5):
                     return
                 if uname in found_usernames_set:
                     return
@@ -1374,7 +1391,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 is_free = await check_via_telethon(uname)
                 if is_free:
                     async with found_lock:
-                        if found_count >= max(15, paid_qty * 3):
+                        if found_count >= max(25, paid_qty * 5):
                             return
                         if uname in found_usernames_set:
                             return
@@ -1394,7 +1411,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 logger.debug(f"verify_target error for {uname}: {e}")
 
         async with aiohttp.ClientSession(headers=req_headers) as http_session:
-            batch_size = 6
+            batch_size = 12
             for i in range(0, len(all_targets), batch_size):
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if elapsed > MAX_SECONDS:
@@ -1402,14 +1419,14 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     break
                 async with found_lock:
                     cur_found = found_count
-                if cur_found >= max(15, paid_qty * 3):
+                if cur_found >= max(25, paid_qty * 5):
                     logger.info(f"Search {search_id}: found enough ({cur_found})")
                     break
 
                 batch = all_targets[i:i+batch_size]
                 tasks = [verify_target(http_session, u) for u in batch]
                 await asyncio.gather(*tasks, return_exceptions=True)
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.02)
 
         logger.info(f"Search {search_id} done. Total found: {found_count}")
 
