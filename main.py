@@ -898,26 +898,58 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
     return unsubbed
 
 async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: str):
-    """Obunasi tasdiqlangach, kutilayotgan referal pulini taklif qilganga o'tkazadi."""
+    """Obunasi tasdiqlangach, kutilayotgan referal pulini taklif qilganga o'tkazadi (Anti-Nakrutka himoyasi bilan)."""
     try:
         async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
             async with db.execute("SELECT referrer_id FROM pending_referrals WHERE telegram_id=?", (user_id,)) as c:
                 row = await c.fetchone()
-            if row and row[0]:
-                ref_id = row[0]
-                await db.execute("UPDATE users SET balance=balance+1000 WHERE telegram_id=?", (ref_id,))
+            if not row or not row['referrer_id']:
+                return
+
+            ref_id = row['referrer_id']
+
+            # ANTI-NAKRUTKA 1: Yangi foydalanuvchi hisobida username yoki real profili bo'lishi shart (soxta botlarni elash)
+            async with db.execute("SELECT username, first_name FROM users WHERE telegram_id=?", (user_id,)) as c:
+                u_info = await c.fetchone()
+                u_username = u_info['username'] if u_info else ''
+                u_name = u_info['first_name'] if u_info else ''
+
+            # Username yo'q va ismi 2 harfdan qisqa bo'lsa -> Soxta nakrutka hisoblanadi
+            if not u_username and (not u_name or len(u_name) < 2):
+                logger.warning(f"Anti-Nakrutka: {user_id} foydalanuvchida username yo'q, referral rad etildi.")
                 await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
                 await db.commit()
-                
-                try:
-                    await bot.send_message(
-                        ref_id,
-                        f"🎁 <b>Referral Bonus!</b>\n\n"
-                        f"Siz taklif qilgan <b>{user_first_name}</b> majburiy kanallarga obuna bo'ldi!\n"
-                        f"Balansingizga <b>+1,000 so'm</b> bonus o'tkazildi! 🚀",
-                        parse_mode="HTML"
-                    )
-                except Exception: pass
+                return
+
+            # ANTI-NAKRUTKA 2: Rate Limit (1 soat ichida 1 ta foydalanuvchi max 5 ta referral bonus olishi mumkin)
+            one_hour_ago = int(time.time()) - 3600
+            async with db.execute(
+                "SELECT COUNT(*) FROM pending_referrals WHERE referrer_id=? AND created_at > ?", 
+                (ref_id, one_hour_ago)
+            ) as c:
+                ref_count_hour = (await c.fetchone())[0]
+
+            if ref_count_hour > 8: # Shubhali ko'p referral kelayotgan bo'lsa
+                logger.warning(f"Anti-Nakrutka Limit: {ref_id} foydalanuvchiga soatlik limit tufayli bonus to'xtatildi.")
+                await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
+                await db.commit()
+                return
+
+            # Bonus taqdim etish
+            await db.execute("UPDATE users SET balance=balance+1000 WHERE telegram_id=?", (ref_id,))
+            await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
+            await db.commit()
+            
+            try:
+                await bot.send_message(
+                    ref_id,
+                    f"🎁 <b>Referral Bonus!</b>\n\n"
+                    f"Siz taklif qilgan <b>{user_first_name}</b> majburiy kanallarga obuna bo'ldi!\n"
+                    f"Balansingizga <b>+1,000 so'm</b> bonus o'tkazildi! 🚀",
+                    parse_mode="HTML"
+                )
+            except Exception: pass
     except Exception as e:
         logger.error(f"grant_pending_referral_bonus error: {e}")
 
@@ -3644,6 +3676,87 @@ async def auto_cleanup_db_loop():
 
 
 # ─── MAIN ─────────────────────────────────────
+
+# ─── ANTI-SPAM MIDDLEWARE ─────────────────────
+from collections import defaultdict
+import time as _time
+
+_spam_tracker: dict = defaultdict(list)   # {user_id: [timestamps]}
+_spam_blocked: dict = {}                   # {user_id: block_until}
+
+
+# ─── SAVE USER INFO MIDDLEWARE ─────────────────
+from aiogram import BaseMiddleware
+from aiogram.types import TelegramObject
+
+class SaveUserInfoMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event: TelegramObject, data: dict):
+        user = None
+        if isinstance(event, Message) and event.from_user:
+            user = event.from_user
+        elif isinstance(event, CallbackQuery) and event.from_user:
+            user = event.from_user
+
+        if user and not user.is_bot:
+            try:
+                await create_user(
+                    user.id,
+                    user.first_name or '',
+                    user.last_name or '',
+                    user.username or ''
+                )
+            except Exception as e:
+                logger.warning(f"SaveUser middleware error: {e}")
+
+        return await handler(event, data)
+
+class AntiSpamMiddleware(BaseMiddleware):
+    RATE_WINDOW   = 1.0   # soniya
+    MAX_REQUESTS  = 5     # shu muddat ichida maksimal so'rov soni
+    BLOCK_SECONDS = 30    # blok davomiyligi (soniya)
+
+    async def __call__(self, handler, event, data: dict):
+        user = None
+        if isinstance(event, Message) and event.from_user:
+            user = event.from_user
+        elif isinstance(event, CallbackQuery) and event.from_user:
+            user = event.from_user
+
+        if user and not user.is_bot:
+            uid = user.id
+            now = _time.time()
+
+            # Agar bloklangan bo'lsa
+            if uid in _spam_blocked:
+                if now < _spam_blocked[uid]:
+                    if isinstance(event, Message):
+                        try:
+                            remain = int(_spam_blocked[uid] - now)
+                            await event.answer(f"⚠️ Siz spam qilyapsiz! {remain} soniyadan so'ng qayta urinib ko'ring.")
+                        except Exception:
+                            pass
+                    return
+                else:
+                    del _spam_blocked[uid]
+
+            # So'rovlar vaqtini saqlaymiz va eskilerini tozalaymiz
+            timestamps = _spam_tracker[uid]
+            timestamps = [t for t in timestamps if now - t < self.RATE_WINDOW]
+            timestamps.append(now)
+            _spam_tracker[uid] = timestamps
+
+            if len(timestamps) > self.MAX_REQUESTS:
+                _spam_blocked[uid] = now + self.BLOCK_SECONDS
+                logger.warning(f"Anti-Spam: {uid} foydalanuvchi {self.BLOCK_SECONDS}s bloklandi (spam)")
+                if isinstance(event, Message):
+                    try:
+                        await event.answer(f"🚫 Juda tez! {self.BLOCK_SECONDS} soniya kuting.")
+                    except Exception:
+                        pass
+                return
+
+        return await handler(event, data)
+
 async def main():
     import signal
 
@@ -3651,6 +3764,14 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp  = Dispatcher()
     dp.include_router(router)
+
+    # Anti-Spam va Auto SaveUser middlewarelarini ro'yxatdan o'tkazamiz
+    antispam = AntiSpamMiddleware()
+    save_user = SaveUserInfoMiddleware()
+    dp.message.outer_middleware(antispam)
+    dp.callback_query.outer_middleware(antispam)
+    dp.message.outer_middleware(save_user)
+    dp.callback_query.outer_middleware(save_user)
     logger.info("🤖 Bot + 🌐 Web ishga tushdi!")
 
     # Orqa fonda monitoring loop ni ishga tushiramiz
