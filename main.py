@@ -880,14 +880,20 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
         
         for ch in channels:
             try:
-                ch_target = ch['channel_id'] if ch['channel_id'] else (f"@{ch['channel_username']}" if ch['channel_username'] else None)
-                if not ch_target: continue
+                ch_target = ch['channel_id']
+                if not ch_target and ch['channel_username']:
+                    uname = ch['channel_username'].strip()
+                    ch_target = uname if uname.startswith("@") or uname.startswith("-100") else f"@{uname}"
+                if not ch_target:
+                    continue
+                    
                 member = await bot.get_chat_member(chat_id=ch_target, user_id=user_id)
                 if member.status in ('left', 'kicked', 'banned'):
                     unsubbed.append(ch)
             except Exception as e:
-                # Bot kanalda admin emas bo'lishi yoki topilmasligi mumkin, shunda majburiy bloklamaymiz
-                logger.warning(f"Check channel sub error for {ch['title']}: {e}")
+                logger.warning(f"Check channel sub error for {dict(ch)}: {e}")
+                # Obunani tekshirishda xato bo'lsa (bot kanalga a'zo bo'lmagan holda ham foydalanuvchiga kanal tugmasini ko'rsatish uchun)
+                unsubbed.append(ch)
     except Exception as e:
         logger.error(f"get_unsubscribed_channels error: {e}")
     return unsubbed
