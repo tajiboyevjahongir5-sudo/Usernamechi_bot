@@ -2018,7 +2018,7 @@ async def api_marketplace_my(init_data: str = ""):
     tid = user['id']
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM listings WHERE seller_id=? ORDER BY id DESC", (tid,)) as c:
+        async with db.execute("SELECT * FROM listings WHERE seller_id=? AND status != 'cancelled' ORDER BY id DESC", (tid,)) as c:
             return [dict(r) for r in await c.fetchall()]
 
 @app.post("/api/marketplace/list")
