@@ -2798,7 +2798,27 @@ async def api_disconnect(request: Request):
         await db.commit()
     return {"ok": True}
 
+@app.get("/api/admin/check")
+async def api_admin_check(x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token:
+            return {"ok": True}
+    raise HTTPException(403)
+
+@app.post("/api/admin/web_auth")
+async def api_admin_web_auth(request: Request):
+    data = await request.json()
+    user = verify_init_data(data.get('init_data', ''))
+    if not user:
+        raise HTTPException(403)
+    tid = user['id']
+    if tid in ADMIN_IDS:
+        token = get_admin_token(tid)
+        return {"ok": True, "token": token}
+    return {"ok": False, "error": "Admin emas"}
+
 @app.get("/api/admin/settings")
+
 async def api_admin_settings_get(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
         if get_admin_token(aid) == x_admin_token: break

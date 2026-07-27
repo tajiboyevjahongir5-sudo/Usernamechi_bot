@@ -791,12 +791,35 @@ async function checkAuth() {
     localStorage.setItem('admin_token', token);
     history.replaceState({}, '', '/admin');
   }
+
+  // 1. Agar avval saqlangan token bo'lsa tekshiramiz
   try {
     const res = await fetch('/api/admin/check', { headers: headers() });
     if (res.ok) {
       document.getElementById('login-screen').style.display = 'none';
       loadDashboard();
       initNavDragPhysics();
+      return;
+    }
+  } catch(e) {}
+
+  // 2. Telegram Mini-App orqali kirgan bo'lsa, initData orqali AVTOMATIK kirish
+  try {
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+      const tgInit = window.Telegram.WebApp.initData;
+      const res = await fetch('/api/admin/web_auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ init_data: tgInit })
+      });
+      const d = await res.json();
+      if (d.ok && d.token) {
+        ADMIN_TOKEN = d.token;
+        localStorage.setItem('admin_token', d.token);
+        document.getElementById('login-screen').style.display = 'none';
+        loadDashboard();
+        initNavDragPhysics();
+      }
     }
   } catch(e) {}
 }
