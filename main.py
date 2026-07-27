@@ -1714,7 +1714,64 @@ async def api_account_set_username(request: Request):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/referral/send_promo")
+async def api_referral_send_promo(request: Request):
+    """Foydalanuvchiga rasmli reklama xabar yuboradi — u xohlagan guruhga forward qiladi."""
+    data = await request.json()
+    user = verify_init_data(data.get('init_data', ''))
+    if not user:
+        raise HTTPException(403)
+    tid = user['id']
+
+    try:
+        b = Bot(token=BOT_TOKEN)
+        bot_me = await b.get_me()
+        bot_username = bot_me.username
+        ref_link = f"https://t.me/{bot_username}?start=ref_{tid}"
+
+        promo_caption = (
+            "🎯 <b>USERNAMECHI BOT</b> — Telegram username uchun #1 yechim!\n\n"
+            "⚡ <b>Nima qila oladi?</b>\n"
+            "✅ Bo'sh username qidirish — yuzlab nomlarni lahzada tekshiradi\n"
+            "🎯 Nishon tizimi — username bo'shishi bilan <b>soniyada</b> band qiladi\n"
+            "💎 Qisqa va noyob nomlar — 5-8 harfli kamyob nomlar bazasi\n"
+            "🔄 Username almashtirish — o'z profilingizga 1 bosish bilan o'rnatish\n\n"
+            "🎁 Referal havola orqali kirgan har bir do'stingiz uchun <b>+1,000 so'm</b> bonus!\n\n"
+            "👇 Hoziroq kiriting va boshlang:"
+        )
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🚀 Botga kirish (+1,000 so'm bonus)", url=ref_link)
+        ]])
+
+        import os
+        banner_path = os.path.join(os.path.dirname(__file__), "static", "promo_banner.jpg")
+        if os.path.exists(banner_path):
+            from aiogram.types import FSInputFile
+            photo = FSInputFile(banner_path)
+            await b.send_photo(
+                chat_id=tid,
+                photo=photo,
+                caption=promo_caption,
+                parse_mode="HTML",
+                reply_markup=kb
+            )
+        else:
+            await b.send_message(
+                chat_id=tid,
+                text=promo_caption,
+                parse_mode="HTML",
+                reply_markup=kb
+            )
+
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"send_promo error: {e}")
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/account/usernames")
+
 async def api_account_usernames(init_data: str = ""):
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)

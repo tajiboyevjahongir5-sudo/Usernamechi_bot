@@ -1128,7 +1128,7 @@
       <button class="btn btn-primary" onclick="copyRefLink()" style="margin:0; flex:1; background:linear-gradient(135deg,#8b5cf6,#06b6d4); font-size:13px; padding:12px;">
         📋 Nusxalash
       </button>
-      <button class="btn btn-outline" onclick="shareRefLink()" style="margin:0; flex:1; font-size:13px; padding:12px; border-color:rgba(56,189,248,0.4); color:#38bdf8;">
+      <button class="btn btn-outline" onclick="sendPromoMessage()" style="margin:0; flex:1; font-size:13px; padding:12px; border-color:rgba(56,189,248,0.4); color:#38bdf8;">
         📤 Ulashish
       </button>
     </div>
@@ -1465,6 +1465,28 @@ function shareRefLink() {
     tg.openTelegramLink(shareUrl);
   } else {
     window.open(shareUrl, '_blank');
+  }
+}
+
+async function sendPromoMessage() {
+  const btn = event?.target;
+  if (btn) { btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;margin:0 auto;"></div>'; btn.disabled = true; }
+  try {
+    const res = await fetch(`${API}/api/referral/send_promo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: tg.initData })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Reklama xabar botdan yuborildi! Uni guruh yoki chatga forward qiling 📤", "success");
+    } else {
+      showToast(d.error || "Xato yuz berdi", "error");
+    }
+  } catch(e) {
+    showToast("Tarmoq xatosi", "error");
+  } finally {
+    if (btn) { btn.innerHTML = '📤 Ulashish'; btn.disabled = false; }
   }
 }
 
