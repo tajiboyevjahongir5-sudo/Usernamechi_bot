@@ -2095,6 +2095,7 @@ async def api_marketplace_list(request: Request):
                 bot_username = bot_me.username
                 
                 # Direct Listing Link: Telegram Mini App startapp parametri
+                # Bot username bilan to'g'ri Mini App havolasi
                 app_link = f"https://t.me/{bot_username}/app?startapp=listing_{new_listing_id}"
                 
                 type_tag = "⚡ AUKSION (24 Soat)" if is_auction else "🏷 SOTUVDA"
@@ -2103,13 +2104,13 @@ async def api_marketplace_list(request: Request):
                 post_text = (
                     f"🔥 <b>YANGI USERNAME BOZORGA CHIQARILDI!</b>\n\n"
                     f"📌 <b>Turi:</b> {type_tag}\n"
-                    f"💎 <b>Username:</b> <code>@{username}</code>\n"
+                    f"💎 <b>Username:</b> @{username}\n"
                     f"💰 <b>Narxi:</b> {price_text}\n"
                     f"👤 <b>Sotuvchi:</b> {user.get('first_name','Foydalanuvchi')}\n\n"
                     f"⚡ <i>Ushbu nomni band qilish yoki auksionda qatnashish uchun quyidagi tugmani bosing:</i>"
                 )
                 m_markup = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🛒 E'lonni ko'rish & Sotib olish", url=app_link)]
+                    [InlineKeyboardButton(text="🛒 E'lonni ko'rish & Sotib olish", url=f"https://t.me/{bot_username}/app?startapp=listing_{new_listing_id}")]
                 ])
                 sent_msg = await bot_inst.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
                 if sent_msg:

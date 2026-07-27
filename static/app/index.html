@@ -1254,15 +1254,26 @@ async function init() {
       const listingId = parseInt(startParam.replace('listing_', '').replace('market_', ''));
       if (listingId) {
         goPage('market');
-        setTimeout(() => {
+        // Market to'liq yuklanishini kutib, element topilguncha qayta urinib ko'ramiz
+        let attempts = 0;
+        const tryHighlight = () => {
           const itemEl = document.getElementById(`listing-item-${listingId}`);
           if (itemEl) {
             itemEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
             itemEl.style.border = '2px solid #38bdf8';
             itemEl.style.boxShadow = '0 0 24px rgba(56,189,248,0.7)';
             itemEl.style.borderRadius = '16px';
+            itemEl.style.transition = 'all 0.3s ease';
+            setTimeout(() => {
+              itemEl.style.border = '';
+              itemEl.style.boxShadow = '';
+            }, 3000);
+          } else if (attempts < 15) {
+            attempts++;
+            setTimeout(tryHighlight, 500); // 500ms × 15 = 7.5s gacha urinadi
           }
-        }, 850);
+        };
+        setTimeout(tryHighlight, 800);
       }
     }
   }
