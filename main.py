@@ -897,7 +897,7 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
         logger.error(f"get_unsubscribed_channels error: {e}")
     return unsubbed
 
-async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: str):
+async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: str, tg_username: str = '', tg_name: str = ''):
     """Obunasi tasdiqlangach, kutilayotgan referal pulini taklif qilganga o'tkazadi (Anti-Nakrutka himoyasi bilan)."""
     try:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -909,38 +909,45 @@ async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: 
 
             ref_id = row['referrer_id']
 
-            # ANTI-NAKRUTKA 1: Yangi foydalanuvchi hisobida username yoki real profili bo'lishi shart (soxta botlarni elash)
-            async with db.execute("SELECT username, first_name FROM users WHERE telegram_id=?", (user_id,)) as c:
-                u_info = await c.fetchone()
-                u_username = u_info['username'] if u_info else ''
-                u_name = u_info['first_name'] if u_info else ''
+            # ANTI-NAKRUTKA 1: Telegram dan kelgan fresh ma'lumotlarni ishlatamiz
+            # tg_username yoki tg_name bo'lmasa — DB dan tekshiramiz
+            u_username = tg_username
+            u_name = tg_name or user_first_name
+            if not u_username or not u_name:
+                async with db.execute("SELECT username, first_name FROM users WHERE telegram_id=?", (user_id,)) as c:
+                    u_info = await c.fetchone()
+                    if u_info:
+                        u_username = u_username or (u_info['username'] or '')
+                        u_name = u_name or (u_info['first_name'] or '')
 
-            # Username yo'q va ismi 2 harfdan qisqa bo'lsa -> Soxta nakrutka hisoblanadi
-            if not u_username and (not u_name or len(u_name) < 2):
+            # Username yo'q va ismi 2 harfdan qisqa bo'lsa -> Soxta nakrutka
+            if not u_username and (not u_name or len(u_name.strip()) < 2):
                 logger.warning(f"Anti-Nakrutka: {user_id} foydalanuvchida username yo'q, referral rad etildi.")
                 await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
                 await db.commit()
                 return
 
-            # ANTI-NAKRUTKA 2: Rate Limit (1 soat ichida 1 ta foydalanuvchi max 5 ta referral bonus olishi mumkin)
+            # ANTI-NAKRUTKA 2: Rate Limit — 1 soatda max 10 ta referral bonus
             one_hour_ago = int(time.time()) - 3600
             async with db.execute(
-                "SELECT COUNT(*) FROM pending_referrals WHERE referrer_id=? AND created_at > ?", 
+                "SELECT COUNT(*) FROM pending_referrals WHERE referrer_id=? AND created_at > ?",
                 (ref_id, one_hour_ago)
             ) as c:
                 ref_count_hour = (await c.fetchone())[0]
 
-            if ref_count_hour > 8: # Shubhali ko'p referral kelayotgan bo'lsa
-                logger.warning(f"Anti-Nakrutka Limit: {ref_id} foydalanuvchiga soatlik limit tufayli bonus to'xtatildi.")
+            if ref_count_hour > 10:
+                logger.warning(f"Anti-Nakrutka Limit: {ref_id} ga soatlik limit tufayli bonus to'xtatildi.")
                 await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
                 await db.commit()
                 return
 
-            # Bonus taqdim etish
+            # ✅ Bonus taqdim etish
             await db.execute("UPDATE users SET balance=balance+1000 WHERE telegram_id=?", (ref_id,))
             await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
             await db.commit()
-            
+
+            logger.info(f"✅ Referral bonus berildi: {ref_id} ga +1000 so'm ({user_first_name} obuna bo'ldi)")
+
             try:
                 await bot.send_message(
                     ref_id,
@@ -997,7 +1004,13 @@ async def start_cmd(message: Message):
         return
 
     # Kanallarga obuna bo'lgan bo'lsa — referral bonusini rasman taqdim etamiz!
-    await grant_pending_referral_bonus(message.bot, message.from_user.id, message.from_user.first_name or "Do'st")
+    await grant_pending_referral_bonus(
+        message.bot,
+        message.from_user.id,
+        message.from_user.first_name or "Do'st",
+        tg_username=message.from_user.username or '',
+        tg_name=message.from_user.first_name or ''
+    )
 
     # Direct Deep Link parametri bo'lsa (masalan: listing_123 yoki market_123)
     start_param = args[1] if len(args) > 1 else ""
@@ -1049,18 +1062,33 @@ async def start_cmd(message: Message):
 
 @router.callback_query(F.data == "check_sub")
 async def check_sub_callback(callback: CallbackQuery):
-    unsubbed = await get_unsubscribed_channels(callback.bot, callback.from_user.id)
+    user = callback.from_user
+    unsubbed = await get_unsubscribed_channels(callback.bot, user.id)
     if unsubbed:
-        await callback.answer("❌ Siz hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
+        channels_text = "\n".join([f"• {ch['title']}" for ch in unsubbed])
+        await callback.answer(
+            f"❌ Hali obuna bo'lmagan kanallar:\n{channels_text}",
+            show_alert=True
+        )
     else:
         await callback.answer("✅ Rahmat! Barcha kanallarga obuna bo'ldingiz.", show_alert=True)
-        # Obuna bo'lingan bo'lsa — taklif qilgan odamga +1,000 so'm bonus beriladi
-        await grant_pending_referral_bonus(callback.bot, callback.from_user.id, callback.from_user.first_name or "Do'st")
-        
+
+        # Avval user ma'lumotlarini (fresh Telegram data) DB ga saqlaymiz
+        await create_user(user.id, user.first_name or '', user.last_name or '', user.username or '')
+
+        # Taklif qilgan odamga +1,000 so'm referral bonusi beramiz
+        await grant_pending_referral_bonus(
+            callback.bot,
+            user.id,
+            user.first_name or "Do'st",
+            tg_username=user.username or '',
+            tg_name=user.first_name or ''
+        )
+
         try:
             await callback.message.delete()
         except: pass
-        
+
         await callback.message.answer(
             text=(
                 f"🎉 Obunangiz tasdiqlandi!\n\n"
