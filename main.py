@@ -1927,22 +1927,70 @@ async def api_account_usernames(init_data: str = ""):
     usernames = []
     seen = set()
 
-    # 1. BAZADAN — Foydalanuvchi buyurtma qilib band qildirgan usernamelar (Telethon kerak emas)
+    # 1. TELETHON — Hozir haqiqatan egalik qilinayotgan usernamelar (session bo'lsa)
+    telethon_owned = set()  # Telethon orqali tasdiqlangan usernamelar
+
+    if row and row.get('session_string'):
+        try:
+            from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
+            client = await _get_fast_client(row['session_string'])
+
+            me, ch_res = await asyncio.gather(
+                client.get_me(),
+                client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)),
+                return_exceptions=True
+            )
+
+            # Shaxsiy profil username
+            if not isinstance(me, Exception) and me.username:
+                uname = me.username.lower()
+                telethon_owned.add(uname)
+                if uname not in seen:
+                    seen.add(uname)
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (me.username,)) as c:
+                            is_listed = bool(await c.fetchone())
+                    usernames.insert(0, {"username": me.username, "title": "Shaxsiy profil", "channel_id": None, "is_listed": is_listed})
+
+            # Kanal va guruh usernamelar
+            if not isinstance(ch_res, Exception):
+                async with aiosqlite.connect(DB_PATH) as db:
+                    for ch in ch_res.chats:
+                        uname = getattr(ch, 'username', None)
+                        title = getattr(ch, 'title', None)
+                        if uname:
+                            telethon_owned.add(uname.lower())
+                            if uname.lower() not in seen:
+                                if getattr(ch, 'creator', False) or getattr(ch, 'admin_rights', None):
+                                    seen.add(uname.lower())
+                                    async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (uname,)) as lc:
+                                        is_listed = bool(await lc.fetchone())
+                                    usernames.append({"username": uname, "title": title or "Kanal/Guruh", "channel_id": ch.id, "is_listed": is_listed})
+        except Exception as e:
+            logger.warning(f"Telethon usernames fetch warning: {e}")
+
+    # 2. BAZADAN — Buyurtma orqali band qilingan usernamelar
+    #    Agar Telethon session mavjud bo'lsa, faqat hozir ham egalik qilinayotganlarini ko'rsatamiz.
+    #    Session yo'q bo'lsa — hamma DB usernamelarini ko'rsatamiz (tekshira olmaymiz).
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        # Muvaffaqiyatli band qilingan usernamelar
         async with db.execute("""
-            SELECT DISTINCT ru.username 
-            FROM registered_usernames ru 
-            JOIN orders o ON ru.order_id = o.id 
+            SELECT DISTINCT ru.username
+            FROM registered_usernames ru
+            JOIN orders o ON ru.order_id = o.id
             WHERE o.telegram_id=? AND ru.username IS NOT NULL AND ru.username != ''
             ORDER BY ru.id DESC LIMIT 50
         """, (tid,)) as c:
             for r in await c.fetchall():
                 u = r['username']
-                if u and u.lower() not in seen:
+                if not u:
+                    continue
+                # Telethon session bo'lsa — faqat hozir egalik qilinayotganlarni qo'sh
+                if row and row.get('session_string'):
+                    if u.lower() not in telethon_owned:
+                        continue  # Bu username endi foydalanuvchida yo'q — o'tkazib yubor
+                if u.lower() not in seen:
                     seen.add(u.lower())
-                    # Sotuvda borligini tekshirish
                     async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (u,)) as lc:
                         is_listed = bool(await lc.fetchone())
                     usernames.append({
@@ -1952,40 +2000,8 @@ async def api_account_usernames(init_data: str = ""):
                         "is_listed": is_listed
                     })
 
-    # 2. TELETHON — Profil va kanallar (session bo'lsa)
-    if row and row.get('session_string'):
-        try:
-            from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
-            client = await _get_fast_client(row['session_string'])
-            
-            me, ch_res = await asyncio.gather(
-                client.get_me(),
-                client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)),
-                return_exceptions=True
-            )
-            
-            if not isinstance(me, Exception) and me.username and me.username.lower() not in seen:
-                seen.add(me.username.lower())
-                async with aiosqlite.connect(DB_PATH) as db:
-                    async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (me.username,)) as c:
-                        is_listed = bool(await c.fetchone())
-                usernames.insert(0, {"username": me.username, "title": "Shaxsiy profil", "channel_id": None, "is_listed": is_listed})
-                
-            if not isinstance(ch_res, Exception):
-                async with aiosqlite.connect(DB_PATH) as db:
-                    for ch in ch_res.chats:
-                        uname = getattr(ch, 'username', None)
-                        title = getattr(ch, 'title', None)
-                        if uname and uname.lower() not in seen:
-                            if getattr(ch, 'creator', False) or getattr(ch, 'admin_rights', None):
-                                seen.add(uname.lower())
-                                async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (uname,)) as lc:
-                                    is_listed = bool(await lc.fetchone())
-                                usernames.append({"username": uname, "title": title or "Kanal/Guruh", "channel_id": ch.id, "is_listed": is_listed})
-        except Exception as e:
-            logger.warning(f"Telethon usernames fetch warning: {e}")
-
     return {"usernames": usernames}
+
 
 
 # ── MARKETPLACE ────────────────────────────────
