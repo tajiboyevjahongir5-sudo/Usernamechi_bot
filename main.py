@@ -383,9 +383,12 @@ async def create_or_update_user(user_data: dict):
                          (first_name, last_name, username, tid))
         await db.commit()
 
-async def create_user(telegram_id):
+async def create_user(telegram_id, first_name='', last_name='', username=''):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("INSERT OR IGNORE INTO users (telegram_id, balance) VALUES (?, 5000)", (telegram_id,))
+        if first_name or last_name or username:
+            await db.execute("UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?", 
+                             (first_name or '', last_name or '', username or '', telegram_id))
         await db.commit()
 
 async def update_balance(telegram_id, amount):
@@ -896,7 +899,7 @@ async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: 
 
 @router.message(CommandStart())
 async def start_cmd(message: Message):
-    await create_user(message.from_user.id)
+    await create_user(message.from_user.id, message.from_user.first_name, message.from_user.last_name, message.from_user.username)
     
     # Referral taklifini qayd etish (lekin hali pul bermaymiz)
     args = message.text.split(" ", 1)
