@@ -1057,12 +1057,16 @@ function renderUsers() {
     return;
   }
 
-  container.innerHTML = filtered.map(u => `
+  container.innerHTML = filtered.map(u => {
+    const profileUrl = u.username ? `https://t.me/${u.username}` : `tg://user?id=${u.telegram_id}`;
+    return `
     <div class="user-item">
       <div class="user-left">
-        <div class="user-avatar">${u.is_stealth ? '🕵️' : (u.first_name||'U').slice(0,2).toUpperCase()}</div>
+        <div class="user-avatar" onclick="window.open('${profileUrl}', '_blank')" style="cursor:pointer;" title="Profilni ochish">${u.is_stealth ? '🕵️' : (u.first_name||'U').slice(0,2).toUpperCase()}</div>
         <div class="user-details">
-          <div class="user-name">${u.first_name || 'Noma\'lum'} ${u.username ? '(@' + u.username + ')' : ''}</div>
+          <div class="user-name" style="cursor:pointer;" onclick="window.open('${profileUrl}', '_blank')" title="Telegramda profilni ochish">
+            ${u.first_name || 'Noma\'lum'} ${u.username ? '(@' + u.username + ')' : ''} ↗️
+          </div>
           <div class="user-meta">
             <span>ID: <b>${u.telegram_id}</b></span>
             ${u.phone ? `<span>📱 +${u.phone}</span>` : ''}
@@ -1074,6 +1078,9 @@ function renderUsers() {
       <div class="user-right">
         <div class="user-bal">${(u.balance||0).toLocaleString()} so'm</div>
         <div style="display:flex; gap:6px;">
+          <a href="${profileUrl}" target="_blank" class="action-btn btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Telegramda profilga o'tish">
+            💬 Profil
+          </a>
           <button class="action-btn btn-secondary" onclick="openBalanceModal(${u.telegram_id}, ${u.balance||0})">✏️ Balans</button>
           <button class="action-btn ${u.is_stealth ? 'btn-rose' : 'btn-emerald'}" onclick="toggleStealth(${u.telegram_id})">
             ${u.is_stealth ? '🔓 Off' : '🕵️ On'}
@@ -1081,7 +1088,7 @@ function renderUsers() {
         </div>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function filterUsers() { renderUsers(); }
