@@ -2104,7 +2104,10 @@ async def api_marketplace_list(request: Request):
 
 
 async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
-    """E'lon sotilganda yoki o'chirilganda kanaldagi postni avtomatik 'SOTILDI' holatiga o'zgartiradi."""
+    """
+    E'lon sotilganda: kanaldagi post 'SOTILDI' ga o'zgardi va DB dagi xabar ID o'chiriladi.
+    E'lon bekor qilinganda: kanaldagi post to'liq o'chiriladi.
+    """
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -2118,7 +2121,7 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
         
         if status == 'sold':
             sold_text = (
-                f"✅ <b>USBU USERNAME SOTILDI!</b>\n\n"
+                f"✅ <b>USHBU USERNAME SOTILDI!</b>\n\n"
                 f"💎 <b>Username:</b> <code>@{listing['username']}</code>\n"
                 f"💰 <b>Sotilgan narx:</b> <b>{listing['price']:,} so'm</b>\n\n"
                 f"🎉 <i>Ushbu e'lon muvaffaqiyatli yakunlandi va egasini topdi.</i>"
@@ -2134,18 +2137,25 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
                 parse_mode="HTML"
             )
         elif status == 'cancelled':
-            cancel_text = (
-                f"❌ <b>E'LON O'CHIRILDI!</b>\n\n"
-                f"💎 <b>Username:</b> <code>@{listing['username']}</code>\n\n"
-                f"<i>Ushbu e'lon sotuvchi tomonidan bekor qilindi.</i>"
-            )
-            await bot_inst.edit_message_text(
-                chat_id=listing['channel_id'],
-                message_id=listing['telegram_message_id'],
-                text=cancel_text,
-                parse_mode="HTML"
-            )
+            # Bekor qilinganda postni kanaldan batamom o'chiramiz
+            try:
+                await bot_inst.delete_message(
+                    chat_id=listing['channel_id'],
+                    message_id=listing['telegram_message_id']
+                )
+            except Exception as del_err:
+                logger.warning(f"Kanal postini o'chirishda xato: {del_err}")
+
         await bot_inst.session.close()
+
+        # Database uchun keraksiz ma'lumot ko'payib ketmasligi uchun id larni tozalaymiz
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE listings SET channel_id=NULL, telegram_message_id=NULL WHERE id=?",
+                (listing_id,)
+            )
+            await db.commit()
+
     except Exception as e:
         logger.error(f"update_channel_listing_post error for listing {listing_id}: {e}")
 
