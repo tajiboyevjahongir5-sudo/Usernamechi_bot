@@ -198,6 +198,10 @@ async def init_db():
         """)
         try: await db.execute("ALTER TABLE listings ADD COLUMN is_private INTEGER DEFAULT 0")
         except Exception: pass
+        try: await db.execute("ALTER TABLE listings ADD COLUMN channel_id TEXT")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE listings ADD COLUMN telegram_message_id INTEGER")
+        except Exception: pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS listing_orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -841,6 +845,9 @@ async def auto_payment_handler(message: Message):
                     seller_earnings = int(lo['price'] * (1 - fee_percent))
                     await db.execute("UPDATE users SET seller_balance=seller_balance+? WHERE telegram_id=?", (seller_earnings, lo['seller_id']))
                     await db.commit()
+
+                    # Kanaldagi postni 'SOTILDI' holatiga o'tkazish
+                    asyncio.create_task(update_channel_listing_post(lo['listing_id'], 'sold'))
 
                     # Start username transfer in background
                     asyncio.create_task(transfer_username(message.bot, lo['seller_id'], lo['buyer_id'], lo['username']))
@@ -2084,10 +2091,63 @@ async def api_marketplace_list(request: Request):
                 m_markup = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🛒 E'lonni ko'rish & Sotib olish", url=app_link)]
                 ])
-                await bot_inst.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
+                sent_msg = await bot_inst.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
+                if sent_msg:
+                    await db.execute(
+                        "UPDATE listings SET channel_id=?, telegram_message_id=? WHERE id=?",
+                        (str(target_chan), sent_msg.message_id, cur.lastrowid)
+                    )
+                    await db.commit()
                 await bot_inst.session.close()
             except Exception as e:
                 logger.error(f"Marketplace channel broadcast xato ({mkt_channel}): {e}")
+
+
+async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
+    """E'lon sotilganda yoki o'chirilganda kanaldagi postni avtomatik 'SOTILDI' holatiga o'zgartiradi."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM listings WHERE id=?", (listing_id,)) as c:
+                listing = await c.fetchone()
+                
+        if not listing or not listing['channel_id'] or not listing['telegram_message_id']:
+            return
+
+        bot_inst = Bot(token=BOT_TOKEN)
+        
+        if status == 'sold':
+            sold_text = (
+                f"✅ <b>USBU USERNAME SOTILDI!</b>\n\n"
+                f"💎 <b>Username:</b> <code>@{listing['username']}</code>\n"
+                f"💰 <b>Sotilgan narx:</b> <b>{listing['price']:,} so'm</b>\n\n"
+                f"🎉 <i>Ushbu e'lon muvaffaqiyatli yakunlandi va egasini topdi.</i>"
+            )
+            sold_markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ SOTILDI", callback_data="none")]
+            ])
+            await bot_inst.edit_message_text(
+                chat_id=listing['channel_id'],
+                message_id=listing['telegram_message_id'],
+                text=sold_text,
+                reply_markup=sold_markup,
+                parse_mode="HTML"
+            )
+        elif status == 'cancelled':
+            cancel_text = (
+                f"❌ <b>E'LON O'CHIRILDI!</b>\n\n"
+                f"💎 <b>Username:</b> <code>@{listing['username']}</code>\n\n"
+                f"<i>Ushbu e'lon sotuvchi tomonidan bekor qilindi.</i>"
+            )
+            await bot_inst.edit_message_text(
+                chat_id=listing['channel_id'],
+                message_id=listing['telegram_message_id'],
+                text=cancel_text,
+                parse_mode="HTML"
+            )
+        await bot_inst.session.close()
+    except Exception as e:
+        logger.error(f"update_channel_listing_post error for listing {listing_id}: {e}")
 
 
         # 2. KEYWORD SUBSCRIPTION NOTIFICATIONS
@@ -2123,6 +2183,7 @@ async def api_marketplace_cancel(request: Request):
             return {"ok": False, "error": "Ruxsat yo'q"}
         await db.execute("UPDATE listings SET status='cancelled' WHERE id=?", (listing_id,))
         await db.commit()
+    asyncio.create_task(update_channel_listing_post(listing_id, 'cancelled'))
     return {"ok": True}
 
 @app.get("/api/marketplace/{listing_id}")
