@@ -1141,10 +1141,10 @@ function renderUsers() {
     return `
     <div class="user-item">
       <div class="user-left">
-        <div class="user-avatar" onclick="window.open('${profileUrl}', '_blank')" style="cursor:pointer;" title="Profilni ochish">${u.is_stealth ? '🕵️' : ((u.first_name || u.username || 'F').slice(0,2).toUpperCase())}</div>
-        <div class="user-details">
+        <div class="user-avatar" onclick="window.open('${profileUrl}', '_blank')" style="cursor:pointer;" title="Profilni ochish">${u.is_stealth ? '🕵️' : ((u.first_name || u.username || '👤').slice(0,2).toUpperCase())}</div>
+        <div style="flex:1;">
           <div class="user-name" onclick="window.open('${profileUrl}', '_blank')" style="cursor:pointer;" title="Profilni ochish">
-            ${u.first_name || (u.username ? '@' + u.username : ('Foydalanuvchi #' + String(u.telegram_id).slice(-4)))} ↗️
+            ${u.first_name ? u.first_name + (u.username ? ' (@' + u.username + ')' : '') : (u.username ? '@' + u.username : '👤 ID: ' + u.telegram_id)} ↗️
           </div>
           <div class="user-meta">
             <span>ID: <b>${u.telegram_id}</b></span>
