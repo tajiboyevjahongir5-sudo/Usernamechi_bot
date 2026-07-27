@@ -198,6 +198,14 @@ async def init_db():
         """)
         try: await db.execute("ALTER TABLE listings ADD COLUMN is_private INTEGER DEFAULT 0")
         except Exception: pass
+        try: await db.execute("ALTER TABLE listings ADD COLUMN is_auction INTEGER DEFAULT 0")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE listings ADD COLUMN current_bid INTEGER DEFAULT 0")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE listings ADD COLUMN auction_ends_at REAL DEFAULT 0")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE listings ADD COLUMN highest_bidder_id INTEGER")
+        except Exception: pass
         try: await db.execute("ALTER TABLE listings ADD COLUMN channel_id TEXT")
         except Exception: pass
         try: await db.execute("ALTER TABLE listings ADD COLUMN telegram_message_id INTEGER")
@@ -2059,8 +2067,9 @@ async def api_marketplace_list(request: Request):
     
     await deduct_balance(tid, LISTING_FEE)
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT INTO listings (seller_id, username, price, is_auction, current_bid, auction_ends_at) VALUES (?,?,?,?,?,?)", 
+        cur = await db.execute("INSERT INTO listings (seller_id, username, price, is_auction, current_bid, auction_ends_at) VALUES (?,?,?,?,?,?)", 
                          (tid, username, price, is_auction, price if is_auction else 0, auction_ends_at))
+        new_listing_id = cur.lastrowid
         await db.commit()
         
         # 1. AUTO-BROADCAST TO TELEGRAM MARKETPLACE CHANNEL (user_market)
@@ -2077,7 +2086,7 @@ async def api_marketplace_list(request: Request):
                 bot_username = bot_me.username
                 
                 # Direct Listing Link: Telegram Mini App startapp parametri
-                app_link = f"https://t.me/{bot_username}/app?startapp=listing_{cur.lastrowid}"
+                app_link = f"https://t.me/{bot_username}/app?startapp=listing_{new_listing_id}"
                 
                 type_tag = "⚡ AUKSION (24 Soat)" if is_auction else "🏷 SOTUVDA"
                 price_text = f"<b>{price:,} so'm</b> (Boshlang'ich narx)" if is_auction else f"<b>{price:,} so'm</b>"
@@ -2097,7 +2106,7 @@ async def api_marketplace_list(request: Request):
                 if sent_msg:
                     await db.execute(
                         "UPDATE listings SET channel_id=?, telegram_message_id=? WHERE id=?",
-                        (str(target_chan), sent_msg.message_id, cur.lastrowid)
+                        (str(target_chan), sent_msg.message_id, new_listing_id)
                     )
                     await db.commit()
                 await bot_inst.session.close()
