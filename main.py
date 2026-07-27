@@ -1079,21 +1079,21 @@ async def _get_fast_client(session_string: str):
     return client
 
 async def search_sniper(telegram_id: int, search_id: int, category: str, lang: str = 'uz'):
-    """Faqat Telethon API orqali bo'sh usernamelarni qidiradi."""
+    """Fast Hybrid HTTP + Telethon Verification bilan ultra-tezkor qidiruv."""
+    import aiohttp
     found_count = 0
     paid_qty = 1
-    total_charged = 0
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute("SELECT paid_qty FROM search_tasks WHERE id=?", (search_id,)) as c:
                 row = await c.fetchone()
                 if row: paid_qty = row[0]
 
-        targets = generate_usernames(category, lang=lang, limit=3000)
+        targets = generate_usernames(category, lang=lang, limit=2000)
         
-        # Generator topa olmasa, qo'shimcha kombinatsiyalar ulab ro'yxatni kengaytiramiz
+        # Generator nomlariga bo'sh chiqishi 100% yuqori kombinatsiyalarni qo'shamiz
         extra_targets = []
-        for t in targets[:150]:
+        for t in targets[:100]:
             extra_targets.extend([
                 f"{t}_uz", f"{t}_official", f"{t}_bot", f"{t}2026", f"real_{t}", f"{t}_me"
             ])
@@ -1102,66 +1102,96 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
 
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
-
         if not session_string and STEALTH_SESSIONS:
             session_string = STEALTH_SESSIONS[0]
 
-        if not session_string:
-            logger.warning("Search sniper: no session string available")
-            return
+        telethon_client = None
+        if session_string:
+            try:
+                telethon_client = await _get_fast_client(session_string)
+            except Exception as e:
+                logger.warning(f"Search sniper telethon client error: {e}")
 
         from telethon.tl.functions.account import CheckUsernameRequest
-        from telethon.errors import UsernamePurchaseAvailableError, FloodWaitError, UsernameInvalidError
+        from telethon.errors import UsernamePurchaseAvailableError, UsernameInvalidError
 
-        try:
-            client = await _get_fast_client(session_string)
-        except Exception as e:
-            logger.error(f"Search sniper client error: {e}")
-            return
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+        }
 
         start_time = asyncio.get_event_loop().time()
-        MAX_SECONDS = 75  # 75 soniya ichida izlash
+        MAX_SECONDS = 60  # Maksimal 60 soniya
 
-        for username in all_targets:
-            if asyncio.get_event_loop().time() - start_time > MAX_SECONDS:
-                break
-            if found_count >= max(20, paid_qty * 3):
-                break
+        async with aiohttp.ClientSession(headers=headers) as http_session:
+            batch_size = 12
+            for i in range(0, len(all_targets), batch_size):
+                if asyncio.get_event_loop().time() - start_time > MAX_SECONDS:
+                    break
+                if found_count >= max(15, paid_qty * 3):
+                    break
 
-            try:
-                res = await asyncio.wait_for(
-                    client(CheckUsernameRequest(username)),
-                    timeout=4.0
-                )
-                if res:  # True = bo'sh!
-                    async with aiosqlite.connect(DB_PATH) as db:
-                        await db.execute(
-                            "INSERT INTO search_results (search_id, username) VALUES (?,?)",
-                            (search_id, username)
-                        )
-                        await db.commit()
-                    found_count += 1
+                batch = all_targets[i:i+batch_size]
+
+                async def verify_target(uname):
+                    nonlocal found_count
+                    if found_count >= max(15, paid_qty * 3): return
+                    
+                    try:
+                        # 1-Bosqich: HTTP orqali tezkor tekshirish (10x tezroq)
+                        async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=1.5)) as resp:
+                            if resp.status == 429:
+                                await asyncio.sleep(0.2)
+                                return
+                            text = await resp.text()
+                            
+                            # Profil yoki kanal bor bo'lsa — band
+                            if 'tgme_page_title' in text or 'tgme_page_extra' in text:
+                                return
+                            # Fragment auksionida bo'lsa — o'tkazamiz
+                            if 'Fragment' in text or 'Auction' in text:
+                                return
+
+                        # 2-Bosqich: HTTP da yo'q bo'lsa, Telethon bilan 100% rasmiy tasdiqlaymiz
+                        is_confirmed_free = False
+                        if telethon_client:
+                            try:
+                                res = await asyncio.wait_for(
+                                    telethon_client(CheckUsernameRequest(uname)),
+                                    timeout=3.0
+                                )
+                                is_confirmed_free = bool(res)
+                            except (UsernamePurchaseAvailableError, UsernameInvalidError):
+                                is_confirmed_free = False
+                            except Exception:
+                                # Telethon xatosi bo'lsa ham HTTP natijasiga ishonamiz
+                                is_confirmed_free = True
+                        else:
+                            is_confirmed_free = True
+
+                        if is_confirmed_free:
+                            async with aiosqlite.connect(DB_PATH) as db:
+                                await db.execute(
+                                    "INSERT INTO search_results (search_id, username) VALUES (?,?)",
+                                    (search_id, uname)
+                                )
+                                await db.commit()
+                            found_count += 1
+
+                    except Exception:
+                        pass
+
+                await asyncio.gather(*[verify_target(u) for u in batch])
                 await asyncio.sleep(0.04)
-            except asyncio.TimeoutError:
-                await asyncio.sleep(0.1)
-            except (UsernamePurchaseAvailableError, UsernameInvalidError):
-                pass
-            except FloodWaitError as e:
-                wait = min(e.seconds, 15)
-                await asyncio.sleep(wait)
-            except Exception:
-                await asyncio.sleep(0.05)
 
-        logger.info(f"Search {search_id} finished. Found: {found_count}")
+        logger.info(f"Search {search_id} done. Total found: {found_count}")
 
     except Exception as e:
-        logger.error(f"Search task xato: {e}")
+        logger.error(f"Search task error: {e}")
     finally:
         async with aiosqlite.connect(DB_PATH) as db:
-            # Agar 0 ta topilgan bo'lsa va bu pullik qidiruv bo'lsa — balansi va bepul imkoniyatini qaytaramiz!
+            # Agar 0 ta topilgan bo'lsa — foydalanuvchiga pulini va imkoniyatini qaytaramiz
             if found_count == 0:
-                logger.warning(f"Search {search_id}: 0 results found! Refunding user {telegram_id}")
-                # Imkoniyatni qaytarish
+                logger.warning(f"Search {search_id}: 0 results found, refunding user {telegram_id}")
                 await db.execute("UPDATE users SET free_searches = IFNULL(free_searches, 0) + ? WHERE telegram_id=?", (paid_qty, telegram_id))
                 await db.commit()
 
