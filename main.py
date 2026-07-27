@@ -1933,12 +1933,15 @@ async def api_account_usernames(init_data: str = ""):
     if row and row.get('session_string'):
         try:
             from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
-            client = await _get_fast_client(row['session_string'])
+            client = await asyncio.wait_for(_get_fast_client(row['session_string']), timeout=5)
 
-            me, ch_res = await asyncio.gather(
-                client.get_me(),
-                client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)),
-                return_exceptions=True
+            me, ch_res = await asyncio.wait_for(
+                asyncio.gather(
+                    client.get_me(),
+                    client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)),
+                    return_exceptions=True
+                ),
+                timeout=7
             )
 
             # Shaxsiy profil username
@@ -1966,6 +1969,8 @@ async def api_account_usernames(init_data: str = ""):
                                     async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (uname,)) as lc:
                                         is_listed = bool(await lc.fetchone())
                                     usernames.append({"username": uname, "title": title or "Kanal/Guruh", "channel_id": ch.id, "is_listed": is_listed})
+        except asyncio.TimeoutError:
+            logger.warning(f"Telethon usernames timeout for user {tid} — skipping Telethon check")
         except Exception as e:
             logger.warning(f"Telethon usernames fetch warning: {e}")
 

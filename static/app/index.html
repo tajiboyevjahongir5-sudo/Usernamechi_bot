@@ -1337,7 +1337,10 @@ async function loadUserData() {
 async function loadMyUsernames() {
   const listEl = document.getElementById('my-usernames-list');
   try {
-    const res = await fetch(`${API}/api/account/usernames?init_data=${encodeURIComponent(tg.initData)}`);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const res = await fetch(`${API}/api/account/usernames?init_data=${encodeURIComponent(tg.initData)}`, { signal: ctrl.signal });
+    clearTimeout(timer);
     const d = await res.json();
     if (d.usernames && d.usernames.length > 0) {
       listEl.innerHTML = d.usernames.map(u => `
@@ -1362,9 +1365,14 @@ async function loadMyUsernames() {
       listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">📭 Sizda hali username yo\'q.<br><small>Username band qilib, bu yerdan almashtirishingiz mumkin.</small></div>';
     }
   } catch(e) {
-    listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">Yuklashda xato. Qayta urinib ko\'ring.</div>';
+    if (e.name === 'AbortError') {
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">⏱ Yuklab bo\'lmadi. Sahifani yangilang.</div>';
+    } else {
+      listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--danger);">Yuklashda xato. Qayta urinib ko\'ring.</div>';
+    }
   }
 }
+
 
 async function setUsernameToProfile(username, channelId, btn) {
   // Tasdiqlash yo'q — darhol boshlaymiz! (tezlik muhim)
