@@ -545,6 +545,22 @@ body::before {
       </div>
     </div>
 
+    <!-- MANDATORY CHANNELS PANEL -->
+    <div class="glass-panel" style="margin-top:24px;">
+      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div class="panel-title">📢 Majburiy Obuna Kanallari</div>
+          <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Foydalanuvchi botdan foydalanishi va referal bonus olishi uchun obuna bo'lishi shart bo'lgan kanallar ro'yxati.</div>
+        </div>
+        <button class="action-btn btn-emerald" onclick="openAddChannelModal()">➕ Yangi Kanal Qo'shish</button>
+      </div>
+      
+      <div id="channels-list-container" style="display:flex; flex-direction:column; gap:12px; margin-top:16px;">
+        <div style="text-align:center; padding:20px; color:var(--text-muted);">Kanallar yuklanmoqda...</div>
+      </div>
+    </div>
+
+
     <!-- MULTI-CARD MANAGEMENT PANEL -->
     <div class="glass-panel" style="margin-top:24px;">
       <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -684,6 +700,33 @@ body::before {
     <div style="display:flex; gap:10px; margin-top:20px;">
       <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitAddCard()">➕ Qo'shish</button>
       <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-card')">Bekor Qilish</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD MANDATORY CHANNEL MODAL -->
+<div class="modal-overlay" id="modal-channel" onclick="if(event.target===this) closeModal('modal-channel')">
+  <div class="modal-box">
+    <h3 style="font-size:18px; font-weight:800; margin-bottom:16px;">📢 Yangi Majburiy Kanal Qo'shish</h3>
+    <div class="form-group">
+      <label class="form-label">Kanal Nomi (Masalan: Usernamechi Rasmiy)</label>
+      <input type="text" id="new-ch-title" class="form-input" placeholder="Kanal nomi">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Kanal Usernami (Masalan: usernamechi_news)</label>
+      <input type="text" id="new-ch-username" class="form-input" placeholder="usernamechi_news (masalan, @ siz)">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Kanal Havolasi (Masalan: https://t.me/usernamechi_news)</label>
+      <input type="text" id="new-ch-url" class="form-input" placeholder="https://t.me/usernamechi_news">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Kanal ID (Ixtiyoriy, masalan: -100123456789)</label>
+      <input type="text" id="new-ch-id" class="form-input" placeholder="-100123456789 (agar xususiy kanal bo'lsa)">
+    </div>
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitAddChannel()">Qo'shish</button>
+      <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-channel')">Bekor Qilish</button>
     </div>
   </div>
 </div>
@@ -1248,6 +1291,7 @@ async function loadSettings() {
     document.getElementById('set-monitor-price').value = s.monitor_price || '10000';
     document.getElementById('set-listing-price').value = s.listing_price || '1000';
     loadCards();
+    loadMandatoryChannels();
   } catch(e) {}
 }
 
@@ -1612,6 +1656,93 @@ function showToast(msg, type='success') {
   t.className = `toast-msg active ${type}`;
   t.style.display = 'block';
   setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+async def_loadMandatoryChannels_dummy() {}
+
+async function loadMandatoryChannels() {
+  try {
+    const res = await fetch('/api/admin/channels', { headers: headers() });
+    const channels = await res.json();
+    const container = document.getElementById('channels-list-container');
+    if (!channels || !channels.length) {
+      container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted);">Majburiy obuna kanallari qo\'shilmagan</div>';
+      return;
+    }
+    container.innerHTML = channels.map((ch, idx) => `
+      <div style="background:rgba(30,41,59,0.7); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width:38px; height:38px; border-radius:10px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); color:#34d399; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:14px;">
+            📢
+          </div>
+          <div>
+            <div style="font-size:15px; font-weight:800; color:#f8fafc;">${ch.title}</div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
+              ${ch.channel_username ? '@'+ch.channel_username : ''} ${ch.url ? '| <a href="'+ch.url+'" target="_blank" style="color:#38bdf8; text-decoration:none;">'+ch.url+'</a>' : ''} ${ch.channel_id ? '(ID: '+ch.channel_id+')' : ''}
+            </div>
+          </div>
+        </div>
+        <div>
+          <button class="action-btn btn-rose" style="font-size:11px; padding:7px 14px; border-radius:10px;" onclick="deleteChannel(${ch.id})">
+            🗑️ O'chirish
+          </button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+function openAddChannelModal() {
+  document.getElementById('new-ch-title').value = '';
+  document.getElementById('new-ch-username').value = '';
+  document.getElementById('new-ch-url').value = '';
+  document.getElementById('new-ch-id').value = '';
+  openModal('modal-channel');
+}
+
+async function submitAddChannel() {
+  const title = document.getElementById('new-ch-title').value.trim();
+  const channel_username = document.getElementById('new-ch-username').value.trim();
+  const url = document.getElementById('new-ch-url').value.trim();
+  const channel_id = document.getElementById('new-ch-id').value.trim();
+
+  if (!title) { showToast("Kanal nomi kiritilmadi", "error"); return; }
+
+  try {
+    const res = await fetch('/api/admin/channels/add', {
+      method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, channel_username, url, channel_id })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Kanal qo'shildi", "success");
+      closeModal('modal-channel');
+      loadMandatoryChannels();
+    } else {
+      showToast(d.error || "Xatolik", "error");
+    }
+  } catch(e) {
+    showToast("Tarmoq xatosi", "error");
+  }
+}
+
+async function deleteChannel(id) {
+  if (!confirm("Ushbu kanalni majburiy obuna ro'yxatidan o'chirmoqchimisiz?")) return;
+  try {
+    const res = await fetch('/api/admin/channels/delete', {
+      method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Kanal o'chirildi", "success");
+      loadMandatoryChannels();
+    } else {
+      showToast(d.error || "Xatolik", "error");
+    }
+  } catch(e) {
+    showToast("Tarmoq xatosi", "error");
+  }
 }
 
 checkAuth();

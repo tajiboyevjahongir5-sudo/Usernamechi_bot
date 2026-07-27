@@ -219,6 +219,23 @@ async def init_db():
                 created_at REAL DEFAULT (strftime('%s','now'))
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS mandatory_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT,
+                channel_username TEXT,
+                title TEXT,
+                url TEXT,
+                created_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS pending_referrals (
+                telegram_id INTEGER PRIMARY KEY,
+                referrer_id INTEGER,
+                created_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
         await db.commit()
         # Sozlamalarni kiritish
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payment_card', '8600123456789012')")
@@ -837,41 +854,98 @@ async def auto_payment_handler(message: Message):
     except Exception as e:
         logger.error(f"Auto-payment error: {e}")
 
+async def get_unsubscribed_channels(bot: Bot, user_id: int):
+    """Foydalanuvchi obuna bo'lmagan kanallar ro'yxatini qaytaradi."""
+    unsubbed = []
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM mandatory_channels") as c:
+                channels = await c.fetchall()
+        
+        for ch in channels:
+            try:
+                ch_target = ch['channel_id'] if ch['channel_id'] else (f"@{ch['channel_username']}" if ch['channel_username'] else None)
+                if not ch_target: continue
+                member = await bot.get_chat_member(chat_id=ch_target, user_id=user_id)
+                if member.status in ('left', 'kicked', 'banned'):
+                    unsubbed.append(ch)
+            except Exception as e:
+                # Bot kanalda admin emas bo'lishi yoki topilmasligi mumkin, shunda majburiy bloklamaymiz
+                logger.warning(f"Check channel sub error for {ch['title']}: {e}")
+    except Exception as e:
+        logger.error(f"get_unsubscribed_channels error: {e}")
+    return unsubbed
+
+async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: str):
+    """Obunasi tasdiqlangach, kutilayotgan referal pulini taklif qilganga o'tkazadi."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT referrer_id FROM pending_referrals WHERE telegram_id=?", (user_id,)) as c:
+                row = await c.fetchone()
+            if row and row[0]:
+                ref_id = row[0]
+                await db.execute("UPDATE users SET balance=balance+1000 WHERE telegram_id=?", (ref_id,))
+                await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
+                await db.commit()
+                
+                try:
+                    await bot.send_message(
+                        ref_id,
+                        f"🎁 <b>Referral Bonus!</b>\n\n"
+                        f"Siz taklif qilgan <b>{user_first_name}</b> majburiy kanallarga obuna bo'ldi!\n"
+                        f"Balansingizga <b>+1,000 so'm</b> bonus o'tkazildi! 🚀",
+                        parse_mode="HTML"
+                    )
+                except Exception: pass
+    except Exception as e:
+        logger.error(f"grant_pending_referral_bonus error: {e}")
+
 @router.message(CommandStart())
 async def start_cmd(message: Message):
     await create_user(message.from_user.id)
     
+    # Referral taklifini qayd etish (lekin hali pul bermaymiz)
     args = message.text.split(" ", 1)
     if len(args) > 1 and args[1].startswith("ref_"):
         try:
             ref_id = int(args[1].split("_")[1])
             if ref_id != message.from_user.id:
                 async with aiosqlite.connect(DB_PATH) as db:
-                    # Faqat birinchi marta referral bo'lsa bonus beriladi
                     async with db.execute("SELECT referred_by FROM users WHERE telegram_id=?", (message.from_user.id,)) as c:
                         existing = await c.fetchone()
                     if existing and (existing[0] is None or existing[0] == 0):
                         await db.execute("UPDATE users SET referred_by=? WHERE telegram_id=?", (ref_id, message.from_user.id))
-                        # Taklif qiluvchiga 1,000 so'm bonus
-                        await db.execute("UPDATE users SET balance=balance+1000 WHERE telegram_id=?", (ref_id,))
-                        await db.commit()
-                        # Taklif qiluvchiga bildirishnoma
-                        try:
-                            ref_user = message.from_user
-                            ref_name = ref_user.first_name or "Yangi do'st"
-                            b_inst = Bot(token=BOT_TOKEN)
-                            await b_inst.send_message(
-                                ref_id,
-                                f"🎁 <b>Referral Bonus!</b>\n\n"
-                                f"Siz taklif qilgan <b>{ref_name}</b> botga qo'shildi!\n"
-                                f"Balansingizga <b>+1,000 so'm</b> bonus berildi! 🚀",
-                                parse_mode="HTML"
-                            )
-                        except Exception: pass
-                    else:
+                        await db.execute("INSERT OR REPLACE INTO pending_referrals (telegram_id, referrer_id) VALUES (?, ?)", (message.from_user.id, ref_id))
                         await db.commit()
         except Exception:
             pass
+
+    # Majburiy obunani tekshiramiz
+    unsubbed = await get_unsubscribed_channels(message.bot, message.from_user.id)
+    if unsubbed:
+        # Obuna bo'lmagan kanallar bor!
+        inline_btns = []
+        for ch in unsubbed:
+            btn_text = f"📢 {ch['title']}"
+            btn_url = ch['url'] if ch['url'] else (f"https://t.me/{ch['channel_username']}" if ch['channel_username'] else "https://t.me")
+            inline_btns.append([InlineKeyboardButton(text=btn_text, url=btn_url)])
+        
+        inline_btns.append([InlineKeyboardButton(text="✅ Obunani tekshirish", callback_data="check_sub")])
+        kb = InlineKeyboardMarkup(inline_keyboard=inline_btns)
+        
+        await message.answer(
+            text=(
+                f"👋 Salom, <b>{message.from_user.first_name}</b>!\n\n"
+                f"⚠️ Botdan foydalanish va <b>1,000 so'm bonus olish</b> uchun quyidagi kanallarga obuna bo'ling:"
+            ),
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+        return
+
+    # Kanallarga obuna bo'lgan bo'lsa — referral bonusini rasman taqdim etamiz!
+    await grant_pending_referral_bonus(message.bot, message.from_user.id, message.from_user.first_name or "Do'st")
 
     await message.answer(
         text=(
@@ -886,6 +960,31 @@ async def start_cmd(message: Message):
         reply_markup=main_menu(),
         parse_mode="HTML"
     )
+
+@router.callback_query(F.data == "check_sub")
+async def check_sub_callback(callback: CallbackQuery):
+    unsubbed = await get_unsubscribed_channels(callback.bot, callback.from_user.id)
+    if unsubbed:
+        await callback.answer("❌ Siz hali barcha kanallarga obuna bo'lmadingiz!", show_alert=True)
+    else:
+        await callback.answer("✅ Rahmat! Barcha kanallarga obuna bo'ldingiz.", show_alert=True)
+        # Obuna bo'lingan bo'lsa — taklif qilgan odamga +1,000 so'm bonus beriladi
+        await grant_pending_referral_bonus(callback.bot, callback.from_user.id, callback.from_user.first_name or "Do'st")
+        
+        try:
+            await callback.message.delete()
+        except: pass
+        
+        await callback.message.answer(
+            text=(
+                f"🎉 Obunangiz tasdiqlandi!\n\n"
+                f"🎯 <b>Usernamechi Bot</b>ga xush kelibsiz!\n\n"
+                f"👇 Quyidagi tugma orqali dasturni oching:"
+            ),
+            reply_markup=main_menu(),
+            parse_mode="HTML"
+        )
+
 
 @router.message(Command("admin"))
 async def admin_cmd(message: Message):
@@ -2734,7 +2833,62 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
         await set_setting("monitor_price", data['monitor_price'])
     if 'listing_price' in data:
         await set_setting("listing_price", data['listing_price'])
+@app.get("/api/admin/channels")
+async def api_admin_channels_get(x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM mandatory_channels ORDER BY id DESC") as c:
+            rows = await c.fetchall()
+            return [dict(r) for r in rows]
+
+@app.post("/api/admin/channels/add")
+async def api_admin_channels_add(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    
+    data = await request.json()
+    title = data.get('title', '').strip()
+    username = data.get('channel_username', '').strip().replace('@', '')
+    url = data.get('url', '').strip()
+    channel_id = data.get('channel_id', '').strip()
+
+    if not title:
+        return {"ok": False, "error": "Kanal nomi kiritilmadi"}
+
+    if not url:
+        if username:
+            url = f"https://t.me/{username}"
+        else:
+            url = "https://t.me"
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO mandatory_channels (channel_id, channel_username, title, url) VALUES (?, ?, ?, ?)",
+            (channel_id, username, title, url)
+        )
+        await db.commit()
+
     return {"ok": True}
+
+@app.post("/api/admin/channels/delete")
+async def api_admin_channels_delete(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    
+    data = await request.json()
+    cid = data.get('id')
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM mandatory_channels WHERE id=?", (cid,))
+        await db.commit()
+
+    return {"ok": True}
+
 
 # ── ADMIN MASS BROADCAST (OMMAVIY XABARNOMA) ────
 @app.post("/api/admin/broadcast")
