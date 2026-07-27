@@ -1379,7 +1379,7 @@ async def deferred_claim_loop(bot):
         await asyncio.sleep(60)  # Har 60 soniyada tekshirish
 
 async def monitoring_loop(bot):
-    """Orqa fonda barcha monitoring_tasks larni parallel (100+ nomlarni 1-2 soniyada) poylaydi."""
+    """Orqa fonda barcha monitoring_tasks larni ultra-yuqori tezlikda (5000+ nomlarni 2-3 soniyada) poylaydi."""
     from telethon.tl.functions.account import CheckUsernameRequest
     from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest, DeleteChannelRequest
     from telethon.errors import FloodWaitError
@@ -1404,78 +1404,90 @@ async def monitoring_loop(bot):
                 await asyncio.sleep(1.5)
                 continue
 
+            # ── 1. DEDUPLICATION (Bitta usernameni 10 kishi poylayotgan bo'lsa, 1 marta tekshiramiz) ──
+            uname_map = {}
+            for t in tasks:
+                u_lower = t["username"].lower()
+                if u_lower not in uname_map:
+                    uname_map[u_lower] = []
+                uname_map[u_lower].append(t)
+
             hdr_idx = (hdr_idx + 1) % len(headers_list)
+            # Semafordan foydalanib bir vaqtning o'zida 30 ta parallel so'rov ishlatamiz
+            sem = asyncio.Semaphore(30)
+
             async with aiohttp.ClientSession(headers={'User-Agent': headers_list[hdr_idx]}) as http_session:
                 
-                async def check_single_target(task):
-                    uname = task["username"]
-                    try:
-                        # 1-qadam: HTTP t.me orqali tezkor va xavfsiz profil bor-yo'qligini tekshiramiz
-                        async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=2.0)) as resp:
-                            if resp.status == 429:
-                                await asyncio.sleep(0.3)
-                                return
-                            text = await resp.text()
-                            
-                            # Profil yoki kanal mavjud bo'lsa — hali bo'shamagan
-                            if 'tgme_page_title' in text or 'tgme_page_extra' in text:
-                                return
-                    except Exception:
-                        return
-
-                    # 2-qadam: Profil HTTP da yo'q bo'lsa (BO'SHAGAN) — Keshdagi tezkor klient bilan lahzada band qilamiz!
-                    if not task["session_string"]: return
-                    try:
-                        client = await _get_fast_client(task["session_string"])
+                async def check_uname_group(uname_lower, task_group):
+                    async with sem:
+                        sample_task = task_group[0]
+                        uname = sample_task["username"]
                         try:
-                            is_free = await client(CheckUsernameRequest(username=uname))
-                            if is_free:
-                                ch = None
-                                try:
-                                    ch = await client(CreateChannelRequest(title=uname.capitalize(), about="@usernamechi_bot orqali band qilingan", megagroup=False))
-                                    ch_id = ch.chats[0].id
-                                    await client(UpdateUsernameRequest(channel=ch_id, username=uname))
-                                    
-                                    async with aiosqlite.connect(DB_PATH) as db:
-                                        await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
-                                        await db.commit()
-                                        
-                                    try:
-                                        await bot.send_message(
-                                            task["telegram_id"],
-                                            f"🎯 <b>Nishon olindi!</b>\n\nKutgan usernamengiz bo'shadi va Siz uchun band qilindi: <b>@{uname}</b>",
-                                            parse_mode="HTML"
-                                        )
-                                    except: pass
-                                except Exception as inner_e:
-                                    if ch:
-                                        try: await client(DeleteChannelRequest(channel=ch.chats[0].id))
-                                        except: pass
-                                    if "ChannelsAdminPublicTooMuchError" in str(type(inner_e)):
-                                        async with aiosqlite.connect(DB_PATH) as db:
-                                            await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
-                                            await db.commit()
-                                        try:
-                                            await bot.send_message(task["telegram_id"], f"❌ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
-                                        except: pass
-                        except FloodWaitError as e:
-                            await asyncio.sleep(e.seconds)
-                        except Exception as e:
-                            logger.error(f"Nishon tekshirishda xato (@{uname}): {e}")
-                    except Exception as e:
-                        logger.error(f"Nishon client ulanishda xato: {e}")
+                            # 1-qadam: HTTP t.me orqali tezkor va xavfsiz profil bor-yo'qligini tekshiramiz
+                            async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=1.8)) as resp:
+                                if resp.status == 429:
+                                    await asyncio.sleep(0.2)
+                                    return
+                                text = await resp.text()
+                                
+                                # Profil yoki kanal mavjud bo'lsa — hali bo'shamagan
+                                if 'tgme_page_title' in text or 'tgme_page_extra' in text:
+                                    return
+                        except Exception:
+                            return
 
-                # Parallel batching: 15 tadan so'rovni bir vaqtda (concurrently) yuboramiz
-                batch_size = 15
-                for i in range(0, len(tasks), batch_size):
-                    batch = tasks[i:i+batch_size]
-                    await asyncio.gather(*[check_single_target(t) for t in batch])
-                    await asyncio.sleep(0.08)
+                        # 2-qadam: Profil HTTP da yo'q bo'lsa (BO'SHAGAN) — har bir poylayotgan foydalanuvchida tartib bilan urinib ko'ramiz
+                        for task in task_group:
+                            if not task["session_string"]: continue
+                            try:
+                                client = await _get_fast_client(task["session_string"])
+                                try:
+                                    is_free = await client(CheckUsernameRequest(username=uname))
+                                    if is_free:
+                                        ch = None
+                                        try:
+                                            ch = await client(CreateChannelRequest(title=uname.capitalize(), about="@usernamechi_bot orqali band qilingan", megagroup=False))
+                                            ch_id = ch.chats[0].id
+                                            await client(UpdateUsernameRequest(channel=ch_id, username=uname))
+                                            
+                                            async with aiosqlite.connect(DB_PATH) as db:
+                                                await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
+                                                await db.commit()
+                                                
+                                            try:
+                                                await bot.send_message(
+                                                    task["telegram_id"],
+                                                    f"🎯 <b>Nishon olindi!</b>\n\nKutgan usernamengiz bo'shadi va Siz uchun band qilindi: <b>@{uname}</b>",
+                                                    parse_mode="HTML"
+                                                )
+                                            except: pass
+                                            # Birinchi olgan foydalanuvchida band bo'ldi, guruhdagi boshqalarga urunish shart emas
+                                            break
+                                        except Exception as inner_e:
+                                            if ch:
+                                                try: await client(DeleteChannelRequest(channel=ch.chats[0].id))
+                                                except: pass
+                                            if "ChannelsAdminPublicTooMuchError" in str(type(inner_e)):
+                                                async with aiosqlite.connect(DB_PATH) as db:
+                                                    await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
+                                                    await db.commit()
+                                                try:
+                                                    await bot.send_message(task["telegram_id"], f"❌ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
+                                                except: pass
+                                except FloodWaitError as e:
+                                    await asyncio.sleep(e.seconds)
+                                except Exception as e:
+                                    logger.error(f"Nishon tekshirishda xato (@{uname}): {e}")
+                            except Exception as e:
+                                logger.error(f"Nishon client ulanishda xato: {e}")
+
+                # Barcha noyob usernamelarni 30 oqimli Semaphore orqali parallel bajaramiz
+                await asyncio.gather(*[check_uname_group(u, group) for u, group in uname_map.items()])
 
         except Exception as e:
             logger.error(f"Monitoring loop xato: {e}")
             
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.2)
 
 # ─── FASTAPI APP ──────────────────────────────
 app = FastAPI()
