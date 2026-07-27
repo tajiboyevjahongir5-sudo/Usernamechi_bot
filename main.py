@@ -962,6 +962,40 @@ async def start_cmd(message: Message):
     # Kanallarga obuna bo'lgan bo'lsa — referral bonusini rasman taqdim etamiz!
     await grant_pending_referral_bonus(message.bot, message.from_user.id, message.from_user.first_name or "Do'st")
 
+    # Direct Deep Link parametri bo'lsa (masalan: listing_123 yoki market_123)
+    start_param = args[1] if len(args) > 1 else ""
+    if start_param.startswith("listing_") or start_param.startswith("market_"):
+        listing_id = start_param.replace("listing_", "").replace("market_", "")
+        app_url = f"{WEB_URL}/app?v=2&tgWebAppStartParam={start_param}"
+        
+        # E'lon haqida qisqa ma'lumot olishga urinamiz
+        info_text = f"🛒 <b>Bozor e'loniga o'tish</b>"
+        try:
+            lid = int(listing_id)
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("SELECT username, price, is_auction FROM listings WHERE id=?", (lid,)) as c:
+                    l_row = await c.fetchone()
+                    if l_row:
+                        type_str = "⚡ AUKSION" if l_row['is_auction'] else "🏷 SOTUVDA"
+                        info_text = f"🛒 <b>E'lon: @{l_row['username']}</b> ({type_str})\n💰 <b>Narxi:</b> {l_row['price']:,} so'm"
+        except Exception:
+            pass
+            
+        custom_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 E'lonni ilovada ochish va Sotib olish", web_app=WebAppInfo(url=app_url))]
+        ])
+        await message.answer(
+            text=(
+                f"👋 Salom, <b>{message.from_user.first_name}</b>!\n\n"
+                f"{info_text}\n\n"
+                f"👇 Quyidagi tugmani bosib, e'lonni ko'ring va sotib oling:"
+            ),
+            reply_markup=custom_kb,
+            parse_mode="HTML"
+        )
+        return
+
     await message.answer(
         text=(
             f"👋 Salom, <b>{message.from_user.first_name}</b>!\n\n"
@@ -2110,7 +2144,7 @@ async def api_marketplace_list(request: Request):
                     f"⚡ <i>Ushbu nomni band qilish yoki auksionda qatnashish uchun quyidagi tugmani bosing:</i>"
                 )
                 m_markup = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🛒 E'lonni ko'rish & Sotib olish", url=f"https://t.me/{bot_username}/app?startapp=listing_{new_listing_id}")]
+                    [InlineKeyboardButton(text="🛒 E'lonni ko'rish & Sotib olish", url=f"https://t.me/{bot_username}?start=listing_{new_listing_id}")]
                 ])
                 sent_msg = await bot_inst.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
                 if sent_msg:
