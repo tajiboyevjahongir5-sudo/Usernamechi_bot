@@ -806,8 +806,6 @@ async function attemptWebAuth() {
         localStorage.setItem('admin_token', d.token);
         const loginEl = document.getElementById('login-screen');
         if (loginEl) loginEl.style.display = 'none';
-        loadDashboard();
-        initNavDragPhysics();
         return true;
       } else {
         if (d.error) showToast(d.error, 'error');
@@ -834,9 +832,9 @@ async function checkAuth() {
     await attemptWebAuth();
   }
 
-  // 2. Token olingandan keyin ma'lumotlarni yuklaymiz
-  loadDashboard();
+  // 2. Token olingandan keyin ma'lumotlarni yuklaymiz (faqat bir marta)
   initNavDragPhysics();
+  loadDashboard();
 }
 
 function switchTab(tabId, btn) {
@@ -1696,7 +1694,7 @@ function showToast(msg, type='success') {
   setTimeout(() => { t.style.display = 'none'; }, 3000);
 }
 
-async def_loadMandatoryChannels_dummy() {}
+
 
 async function loadMandatoryChannels() {
   try {
