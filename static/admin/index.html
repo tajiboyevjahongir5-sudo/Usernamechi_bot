@@ -826,15 +826,17 @@ async function checkAuth() {
     history.replaceState({}, '', '/admin');
   }
 
-  // Darhol kontentni ko'rsatamiz
   const loginEl = document.getElementById('login-screen');
   if (loginEl) loginEl.style.display = 'none';
+
+  // 1. Telegram WebApp initData bo'lsa token olamiz
+  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+    await attemptWebAuth();
+  }
+
+  // 2. Token olingandan keyin ma'lumotlarni yuklaymiz
   loadDashboard();
   initNavDragPhysics();
-
-  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
-    attemptWebAuth();
-  }
 }
 
 function switchTab(tabId, btn) {
