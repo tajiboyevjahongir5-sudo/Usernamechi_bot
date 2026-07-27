@@ -60,7 +60,7 @@ body::before {
 #login-screen {
   position: fixed; inset: 0;
   background: var(--bg-primary);
-  display: flex; align-items: center; justify-content: center;
+  display: none; align-items: center; justify-content: center;
   z-index: 999; padding: 24px;
 }
 .login-card {
@@ -826,23 +826,15 @@ async function checkAuth() {
     history.replaceState({}, '', '/admin');
   }
 
-  // 1. WebApp ichida bo'lsa darhol avto-auth
-  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
-    const success = await attemptWebAuth();
-    if (success) return;
-  }
+  // Darhol kontentni ko'rsatamiz
+  const loginEl = document.getElementById('login-screen');
+  if (loginEl) loginEl.style.display = 'none';
+  loadDashboard();
+  initNavDragPhysics();
 
-  // 2. Token orqali tekshirish
-  try {
-    const res = await fetch('/api/admin/check', { headers: headers() });
-    if (res.ok) {
-      const loginEl = document.getElementById('login-screen');
-      if (loginEl) loginEl.style.display = 'none';
-      loadDashboard();
-      initNavDragPhysics();
-      return;
-    }
-  } catch(e) {}
+  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+    attemptWebAuth();
+  }
 }
 
 function switchTab(tabId, btn) {
