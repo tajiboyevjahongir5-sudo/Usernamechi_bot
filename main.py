@@ -898,55 +898,23 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
     return unsubbed
 
 async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: str, tg_username: str = '', tg_name: str = ''):
-    """Obunasi tasdiqlangach, kutilayotgan referal pulini taklif qilganga o'tkazadi (Anti-Nakrutka himoyasi bilan)."""
+    """Majburiy kanallarga obuna bo'lgandan keyin referral bonusini beradi."""
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT referrer_id FROM pending_referrals WHERE telegram_id=?", (user_id,)) as c:
                 row = await c.fetchone()
             if not row or not row['referrer_id']:
-                return
+                return  # Referral yo'q — hech narsa qilmaymiz
 
             ref_id = row['referrer_id']
 
-            # ANTI-NAKRUTKA 1: Telegram dan kelgan fresh ma'lumotlarni ishlatamiz
-            # tg_username yoki tg_name bo'lmasa — DB dan tekshiramiz
-            u_username = tg_username
-            u_name = tg_name or user_first_name
-            if not u_username or not u_name:
-                async with db.execute("SELECT username, first_name FROM users WHERE telegram_id=?", (user_id,)) as c:
-                    u_info = await c.fetchone()
-                    if u_info:
-                        u_username = u_username or (u_info['username'] or '')
-                        u_name = u_name or (u_info['first_name'] or '')
-
-            # Username yo'q va ismi 2 harfdan qisqa bo'lsa -> Soxta nakrutka
-            if not u_username and (not u_name or len(u_name.strip()) < 2):
-                logger.warning(f"Anti-Nakrutka: {user_id} foydalanuvchida username yo'q, referral rad etildi.")
-                await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
-                await db.commit()
-                return
-
-            # ANTI-NAKRUTKA 2: Rate Limit — 1 soatda max 10 ta referral bonus
-            one_hour_ago = int(time.time()) - 3600
-            async with db.execute(
-                "SELECT COUNT(*) FROM pending_referrals WHERE referrer_id=? AND created_at > ?",
-                (ref_id, one_hour_ago)
-            ) as c:
-                ref_count_hour = (await c.fetchone())[0]
-
-            if ref_count_hour > 10:
-                logger.warning(f"Anti-Nakrutka Limit: {ref_id} ga soatlik limit tufayli bonus to'xtatildi.")
-                await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
-                await db.commit()
-                return
-
-            # ✅ Bonus taqdim etish
+            # ✅ Bonus berish — majburiy obuna o'zi yetarli himoya
             await db.execute("UPDATE users SET balance=balance+1000 WHERE telegram_id=?", (ref_id,))
             await db.execute("DELETE FROM pending_referrals WHERE telegram_id=?", (user_id,))
             await db.commit()
 
-            logger.info(f"✅ Referral bonus berildi: {ref_id} ga +1000 so'm ({user_first_name} obuna bo'ldi)")
+            logger.info(f"✅ Referral bonus: {ref_id} ga +1000 so'm ({user_first_name} obuna bo'ldi)")
 
             try:
                 await bot.send_message(
@@ -956,7 +924,8 @@ async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: 
                     f"Balansingizga <b>+1,000 so'm</b> bonus o'tkazildi! 🚀",
                     parse_mode="HTML"
                 )
-            except Exception: pass
+            except Exception:
+                pass
     except Exception as e:
         logger.error(f"grant_pending_referral_bonus error: {e}")
 
