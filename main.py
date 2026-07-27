@@ -958,7 +958,7 @@ async def start_cmd(message: Message):
         await message.answer(
             text=(
                 f"👋 Salom, <b>{message.from_user.first_name}</b>!\n\n"
-                f"⚠️ Botdan foydalanish va <b>1,000 so'm bonus olish</b> uchun quyidagi kanallarga obuna bo'ling:"
+                f"⚠️ Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:"
             ),
             reply_markup=kb,
             parse_mode="HTML"
