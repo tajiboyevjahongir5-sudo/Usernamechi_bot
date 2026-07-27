@@ -2094,6 +2094,7 @@ async function loadMonitors() {
 
 // ── INTERACTIVE SEARCH & BUY ──────────────────
 let currentSearchId = null;
+let currentCategory = 'custom'; // Joriy qidiruv kategoriyasi (narx hisoblash uchun)
 let paidQty = 0;           // Oldindan to'langan miqdor
 let searchPollInterval = null;
 let searchPollCount = 0;   // Cheksiz polling oldini olish uchun
@@ -2162,6 +2163,7 @@ async function startSearch() {
     if (d.ok) {
       paidQty = qty;
       currentSearchId = d.search_id;
+      currentCategory = rawCat; // Kategoriyani saqlaymiz (band qilishda ishlatish uchun)
       await loadUserData(); // Balansni yangilash
 
       document.getElementById('search-results-card').style.display = 'block';
@@ -2415,7 +2417,7 @@ async function buySelected() {
   try {
     const res = await fetch(`${API}/api/buy_selected`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({init_data: tg.initData, search_id: currentSearchId, usernames: usernames})
+      body: JSON.stringify({init_data: tg.initData, search_id: currentSearchId, category: currentCategory, usernames: usernames})
     });
     const d = await res.json();
     if(d.ok) {

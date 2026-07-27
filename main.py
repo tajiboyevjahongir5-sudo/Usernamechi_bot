@@ -2672,6 +2672,7 @@ async def api_buy_selected(request: Request):
     
     usernames = data.get('usernames', [])
     search_id = data.get('search_id')
+    category = data.get('category', 'custom')
     qty = len(usernames)
     
     if not usernames or qty > 10:
@@ -2682,8 +2683,20 @@ async def api_buy_selected(request: Request):
         return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
         
     user_first_name = user.get('first_name', 'Foydalanuvchi')
-    price_per_item = int(await get_setting("username_price", 5000))
+    
+    # Kategoriyaga qarab narx (server tomonda)
+    CATEGORY_PRICES = {'qisqa': 15000, 'turli': 10000}
+    cat_key = category.split(':')[0] if ':' in category else category
+    price_per_item = CATEGORY_PRICES.get(cat_key, int(await get_setting("username_price", 5000)))
     price = qty * price_per_item
+    
+    # Balans tekshiruvi
+    user_balance = int(row.get('balance') or 0)
+    if user_balance < price:
+        return {"ok": False, "error": f"Balans yetarli emas! Kerak: {price:,} so'm, Sizda: {user_balance:,} so'm"}
+    
+    # Balansdan yechib olamiz (oldindan)
+    await deduct_balance(tid, price)
     
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("INSERT INTO orders (telegram_id, category, quantity, price, status, user_first_name) VALUES (?,?,?,?,'processing',?)",
