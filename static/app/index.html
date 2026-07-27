@@ -964,9 +964,13 @@
 
   <div class="form-group">
     <label>USERNAME TANLANG</label>
-    <select id="post-username-select" style="width:100%; background:rgba(255,255,255,0.05); border:1px solid var(--border); border-radius:12px; padding:12px; color:var(--text); font-family:inherit; outline:none; font-size:14px; margin-bottom:16px;">
+    <select id="post-username-select" onchange="toggleCustomUsernameInput()" style="width:100%; background:rgba(255,255,255,0.05); border:1px solid var(--border); border-radius:12px; padding:12px; color:var(--text); font-family:inherit; outline:none; font-size:14px; margin-bottom:16px;">
       <option value="">Yuklanmoqda...</option>
     </select>
+    <div id="post-custom-username-box" style="display:none; margin-bottom:16px;">
+      <label style="font-size:11px; color:var(--muted); margin-bottom:4px; display:block;">QO'LDA USERNAME KIRITING</label>
+      <input type="text" id="post-custom-username-input" placeholder="Masalan: chiroyli_nom" style="width:100%; background:rgba(255,255,255,0.05); border:1px solid var(--border); border-radius:12px; padding:12px; color:var(--text); font-family:inherit; outline:none; font-size:14px;">
+    </div>
   </div>
   
   <div class="form-group">
@@ -1715,25 +1719,36 @@ async function cancelListing(id) {
   } catch(e) {}
 }
 
+function toggleCustomUsernameInput() {
+  const selVal = document.getElementById('post-username-select').value;
+  const box = document.getElementById('post-custom-username-box');
+  if (box) box.style.display = selVal === '__custom__' ? 'block' : 'none';
+}
+
 async function openPostModal() {
   if(!userData.session_string) { showToast("Avval akkauntni ulang!", "error"); goPage("account"); return; }
   document.getElementById('market-post-modal').style.display = 'block';
   document.getElementById('market-overlay').style.display = 'block';
   const sel = document.getElementById('post-username-select');
+  const customBox = document.getElementById('post-custom-username-box');
+  if (customBox) customBox.style.display = 'none';
   sel.innerHTML = '<option value="">Yuklanmoqda...</option>';
   try {
     const res = await fetch(`${API}/api/account/usernames?init_data=${encodeURIComponent(tg.initData)}`);
     const d = await res.json();
+    let optionsHtml = '<option value="">-- Tanlang --</option>';
     if (d.usernames && d.usernames.length > 0) {
-      sel.innerHTML = '<option value="">-- Tanlang --</option>' + d.usernames.map(u => 
+      optionsHtml += d.usernames.map(u => 
         u.is_listed 
           ? `<option value="${u.username}" disabled>@${u.username} (Sotuvga qo'yilgan)</option>`
           : `<option value="${u.username}">@${u.username} (${u.title})</option>`
       ).join('');
-    } else {
-      sel.innerHTML = '<option value="">Sizda bo\'sh usernamelar yo\'q</option>';
     }
-  } catch(e) { sel.innerHTML = '<option value="">Xato yuz berdi</option>'; }
+    optionsHtml += '<option value="__custom__">✍️ Boshqa username kiritish...</option>';
+    sel.innerHTML = optionsHtml;
+  } catch(e) { 
+    sel.innerHTML = '<option value="">-- Tanlang --</option><option value="__custom__">✍️ Qo\'lda username kiritish...</option>'; 
+  }
 }
 
 function closeMarketPost() {
@@ -1744,7 +1759,10 @@ function closeMarketPost() {
 }
 
 async function submitPostListing() {
-  const username = document.getElementById('post-username-select').value;
+  let username = document.getElementById('post-username-select').value;
+  if (username === '__custom__') {
+    username = (document.getElementById('post-custom-username-input').value || '').trim().replace('@', '');
+  }
   const price = parseInt(document.getElementById('post-price-input').value);
   const typeSelect = document.getElementById('post-type-select').value;
   const is_auction = typeSelect === 'auction' ? 1 : 0;

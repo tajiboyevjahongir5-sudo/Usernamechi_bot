@@ -2115,6 +2115,8 @@ async def api_marketplace_list(request: Request):
             except Exception as e:
                 logger.error(f"Marketplace channel broadcast xato ({mkt_channel}): {e}")
 
+    return {"ok": True}
+
 
 async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
     """
