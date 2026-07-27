@@ -2078,6 +2078,8 @@ async def api_marketplace_list(request: Request):
             try:
                 # Username bo'lsa @ qo'shamiz
                 target_chan = mkt_channel.strip()
+                if "t.me/" in target_chan:
+                    target_chan = target_chan.split("t.me/")[-1].strip().replace("/", "")
                 if not target_chan.startswith("-100") and not target_chan.startswith("@"):
                     target_chan = f"@{target_chan}"
 
