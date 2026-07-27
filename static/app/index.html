@@ -1106,12 +1106,12 @@
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
       <div class="section-title" style="margin:0;"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Wrapped%20gift/3D/wrapped_gift_3d.png" class="icon-3d-img"></span> <span>Taklif & Bonus</span></div>
       <div style="background:rgba(16,185,129,0.2); border:1px solid rgba(16,185,129,0.4); color:#34d399; font-size:11px; font-weight:800; padding:4px 10px; border-radius:12px; display:inline-flex; align-items:center; gap:4px;">
-        ⚡ 5% KESHBEK
+        🎁 1,000 SO'M
       </div>
     </div>
     
     <div style="font-size:13px; color:rgba(255,255,255,0.7); margin-bottom:14px; line-height:1.5;">
-      Do'stlaringizni taklif qiling. Ular balans to'ldirganda summaning <b>5% bonusi</b> hisobingizga avtomatik tushadi!
+      Do'stlaringizni taklif qiling. Har bir yangi do'st botga qo'shilganda balansingizga <b>+1,000 so'm</b> avtomatik tushadi! 🚀
     </div>
 
     <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
@@ -1124,10 +1124,16 @@
       <input type="text" id="ref-link-input" readonly value="Yuklanmoqda..." style="width:100%; padding:12px 14px; font-size:13px; font-weight:600; border-radius:12px; background:rgba(15,23,42,0.8); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; outline:none; text-overflow:ellipsis; margin-bottom:10px;">
     </div>
 
-    <button class="btn btn-primary" onclick="copyRefLink()" style="margin:0; width:100%; background:linear-gradient(135deg,#8b5cf6,#06b6d4); font-size:13px; padding:12px;">
-      📋 Havoladan nusxalash
-    </button>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-primary" onclick="copyRefLink()" style="margin:0; flex:1; background:linear-gradient(135deg,#8b5cf6,#06b6d4); font-size:13px; padding:12px;">
+        📋 Nusxalash
+      </button>
+      <button class="btn btn-outline" onclick="shareRefLink()" style="margin:0; flex:1; font-size:13px; padding:12px; border-color:rgba(56,189,248,0.4); color:#38bdf8;">
+        📤 Ulashish
+      </button>
+    </div>
   </div>
+
 
   <!-- Mening usernamelarim -->
   <div class="card" id="my-usernames-wrap">
@@ -1438,6 +1444,30 @@ function copyRefLink() {
     showToast("📋 Referral havola nusxalandi!", "success");
   }
 }
+
+function shareRefLink() {
+  const link = document.getElementById('ref-link-input')?.value;
+  if (!link || link === 'Yuklanmoqda...') {
+    showToast("Havola yuklanmoqda, ozgina kuting!", "error");
+    return;
+  }
+  const promoText =
+    `🎯 Telegram username izlayapsizmi?\n\n` +
+    `⚡ @usernamechi_bot — qisqa, chiroyli va kamyob usernamelarni avtomatik topib, sizning akkauntingizga band qiladi!\n\n` +
+    `✅ Bo'sh usernamelarni lahzada qidirish\n` +
+    `🎯 Nishon: username bo'shashi bilan soniyada band qilish\n` +
+    `💎 Noyob va qisqa nomlar katalogi\n\n` +
+    `👇 Hoziroq kiriting va 1,000 so'm bonus oling:\n${link}`;
+  
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(promoText)}`;
+  
+  if (tg && tg.openTelegramLink) {
+    tg.openTelegramLink(shareUrl);
+  } else {
+    window.open(shareUrl, '_blank');
+  }
+}
+
 
 async function placeAuctionBid(listingId, currentBid) {
   const minBid = currentBid + 1000;

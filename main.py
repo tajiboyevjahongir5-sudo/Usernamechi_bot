@@ -847,8 +847,29 @@ async def start_cmd(message: Message):
             ref_id = int(args[1].split("_")[1])
             if ref_id != message.from_user.id:
                 async with aiosqlite.connect(DB_PATH) as db:
-                    await db.execute("UPDATE users SET referred_by=? WHERE telegram_id=? AND (referred_by IS NULL OR referred_by=0)", (ref_id, message.from_user.id))
-                    await db.commit()
+                    # Faqat birinchi marta referral bo'lsa bonus beriladi
+                    async with db.execute("SELECT referred_by FROM users WHERE telegram_id=?", (message.from_user.id,)) as c:
+                        existing = await c.fetchone()
+                    if existing and (existing[0] is None or existing[0] == 0):
+                        await db.execute("UPDATE users SET referred_by=? WHERE telegram_id=?", (ref_id, message.from_user.id))
+                        # Taklif qiluvchiga 1,000 so'm bonus
+                        await db.execute("UPDATE users SET balance=balance+1000 WHERE telegram_id=?", (ref_id,))
+                        await db.commit()
+                        # Taklif qiluvchiga bildirishnoma
+                        try:
+                            ref_user = message.from_user
+                            ref_name = ref_user.first_name or "Yangi do'st"
+                            b_inst = Bot(token=BOT_TOKEN)
+                            await b_inst.send_message(
+                                ref_id,
+                                f"🎁 <b>Referral Bonus!</b>\n\n"
+                                f"Siz taklif qilgan <b>{ref_name}</b> botga qo'shildi!\n"
+                                f"Balansingizga <b>+1,000 so'm</b> bonus berildi! 🚀",
+                                parse_mode="HTML"
+                            )
+                        except Exception: pass
+                    else:
+                        await db.commit()
         except Exception:
             pass
 
@@ -2921,18 +2942,7 @@ async def admin_approve(request: Request, x_admin_token: str = Header(default=""
         await db.execute("UPDATE payments SET status='approved', amount=? WHERE id=?", (amt, pid))
         await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (amt, tid))
         
-        # Referral 5% bonus
-        async with db.execute("SELECT referred_by FROM users WHERE telegram_id=?", (tid,)) as c:
-            r = await c.fetchone()
-            if r and r[0]:
-                ref_id = r[0]
-                bonus = int(amt * 0.05)
-                if bonus > 0:
-                    await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (bonus, ref_id))
-                    try:
-                        b_inst = Bot(token=BOT_TOKEN)
-                        await b_inst.send_message(ref_id, f"🎁 <b>Referral Bonus!</b>\n\nSiz taklif qilgan do'stingiz balans to'ldirdi. Balansingizga <b>+{bonus:,} so'm</b> keshbek berildi! 🚀", parse_mode="HTML")
-                    except Exception: pass
+        # Referral bonus endi foydalanuvchi qo'shilganda beriladi (start_cmd da), shu yerda emas
                     
         await db.commit()
     bot_instance = Bot(token=BOT_TOKEN)
