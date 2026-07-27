@@ -3533,6 +3533,49 @@ async def admin_orders(x_admin_token: str = Header(default="")):
                 
         return orders
 
+async def auto_cleanup_db_loop():
+    """Baza hajm juda kattalashib ketmasligi uchun eskirgan va keraksiz ma'lumotlarni avtomatik tozalaydi (har 6 soatda)."""
+    while True:
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                # 1. 24 soatdan eski, yakunlangan va bo'sh search_results (qidiruv natijalari)
+                await db.execute("""
+                    DELETE FROM search_results 
+                    WHERE (search_id IN (
+                        SELECT id FROM search_tasks 
+                        WHERE created_at < strftime('%s','now', '-1 day') OR status='completed'
+                    ) OR search_id NOT IN (SELECT id FROM search_tasks)) AND status='free'
+                """)
+                
+                # 2. 7 kundan eski yakunlangan search_tasks
+                await db.execute("DELETE FROM search_tasks WHERE created_at < strftime('%s','now', '-7 days') AND status='completed'")
+                
+                # 3. 14 kundan eski yakunlangan yoki bekor qilingan payments/topups
+                await db.execute("DELETE FROM topups WHERE created_at < strftime('%s','now', '-14 days') AND status!='pending'")
+                await db.execute("DELETE FROM payments WHERE created_at < strftime('%s','now', '-14 days') AND status!='pending'")
+                
+                # 4. 7 kundan eski tasdiqlanmagan kutilayotgan referral takliflar
+                try:
+                    await db.execute("DELETE FROM pending_referrals WHERE created_at < strftime('%s','now', '-7 days')")
+                except Exception: pass
+
+                # 5. E'lonlar uchun kerakli post ma'lumotlarini tozalash
+                try:
+                    await db.execute("UPDATE listings SET channel_id=NULL, telegram_message_id=NULL WHERE status IN ('sold', 'cancelled')")
+                except Exception: pass
+                
+                await db.commit()
+                
+                # Bazani optimallashtirish (bo'shagan diska hajmini qaytarish)
+                await db.execute("VACUUM")
+                
+            logger.info("🧹 DB Auto-cleanup bajarildi: eskirgan va keraksiz ma'lumotlar tozalandi.")
+        except Exception as e:
+            logger.error(f"DB Auto-cleanup xato: {e}")
+            
+        await asyncio.sleep(21600)  # Har 6 soatda 1 marta
+
+
 # ─── MAIN ─────────────────────────────────────
 async def main():
     import signal
@@ -3549,6 +3592,9 @@ async def main():
     # Orqa fonda deferred claim loop ni ishga tushiramiz
     deferred_task = asyncio.create_task(deferred_claim_loop(bot))
     
+    # Orqa fonda DB Avto-tozalash loop ini ishga tushiramiz
+    cleanup_task = asyncio.create_task(auto_cleanup_db_loop())
+
     # Orqa fonda Stealth mijozlarni ishga tushiramiz
     await start_stealth_clients()
 
@@ -3564,7 +3610,7 @@ async def main():
 
     # Graceful shutdown: SIGTERM va SIGINT uchun
     loop = asyncio.get_event_loop()
-    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task]
+    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task]
 
     async def _shutdown():
         logger.info("⏹ Graceful shutdown boshlandi...")
