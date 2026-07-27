@@ -110,9 +110,14 @@ async def init_db():
                 quantity INTEGER,
                 price INTEGER,
                 status TEXT DEFAULT 'pending',
-                registered_count INTEGER DEFAULT 0
+                registered_count INTEGER DEFAULT 0,
+                created_at REAL DEFAULT (strftime('%s','now'))
             )
         """)
+        try: await db.execute("ALTER TABLE orders ADD COLUMN created_at REAL DEFAULT (strftime('%s','now'))")
+        except Exception: pass
+        try: await db.execute("UPDATE orders SET created_at=strftime('%s','now') WHERE created_at IS NULL OR created_at=0")
+        except Exception: pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS registered_usernames (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3572,6 +3577,7 @@ async def admin_orders(x_admin_token: str = Header(default="")):
             SELECT o.*, u.first_name, u.username as user_username
             FROM orders o
             LEFT JOIN users u ON o.telegram_id = u.telegram_id
+            WHERE o.created_at >= strftime('%s','now', '-3 days') OR o.created_at IS NULL
             ORDER BY o.id DESC LIMIT 100
         """) as c:
             orders = [dict(r) for r in await c.fetchall()]
@@ -3608,7 +3614,19 @@ async def auto_cleanup_db_loop():
                     await db.execute("DELETE FROM pending_referrals WHERE created_at < strftime('%s','now', '-7 days')")
                 except Exception: pass
 
-                # 5. E'lonlar uchun kerakli post ma'lumotlarini tozalash
+                # 5. 3 kundan o'tgan buyurtmalarni (orders) avtomatik o'chirish
+                try:
+                    await db.execute("""
+                        DELETE FROM registered_usernames 
+                        WHERE order_id IN (
+                            SELECT id FROM orders WHERE created_at < strftime('%s','now', '-3 days')
+                        )
+                    """)
+                    await db.execute("DELETE FROM orders WHERE created_at < strftime('%s','now', '-3 days')")
+                except Exception as ord_err:
+                    logger.warning(f"Orders cleanup error: {ord_err}")
+
+                # 6. E'lonlar uchun kerakli post ma'lumotlarini tozalash
                 try:
                     await db.execute("UPDATE listings SET channel_id=NULL, telegram_message_id=NULL WHERE status IN ('sold', 'cancelled')")
                 except Exception: pass
