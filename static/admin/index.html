@@ -1603,23 +1603,7 @@ async function deleteCard(id) {
   } catch(e) {}
 }
 
-async function saveSettings() {
-  const data = {
-    payment_card: document.getElementById('set-card').value,
-    payment_channel_id: document.getElementById('set-channel').value,
-    username_price: document.getElementById('set-price').value,
-    premium_price: document.getElementById('set-premium-price').value,
-    monitor_price: document.getElementById('set-monitor-price').value,
-    listing_price: document.getElementById('set-listing-price').value
-  };
-  try {
-    await fetch('/api/admin/settings', {
-      method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    showToast("💾 Sozlamalar saqlandi", "success");
-  } catch(e) { showToast("Xatolik", "error"); }
-}
+
 
 /* UTILS */
 const chartCache = {};

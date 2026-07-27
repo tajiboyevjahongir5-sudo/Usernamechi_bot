@@ -2070,16 +2070,19 @@ async def api_marketplace_list(request: Request):
                 # Direct Listing Link: Telegram Mini App startapp parametri
                 app_link = f"https://t.me/{bot_username}/app?startapp=listing_{cur.lastrowid}"
                 
-                type_tag = "⚡ AUKSION (24 Soat)" if is_auction else "🛒 BUYURTMA BOZORI"
+                type_tag = "⚡ AUKSION (24 Soat)" if is_auction else "🏷 SOTUVDA"
+                price_text = f"<b>{price:,} so'm</b> (Boshlang'ich narx)" if is_auction else f"<b>{price:,} so'm</b>"
+                
                 post_text = (
-                    f"🛒 <b>BOZORDA YANGI E'LON!</b> ({type_tag})\n\n"
-                    f"💎 Username: <b>@{username}</b>\n"
-                    f"💰 Narxi: <b>{price:,} so'm</b>\n"
-                    f"👤 Sotuvchi: <b>{user.get('first_name','Foydalanuvchi')}</b>\n\n"
-                    f"👇 Ushbu e'lonni sotib olish yoki stavka berish uchun bosing:"
+                    f"🔥 <b>YANGI USERNAME BOZORGA CHIQARILDI!</b>\n\n"
+                    f"📌 <b>Turi:</b> {type_tag}\n"
+                    f"💎 <b>Username:</b> <code>@{username}</code>\n"
+                    f"💰 <b>Narxi:</b> {price_text}\n"
+                    f"👤 <b>Sotuvchi:</b> {user.get('first_name','Foydalanuvchi')}\n\n"
+                    f"⚡ <i>Ushbu nomni band qilish yoki auksionda qatnashish uchun quyidagi tugmani bosing:</i>"
                 )
                 m_markup = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🛒 Sotib Olish (Mini-App)", url=app_link)]
+                    [InlineKeyboardButton(text="🛒 E'lonni ko'rish & Sotib olish", url=app_link)]
                 ])
                 await bot_inst.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
                 await bot_inst.session.close()
