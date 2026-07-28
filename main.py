@@ -863,6 +863,9 @@ async def auto_payment_handler(message: Message):
     except Exception as e:
         logger.error(f"Auto-payment error: {e}")
 
+import time
+_channel_sub_cache = {}  # {(user_id, ch_target): (expire_time, is_member)}
+
 async def get_unsubscribed_channels(bot: Bot, user_id: int):
     """Foydalanuvchi obuna bo'lmagan kanallar ro'yxatini qaytaradi."""
     unsubbed = []
@@ -889,10 +892,21 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
                 if isinstance(ch_target, str) and ch_target.lstrip('-').isdigit():
                     ch_target = int(ch_target)
                     
-                member = await bot.get_chat_member(chat_id=ch_target, user_id=user_id)
-                # Status: creator, administrator, member bo'lsa -> obuna bo'lingan!
-                # left, kicked, banned bo'lsa -> obuna bo'lmagan
-                if member.status in ('left', 'kicked', 'banned'):
+                cache_key = (user_id, ch_target)
+                now = time.time()
+                
+                # Keshtan o'qish (Rate limitni oldini olish)
+                if cache_key in _channel_sub_cache and _channel_sub_cache[cache_key][0] > now:
+                    is_member = _channel_sub_cache[cache_key][1]
+                else:
+                    member = await bot.get_chat_member(chat_id=ch_target, user_id=user_id)
+                    is_member = member.status not in ('left', 'kicked', 'banned')
+                    
+                    # Cache ga yozamiz: Obuna bo'lgan bo'lsa 60 soniya saqlaymiz, aks holda spamni oldini olish uchun 3 soniya
+                    expire_time = now + (60 if is_member else 3)
+                    _channel_sub_cache[cache_key] = (expire_time, is_member)
+                
+                if not is_member:
                     unsubbed.append(ch)
             except Exception as e:
                 logger.warning(f"Check channel sub error for {dict(ch)}: {e}")
