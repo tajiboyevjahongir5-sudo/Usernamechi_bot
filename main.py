@@ -885,6 +885,10 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
                 if not ch_target:
                     continue
                     
+                # Agar ch_target faqat raqamlardan iborat bo'lsa (minus bilan), int ga o'tkazamiz
+                if isinstance(ch_target, str) and ch_target.lstrip('-').isdigit():
+                    ch_target = int(ch_target)
+                    
                 member = await bot.get_chat_member(chat_id=ch_target, user_id=user_id)
                 # Status: creator, administrator, member bo'lsa -> obuna bo'lingan!
                 # left, kicked, banned bo'lsa -> obuna bo'lmagan
@@ -892,7 +896,9 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
                     unsubbed.append(ch)
             except Exception as e:
                 logger.warning(f"Check channel sub error for {dict(ch)}: {e}")
-                # Bot kanalda admin emas bo'lsa yoki kanal topilmasa, foydalanuvchini bloklab qo'ymaslik uchun o'tkazib yuboramiz
+                # XATOLIK BO'LSA (masalan bot admin bo'lmasa, yoki channel xato kiritilgan bo'lsa) 
+                # xavfsizlik uchun OBUNA BO'LMAGAN deb hisoblaymiz, toki admin to'g'irlamaguncha!
+                unsubbed.append(ch)
     except Exception as e:
         logger.error(f"get_unsubscribed_channels error: {e}")
     return unsubbed
