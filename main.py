@@ -248,6 +248,8 @@ async def init_db():
                 channel_username TEXT,
                 title TEXT,
                 url TEXT,
+                status TEXT DEFAULT 'Active',
+                sort_order INTEGER DEFAULT 0,
                 created_at REAL DEFAULT (strftime('%s','now'))
             )
         """)
@@ -258,7 +260,28 @@ async def init_db():
                 created_at REAL DEFAULT (strftime('%s','now'))
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL UNIQUE,
+                reward_given INTEGER DEFAULT 0,
+                reward_amount INTEGER DEFAULT 1000,
+                created_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
         await db.commit()
+        
+        # Backward compatibility for existing databases (ALTER TABLE)
+        try: await db.execute("ALTER TABLE mandatory_channels ADD COLUMN status TEXT DEFAULT 'Active'")
+        except: pass
+        try: await db.execute("ALTER TABLE mandatory_channels ADD COLUMN sort_order INTEGER DEFAULT 0")
+        except: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN subscription_verified INTEGER DEFAULT 0")
+        except: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN reward_given INTEGER DEFAULT 0")
+        except: pass
+        
         # Sozlamalarni kiritish
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payment_card', '8600123456789012')")
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payment_channel_id', '0')")
@@ -866,14 +889,19 @@ async def auto_payment_handler(message: Message):
 import time
 _channel_sub_cache = {}  # {(user_id, ch_target): (expire_time, is_member)}
 
-async def get_unsubscribed_channels(bot: Bot, user_id: int):
+async def get_unsubscribed_channels(bot: Bot, user_id: int, bypass_cache: bool = False):
     """Foydalanuvchi obuna bo'lmagan kanallar ro'yxatini qaytaradi."""
     unsubbed = []
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM mandatory_channels") as c:
-                channels = await c.fetchall()
+            # Faqat Active bo'lganlarini sort_order bo'yicha olamiz (eski DBda status yo'q bo'lishi mumkinligi uchun try/except qilgandik, migrate_db.py ishlaydi)
+            try:
+                async with db.execute("SELECT * FROM mandatory_channels WHERE status='Active' ORDER BY sort_order ASC, id ASC") as c:
+                    channels = await c.fetchall()
+            except:
+                async with db.execute("SELECT * FROM mandatory_channels") as c:
+                    channels = await c.fetchall()
         
         for ch in channels:
             try:
@@ -896,7 +924,7 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
                 now = time.time()
                 
                 # Keshtan o'qish (Rate limitni oldini olish)
-                if cache_key in _channel_sub_cache and _channel_sub_cache[cache_key][0] > now:
+                if not bypass_cache and cache_key in _channel_sub_cache and _channel_sub_cache[cache_key][0] > now:
                     is_member = _channel_sub_cache[cache_key][1]
                 else:
                     member = await bot.get_chat_member(chat_id=ch_target, user_id=user_id)
@@ -1802,7 +1830,34 @@ async def monitoring_loop(bot):
         await asyncio.sleep(0.2)
 
 # ─── FASTAPI APP ──────────────────────────────
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse
+
+class SubscriptionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        # Faqat user apilarga (admin emas) va check_subscription ga tushmasligi kerak
+        if path.startswith("/api/") and not path.startswith("/api/admin/") and path != "/api/check_subscription" and path != "/api/auth/webhook":
+            init_data = request.headers.get("X-Telegram-Init-Data", "")
+            if init_data:
+                user = verify_init_data(init_data)
+                if user:
+                    user_id = user["id"]
+                    # Obunani tekshiramiz
+                    unsubbed = await get_unsubscribed_channels(bot, user_id)
+                    if unsubbed:
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "error": "subscription_required", 
+                                "channels": [dict(c) for c in unsubbed]
+                            }
+                        )
+        return await call_next(request)
+
 app = FastAPI()
+app.add_middleware(SubscriptionMiddleware)
 
 # Static files
 if os.path.exists("static"):
@@ -1848,6 +1903,50 @@ async def admin_panel():
         })
 
 # ── Mini App API ───────────────────────────────
+
+@app.get("/api/check_subscription")
+async def api_check_subscription(request: Request):
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    if not init_data: raise HTTPException(403)
+    user = verify_init_data(init_data)
+    if not user: raise HTTPException(403)
+    
+    user_id = user['id']
+    unsubbed = await get_unsubscribed_channels(bot, user_id, bypass_cache=True)
+    if not unsubbed:
+        # Referral logic: Obunadan muvaffaqiyatli o'tsa, reward beramiz
+        await process_referral_reward(user_id)
+        return {"ok": True}
+    else:
+        return {"ok": False, "channels": [dict(c) for c in unsubbed]}
+
+async def process_referral_reward(user_id: int):
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # Check users table
+            async with db.execute("SELECT referrer_id, reward_given FROM users WHERE telegram_id=?", (user_id,)) as c:
+                u_row = await c.fetchone()
+            
+            if u_row and u_row['referrer_id'] and not u_row['reward_given']:
+                ref_id = u_row['referrer_id']
+                # Check referrals table
+                async with db.execute("SELECT id FROM referrals WHERE user_id=?", (user_id,)) as c:
+                    ref_exists = await c.fetchone()
+                
+                if not ref_exists:
+                    # Give reward
+                    await db.execute("UPDATE users SET balance = balance + 1000 WHERE telegram_id=?", (ref_id,))
+                    await db.execute("UPDATE users SET reward_given = 1 WHERE telegram_id=?", (user_id,))
+                    await db.execute("INSERT INTO referrals (referrer_id, user_id, reward_given, reward_amount) VALUES (?, ?, 1, 1000)", (ref_id, user_id))
+                    await db.commit()
+                    
+                    try:
+                        await bot.send_message(ref_id, f"🎁 <b>Referral Bonus!</b>\nSizning do'stingiz majburiy obunadan o'tdi.\nBalansingizga <b>+1000 so'm</b> qo'shildi!", parse_mode="HTML")
+                    except: pass
+    except Exception as e:
+        logger.error(f"process_referral_reward error: {e}")
+
 @app.get("/api/user")
 async def api_user(init_data: str = ""):
     user = verify_init_data(init_data)
@@ -3092,7 +3191,7 @@ async def api_admin_channels_get(x_admin_token: str = Header(default="")):
     
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM mandatory_channels ORDER BY id DESC") as c:
+        async with db.execute("SELECT * FROM mandatory_channels ORDER BY sort_order ASC, id DESC") as c:
             rows = await c.fetchall()
             return [dict(r) for r in rows]
 
@@ -3107,6 +3206,9 @@ async def api_admin_channels_add(request: Request, x_admin_token: str = Header(d
     username = data.get('channel_username', '').strip().replace('@', '')
     url = data.get('url', '').strip()
     channel_id = data.get('channel_id', '').strip()
+    status = data.get('status', 'Active')
+    try: sort_order = int(data.get('sort_order', 0))
+    except: sort_order = 0
 
     if not title:
         return {"ok": False, "error": "Kanal nomi kiritilmadi"}
@@ -3119,11 +3221,29 @@ async def api_admin_channels_add(request: Request, x_admin_token: str = Header(d
 
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT INTO mandatory_channels (channel_id, channel_username, title, url) VALUES (?, ?, ?, ?)",
-            (channel_id, username, title, url)
+            "INSERT INTO mandatory_channels (channel_id, channel_username, title, url, status, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (channel_id, username, title, url, status, sort_order)
         )
         await db.commit()
 
+    return {"ok": True}
+
+@app.post("/api/admin/channels/update")
+async def api_admin_channels_update(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    
+    data = await request.json()
+    cid = data.get('id')
+    status = data.get('status')
+    try: sort_order = int(data.get('sort_order', 0))
+    except: sort_order = 0
+    
+    if cid:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE mandatory_channels SET status=?, sort_order=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (status, sort_order, cid))
+            await db.commit()
     return {"ok": True}
 
 @app.post("/api/admin/channels/delete")

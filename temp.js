@@ -1,41 +1,45 @@
 
-
-      function setCategory(cat) {
-        document.getElementById('buy-category').value = cat;
-        document.getElementById('custom-word-container').style.display = (cat === 'custom') ? 'block' : 'none';
-        
-        document.getElementById('btn-cat-short').className = 'btn btn-outline';
-        document.getElementById('btn-cat-smart').className = 'btn btn-outline';
-        document.getElementById('btn-cat-custom').className = 'btn btn-outline';
-        
-        if(cat === 'qisqa') {
-            document.getElementById('btn-cat-short').className = 'btn btn-primary';
-        } else if (cat === 'turli') {
-            document.getElementById('btn-cat-smart').className = 'btn btn-primary';
-        } else if (cat === 'custom') {
-            document.getElementById('btn-cat-custom').className = 'btn btn-primary';
-        }
-      }
-      function setLang(lang) {
-        document.getElementById('buy-lang').value = lang;
-        if(lang === 'uz') {
-            document.getElementById('btn-lang-uz').className = 'btn btn-primary';
-            document.getElementById('btn-lang-en').className = 'btn btn-outline';
-        } else {
-            document.getElementById('btn-lang-uz').className = 'btn btn-outline';
-            document.getElementById('btn-lang-en').className = 'btn btn-primary';
-        }
-      }
-    
-
 const tg = window.Telegram.WebApp;
-tg.expand();
-tg.setHeaderColor('#0a0a0f');
-tg.setBackgroundColor('#0a0a0f');
+try {
+  tg.ready();
+  tg.expand();
+  if (tg.requestFullscreen) {
+    tg.requestFullscreen();
+  }
+  tg.setHeaderColor('#0a0a0f');
+  tg.setBackgroundColor('#0a0a0f');
+  tg.enableClosingConfirmation();
+} catch(e) {}
 
 const API = '';  // same origin
 let userData = {};
 let photoFile = null;
+
+// ── CATEGORY & LANG (moved from inline) ──────
+function setCategory(cat) {
+  document.getElementById('buy-category').value = cat;
+  document.getElementById('custom-word-container').style.display = (cat === 'custom') ? 'block' : 'none';
+  document.getElementById('btn-cat-short').className = 'btn btn-outline';
+  document.getElementById('btn-cat-smart').className = 'btn btn-outline';
+  document.getElementById('btn-cat-custom').className = 'btn btn-outline';
+  if(cat === 'qisqa') {
+    document.getElementById('btn-cat-short').className = 'btn btn-primary';
+  } else if (cat === 'turli') {
+    document.getElementById('btn-cat-smart').className = 'btn btn-primary';
+  } else if (cat === 'custom') {
+    document.getElementById('btn-cat-custom').className = 'btn btn-primary';
+  }
+}
+function setLang(lang) {
+  document.getElementById('buy-lang').value = lang;
+  if(lang === 'uz') {
+    document.getElementById('btn-lang-uz').className = 'btn btn-primary';
+    document.getElementById('btn-lang-en').className = 'btn btn-outline';
+  } else {
+    document.getElementById('btn-lang-uz').className = 'btn btn-outline';
+    document.getElementById('btn-lang-en').className = 'btn btn-primary';
+  }
+}
 
 // ── INIT ──────────────────────────────────────
 async function init() {
@@ -46,6 +50,13 @@ async function init() {
   await loadUserData();
   await loadOrders();
   loadCardNumber();
+  
+  const urlParams = new URLSearchParams(window.location.search);
+  const escrowId = urlParams.get('escrow');
+  if (escrowId) {
+    goPage('market');
+    buyListing(parseInt(escrowId));
+  }
 }
 
 async function loadUserData() {
@@ -54,14 +65,38 @@ async function loadUserData() {
     if (!res.ok) return;
     userData = await res.json();
     const bal = userData.balance || 0;
+    
+    // Global prices for confirms
+    window.APP_PRICES = { 
+      premium: userData.premium_price || 20000, 
+      monitor: userData.monitor_price || 10000, 
+      listing: userData.listing_price || 1000 
+    };
+    
+    // Update UI Labels
+    if(document.getElementById('lbl-premium-price')) document.getElementById('lbl-premium-price').textContent = window.APP_PRICES.premium.toLocaleString();
+    if(document.getElementById('lbl-monitor-price')) document.getElementById('lbl-monitor-price').textContent = window.APP_PRICES.monitor.toLocaleString();
+    if(document.getElementById('lbl-listing-price')) document.getElementById('lbl-listing-price').textContent = window.APP_PRICES.listing.toLocaleString();
+
     document.getElementById('home-balance').textContent = bal.toLocaleString();
     document.getElementById('bal-amount').textContent = bal.toLocaleString();
     document.getElementById('stat-orders').textContent = userData.total_orders || 0;
     document.getElementById('stat-usernames').textContent = userData.total_usernames || 0;
+    if(document.getElementById('ref-count-val')) document.getElementById('ref-count-val').textContent = (userData.referral_count || 0) + ' ta';
+    if(document.getElementById('ref-link-input')) document.getElementById('ref-link-input').value = userData.ref_link || '';
 
     if (userData.session_string) {
       document.getElementById('status-dot').className = 'status-dot connected';
-      document.getElementById('account-name').textContent = '✅ Akkaunt ulangan';
+      
+      let nameText = '✅ Akkaunt ulangan';
+      if (userData.is_premium) {
+        nameText = '👑 Premium Akkaunt';
+        const pwrap = document.getElementById('premium-wrap');
+        pwrap.innerHTML = `<div style="font-weight:700; font-size:16px; margin-bottom:8px; color:#fbbf24;">👑 Premium Akkaunt</div>
+                           <div style="font-size:13px; color:var(--muted);">Sizda premium yoqilgan. Tugash vaqti: ${userData.premium_until}</div>`;
+      }
+      
+      document.getElementById('account-name').textContent = nameText;
       document.getElementById('account-sub').textContent = 'Username band qilishga tayyor';
       document.getElementById('session-form-wrap').style.display = 'none';
       document.getElementById('disconnect-wrap').style.display = 'block';
@@ -70,11 +105,15 @@ async function loadUserData() {
       document.getElementById('seller-balance-wrap').style.display = 'block';
       document.getElementById('seller-balance-amount').textContent = (userData.seller_balance || 0).toLocaleString() + ' so\'m';
       
+      document.getElementById('subscriptions-wrap').style.display = 'block';
+      
       loadMyUsernames();
+      loadSubscriptions();
     } else {
       document.getElementById('no-session-warn').style.display = 'block';
       document.getElementById('seller-balance-wrap').style.display = 'none';
       document.getElementById('my-usernames-wrap').style.display = 'none';
+      document.getElementById('subscriptions-wrap').style.display = 'none';
     }
   } catch(e) { console.error(e); }
 }
@@ -92,7 +131,10 @@ async function loadMyUsernames() {
             <div style="font-weight:700;">@${u.username}</div>
             <div style="font-size:12px; color:var(--muted);">${u.title}</div>
           </div>
-          <button class="btn btn-outline" style="padding:6px 12px; width:auto; font-size:12px; margin:0;" onclick="listUsername('${u.username}')">Sotish</button>
+          ${u.is_listed 
+            ? `<div class="btn btn-outline" style="padding:6px 12px; width:auto; font-size:12px; margin:0; opacity:0.5; pointer-events:none; border-color:var(--success); color:var(--success);">Sotuvga qo'yilgan</div>`
+            : `<button class="btn btn-outline" style="padding:6px 12px; width:auto; font-size:12px; margin:0;" onclick="listUsername('${u.username}')">Sotish</button>`
+          }
         </div>
       `).join('');
     } else {
@@ -120,24 +162,86 @@ async function submitWithdraw() {
     });
     const d = await res.json();
     if(d.ok) {
-      showToast(d.message, "success");
+      showToast(d.message || "So'rov yuborildi!", "success");
       document.getElementById('withdraw-form').style.display = 'none';
+      document.getElementById('seller-action-btns').style.display = 'flex';
       loadUserData();
     } else {
       showToast(d.error, "error");
     }
   } catch(e) { showToast("Xato", "error"); }
   btn.disabled = false;
-  btn.innerText = "Tasdiqlash";
+  btn.innerText = "✅ Tasdiqlash";
+}
+
+async function submitTransferToMain() {
+  const amount = parseInt(document.getElementById('transfer-amount').value);
+  if (!amount || amount < 1000) { showToast("Minimal summa: 1,000 so'm", "error"); return; }
+  
+  const btn = event.target;
+  btn.disabled = true;
+  btn.innerText = "O'tkazilmoqda...";
+  try {
+    const res = await fetch(`${API}/api/seller/transfer`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({init_data: tg.initData, amount})
+    });
+    const d = await res.json();
+    if(d.ok) {
+      showToast(`✅ ${amount.toLocaleString()} so'm asosiy balansga o'tkazildi!`, "success");
+      document.getElementById('transfer-form').style.display = 'none';
+      document.getElementById('seller-action-btns').style.display = 'flex';
+      document.getElementById('transfer-amount').value = '';
+      loadUserData();
+    } else {
+      showToast(d.error, "error");
+    }
+  } catch(e) { showToast("Xato", "error"); }
+  btn.disabled = false;
+  btn.innerText = "✅ O'tkazish";
+}
+
+function copyRefLink() {
+  const input = document.getElementById('ref-link-input');
+  if (input && input.value) {
+    navigator.clipboard?.writeText(input.value);
+    showToast("📋 Referral havola nusxalandi!", "success");
+  }
+}
+
+async function placeAuctionBid(listingId, currentBid) {
+  const minBid = currentBid + 1000;
+  const bidStr = prompt(`⚡ AUKSION STAVKASI\n\nJoriy eng yuqori stavka: ${currentBid.toLocaleString()} so'm\nMinimal yangi stavka: ${minBid.toLocaleString()} so'm\n\nYangi stavka summasini kiriting (so'm):`, minBid);
+  if (!bidStr) return;
+  const bidAmount = parseInt(bidStr);
+  if (!bidAmount || bidAmount < minBid) {
+    showToast(`Stavka kamida ${minBid.toLocaleString()} so'm bo'lishi kerak`, 'error');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API}/api/auction/bid`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({init_data: tg.initData, listing_id: listingId, bid_amount: bidAmount})
+    });
+    const d = await res.json();
+    if(d.ok) {
+      showToast(`⚡ Stavka qabul qilindi! (${bidAmount.toLocaleString()} so'm)`, 'success');
+      loadMarketplace(true);
+    } else {
+      showToast(d.error || 'Xatolik', 'error');
+    }
+  } catch(e) { showToast('Xato yuz berdi', 'error'); }
 }
 
 async function listUsername(username) {
-  const priceStr = prompt(`@${username} ni qanchaga sotmoqchisiz?\n(E'lon berish narxi 1,000 so'm, sotilganda 10% komissiya olinadi)`, "50000");
+  const listingPriceStr = window.APP_PRICES ? window.APP_PRICES.listing.toLocaleString() : '1,000';
+  const priceStr = prompt(`@${username} ni qanchaga sotmoqchisiz?\n(E'lon berish narxi ${listingPriceStr} so'm, sotilganda 10% komissiya olinadi)`, "50000");
   if (!priceStr) return;
   const price = parseInt(priceStr);
   if (isNaN(price) || price < 1000) { alert("Xato narx kiritildi!"); return; }
   
-  if (!confirm(`Haqiqatdan ham @${username} ni ${price.toLocaleString()} so'mga sotuvga qo'yib, balansingizdan 1,000 so'm e'lon to'lovini yechishga rozimisiz?`)) return;
+  if (!confirm(`Haqiqatdan ham @${username} ni ${price.toLocaleString()} so'mga sotuvga qo'yib, balansingizdan ${listingPriceStr} so'm e'lon to'lovini yechishga rozimisiz?`)) return;
   
   try {
     const res = await fetch(`${API}/api/marketplace/list`, {
@@ -155,34 +259,106 @@ async function listUsername(username) {
   } catch(e) { showToast("Xato", "error"); }
 }
 
-async function loadMarketplace() {
+let currentMarketOffset = 0;
+
+async function loadMarketplace(reset = true) {
+  document.getElementById('btn-market-all').className = 'btn btn-primary';
+  document.getElementById('btn-market-my').className = 'btn btn-outline';
+  document.getElementById('market-sort-container').style.display = 'block';
+  
+  if (reset) {
+    currentMarketOffset = 0;
+    document.getElementById('market-search').value = '';
+  }
+  
+  const sort = document.getElementById('market-sort').value;
   const listEl = document.getElementById('market-list');
-  listEl.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner" style="margin:0 auto 12px;"></div>Yuklanmoqda...</div>';
+  const loadMoreEl = document.getElementById('market-load-more');
+  const loadMoreBtn = document.getElementById('btn-load-more');
+  
+  if (reset) {
+    // Shimmer skeleton
+    listEl.innerHTML = `<div class="market-grid">${Array(4).fill(`
+      <div class="market-card" style="pointer-events:none;">
+        <div class="skeleton" style="width:48px;height:48px;border-radius:50%;margin:0 auto 10px;"></div>
+        <div class="skeleton" style="height:14px;width:70%;margin:0 auto 6px;"></div>
+        <div class="skeleton" style="height:10px;width:50%;margin:0 auto 10px;"></div>
+        <div class="skeleton" style="height:36px;border-radius:12px;margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:30px;border-radius:12px;"></div>
+      </div>`).join('')}</div>`;
+    loadMoreEl.style.display = 'none';
+  } else {
+    loadMoreBtn.innerText = 'Yuklanmoqda...';
+    loadMoreBtn.disabled = true;
+  }
+  
   try {
-    const res = await fetch(`${API}/api/marketplace?init_data=${encodeURIComponent(tg.initData)}`);
+    const res = await fetch(`${API}/api/marketplace?init_data=${encodeURIComponent(tg.initData)}&sort=${sort}&offset=${currentMarketOffset}`);
     const d = await res.json();
+    
+    let html = '';
     if (d.length > 0) {
-      listEl.innerHTML = d.map(l => `
-        <div class="order-item">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <div style="font-weight:800; font-size:18px; color:var(--accent);">@${l.username}</div>
-              <div style="font-size:12px; color:var(--muted); margin-top:4px;">Sotuvchi: ${l.seller_name || l.seller_username || 'Foydalanuvchi'}</div>
+      html = '<div class="market-grid">' + d.map((l, i) => {
+        const cls = l.is_premium ? 'premium' : l.is_auction ? 'auction' : '';
+        const letter = l.username ? l.username[0].toUpperCase() : '?';
+        const price = (l.current_bid || l.price).toLocaleString();
+        const priceLabel = l.is_auction ? '⚡ Joriy stavka' : '💰 Narxi';
+        const btnText = l.is_auction ? '⚡ Stavka berish' : '🛒 Sotib olish';
+        const btnFn = l.is_auction ? `placeAuctionBid(${l.id}, ${l.current_bid || l.price})` : `buyListing(${l.id})`;
+        const delay = (i % 4) * 60;
+        return `
+          <div class="market-card ${cls}" style="animation-delay:${delay}ms">
+            ${l.is_premium ? '<div class="market-card-badge premium">👑 TOP</div>' : ''}
+            ${l.is_auction ? '<div class="market-card-badge auction">⚡ AUKSION</div>' : ''}
+            <div class="market-card-avatar ${cls}">${letter}</div>
+            <div class="market-card-username ${cls}">@${l.username}</div>
+            <div class="market-card-seller">${l.seller_name || 'Foydalanuvchi'}</div>
+            <div class="market-card-price">
+              <div class="market-card-price-label">${priceLabel}</div>
+              <div class="market-card-price-value ${cls}">${price} so'm</div>
             </div>
-            <div style="text-align:right;">
-              <div style="font-weight:700; font-size:16px;">${l.price.toLocaleString()} so'm</div>
-              <button class="btn btn-primary" style="padding:6px 12px; width:auto; font-size:12px; margin:8px 0 0 0;" onclick="buyListing(${l.id})">Sotib olish</button>
-            </div>
-          </div>
-        </div>
-      `).join('');
-    } else {
-      listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sotuvda usernamelar yo\'q</div>';
+            <button class="market-card-btn ${cls}" onclick="${btnFn}">${btnText}</button>
+          </div>`;
+      }).join('') + '</div>';
     }
-  } catch(e) { listEl.innerHTML = 'Xato'; }
+    
+    if (reset) {
+      listEl.innerHTML = html || `<div style="text-align:center;padding:40px;color:var(--muted);">Sotuvda usernamelar yo'q</div>`;
+    } else {
+      const grid = listEl.querySelector('.market-grid');
+      if (grid) grid.innerHTML += '<div class="market-grid" style="display:contents;">' + d.map((l, i) => {
+        const cls = l.is_premium ? 'premium' : l.is_auction ? 'auction' : '';
+        const letter = l.username ? l.username[0].toUpperCase() : '?';
+        const price = (l.current_bid || l.price).toLocaleString();
+        const priceLabel = l.is_auction ? '⚡ Joriy stavka' : '💰 Narxi';
+        const btnText = l.is_auction ? '⚡ Stavka berish' : '🛒 Sotib olish';
+        const btnFn = l.is_auction ? `placeAuctionBid(${l.id}, ${l.current_bid || l.price})` : `buyListing(${l.id})`;
+        return `<div class="market-card ${cls}"><div class="market-card-avatar ${cls}">${letter}</div><div class="market-card-username ${cls}">@${l.username}</div><div class="market-card-seller">${l.seller_name || 'Foydalanuvchi'}</div><div class="market-card-price"><div class="market-card-price-label">${priceLabel}</div><div class="market-card-price-value ${cls}">${price} so'm</div></div><button class="market-card-btn ${cls}" onclick="${btnFn}">${btnText}</button></div>`;
+      }).join('') + '</div>';
+      else listEl.innerHTML += html;
+    }
+    
+    if (d.length === 20) {
+      currentMarketOffset += 20;
+      loadMoreEl.style.display = 'block';
+    } else {
+      loadMoreEl.style.display = 'none';
+    }
+  } catch(e) {
+    if (reset) listEl.innerHTML = 'Xato';
+  } finally {
+    loadMoreBtn.innerText = 'Yana yuklash';
+    loadMoreBtn.disabled = false;
+    filterMarket();
+  }
 }
 
 async function loadMyListings() {
+  document.getElementById('btn-market-all').className = 'btn btn-outline';
+  document.getElementById('btn-market-my').className = 'btn btn-primary';
+  document.getElementById('market-search').value = ''; // Tozalash
+  document.getElementById('market-sort-container').style.display = 'none';
+  document.getElementById('market-load-more').style.display = 'none';
   const listEl = document.getElementById('market-list');
   listEl.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner" style="margin:0 auto 12px;"></div>Yuklanmoqda...</div>';
   try {
@@ -211,6 +387,17 @@ async function loadMyListings() {
   } catch(e) { listEl.innerHTML = 'Xato'; }
 }
 
+function filterMarket() {
+  const query = document.getElementById('market-search').value.toLowerCase();
+  // Support both old .order-item and new .market-card
+  const items = document.querySelectorAll('#market-list .order-item, #market-list .market-card');
+  items.forEach(item => {
+    const text = item.innerText.toLowerCase();
+    const isCard = item.classList.contains('market-card');
+    item.style.display = text.includes(query) ? (isCard ? 'block' : 'block') : 'none';
+  });
+}
+
 async function cancelListing(id) {
   if(!confirm("E'lonni o'chirasizmi? (E'lon puli qaytarilmaydi)")) return;
   try {
@@ -234,9 +421,13 @@ async function openPostModal() {
     const res = await fetch(`${API}/api/account/usernames?init_data=${encodeURIComponent(tg.initData)}`);
     const d = await res.json();
     if (d.usernames && d.usernames.length > 0) {
-      sel.innerHTML = '<option value="">-- Tanlang --</option>' + d.usernames.map(u => `<option value="${u.username}">@${u.username} (${u.title})</option>`).join('');
+      sel.innerHTML = '<option value="">-- Tanlang --</option>' + d.usernames.map(u => 
+        u.is_listed 
+          ? `<option value="${u.username}" disabled>@${u.username} (Sotuvga qo'yilgan)</option>`
+          : `<option value="${u.username}">@${u.username} (${u.title})</option>`
+      ).join('');
     } else {
-      sel.innerHTML = '<option value="">Sizda bo\\'sh usernamelar yo\\'q</option>';
+      sel.innerHTML = '<option value="">Sizda bo\'sh usernamelar yo\'q</option>';
     }
   } catch(e) { sel.innerHTML = '<option value="">Xato yuz berdi</option>'; }
 }
@@ -251,18 +442,26 @@ function closeMarketPost() {
 async function submitPostListing() {
   const username = document.getElementById('post-username-select').value;
   const price = parseInt(document.getElementById('post-price-input').value);
+  const typeSelect = document.getElementById('post-type-select').value;
+  const is_auction = typeSelect === 'auction' ? 1 : 0;
+  
   if (!username) { showToast('Username tanlang!', 'error'); return; }
-  if (!price || price < 1000) { showToast('Narxni to\\'g\\'ri kiriting (min 1,000)', 'error'); return; }
+  if (!price || price < 1000) { showToast('Narxni to\'g\'ri kiriting (min 1,000)', 'error'); return; }
   
-  if (!confirm(`Haqiqatdan ham @${username} ni ${price.toLocaleString()} so'mga sotuvga qo'yib, balansingizdan 1,000 so'm e'lon to'lovini yechishga rozimisiz?`)) return;
+  let listingPriceStr = window.APP_PRICES ? window.APP_PRICES.listing.toLocaleString() : '1,000';
+  let confirmMsg = is_auction 
+    ? `Haqiqatdan ham @${username} ni ${price.toLocaleString()} so'm boshlang'ich narx bilan AUKSIONGA qo'yib, ${listingPriceStr} so'm to'lov yechishga rozimisiz?`
+    : `Haqiqatdan ham @${username} ni ${price.toLocaleString()} so'mga sotuvga qo'yib, balansingizdan ${listingPriceStr} so'm e'lon to'lovini yechishga rozimisiz?`;
+    
+  if (!confirm(confirmMsg)) return;
   
-  const btn = event.target;
+  const btn = document.getElementById('btn-submit-post');
   btn.disabled = true;
   btn.innerText = 'Joylanmoqda...';
   try {
     const res = await fetch(`${API}/api/marketplace/list`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({init_data: tg.initData, username, price})
+      body: JSON.stringify({init_data: tg.initData, username, price, is_auction})
     });
     const d = await res.json();
     if(d.ok) {
@@ -322,23 +521,25 @@ async function loadOrders() {
 
     // Buyurtmalar sahifasi
     const el = document.getElementById('orders-list');
-    if (!orders.length) {
-      el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted);">
-        <div style="font-size:48px;margin-bottom:12px;">📭</div>Buyurtmalar yo'q</div>`;
-    } else {
-      el.innerHTML = orders.map(o => {
-        const statusMap = {pending:'badge-pending',processing:'badge-processing',completed:'badge-completed'};
-        const statusTxt = {pending:'⏳ Kutilmoqda',processing:'🔄 Qidirilmoqda',completed:'✅ Bajarildi'};
-        const chips = (o.usernames || []).map(u => `<span class="username-chip">@${u}</span>`).join('');
-        return `<div class="order-item">
-          <div class="order-top">
-            <div class="order-cat">📂 ${o.category}</div>
-            <span class="badge ${statusMap[o.status]||'badge-pending'}">${statusTxt[o.status]||o.status}</span>
-          </div>
-          <div class="order-meta">${o.registered_count}/${o.quantity} ta band • ${(o.price||0).toLocaleString()} so'm</div>
-          ${chips ? `<div class="usernames-list">${chips}</div>` : ''}
-        </div>`;
-      }).join('');
+    if (el) {
+      if (!orders.length) {
+        el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted);">
+          <div style="font-size:48px;margin-bottom:12px;">📭</div>Buyurtmalar yo'q</div>`;
+      } else {
+        el.innerHTML = orders.map(o => {
+          const statusMap = {pending:'badge-pending',processing:'badge-processing',completed:'badge-completed'};
+          const statusTxt = {pending:'⏳ Kutilmoqda',processing:'🔄 Qidirilmoqda',completed:'✅ Bajarildi'};
+          const chips = (o.usernames || []).map(u => `<span class="username-chip">@${u}</span>`).join('');
+          return `<div class="order-item">
+            <div class="order-top">
+              <div class="order-cat">📂 ${o.category}</div>
+              <span class="badge ${statusMap[o.status]||'badge-pending'}">${statusTxt[o.status]||o.status}</span>
+            </div>
+            <div class="order-meta">${o.registered_count}/${o.quantity} ta band • ${(o.price||0).toLocaleString()} so'm</div>
+            ${chips ? `<div class="usernames-list">${chips}</div>` : ''}
+          </div>`;
+        }).join('');
+      }
     }
 
     // Asosiy sahifadagi jadval
@@ -367,19 +568,144 @@ async function loadOrders() {
   } catch(e) { console.error(e); }
 }
 
-// ── NAVIGATION ────────────────────────────────
+// ── NAVIGATION & LIQUID DRAG PHYSICS ────────────────
+let currentDropletX = 0;
+let isDraggingNav = false;
+
+function moveDropletTo(navBtn, animate = true) {
+  const droplet = document.getElementById('nav-droplet');
+  if (!droplet || !navBtn) return;
+  const navContainer = navBtn.parentElement;
+  const btnRect = navBtn.getBoundingClientRect();
+  const navRect = navContainer.getBoundingClientRect();
+  
+  const left = btnRect.left - navRect.left;
+  const width = btnRect.width;
+  currentDropletX = left;
+  
+  droplet.style.opacity = '1';
+  droplet.style.setProperty('--snap-x', `${left}px`);
+  
+  if (animate) {
+    droplet.classList.remove('dragging');
+    droplet.style.transform = `translate(${left}px, -50%)`;
+    droplet.style.width = `${width}px`;
+    droplet.classList.remove('snap');
+    void droplet.offsetWidth;
+    droplet.classList.add('snap');
+  } else {
+    droplet.style.transform = `translate(${left}px, -50%)`;
+    droplet.style.width = `${width}px`;
+  }
+}
+
+// TOUCH / MOUSE DRAG LISTENERS FOR NAV
+function initNavDragPhysics() {
+  const navEl = document.querySelector('nav');
+  const droplet = document.getElementById('nav-droplet');
+  if (!navEl || !droplet) return;
+
+  let startTouchX = 0;
+  let initialLeft = 0;
+  let lastX = 0;
+
+  function onDragStart(clientX) {
+    isDraggingNav = true;
+    startTouchX = clientX;
+    const activeBtn = document.querySelector('nav button.active');
+    if (activeBtn) {
+      const btnRect = activeBtn.getBoundingClientRect();
+      const navRect = navEl.getBoundingClientRect();
+      initialLeft = btnRect.left - navRect.left;
+    }
+    droplet.classList.add('dragging');
+    droplet.classList.remove('snap');
+  }
+
+  function onDragMove(clientX) {
+    if (!isDraggingNav) return;
+    const deltaX = clientX - startTouchX;
+    const navRect = navEl.getBoundingClientRect();
+    const maxLeft = navRect.width - 65;
+    let targetX = Math.max(0, Math.min(maxLeft, initialLeft + deltaX));
+    
+    // Calculate speed for liquid stretch physics
+    const speed = clientX - lastX;
+    lastX = clientX;
+    const stretch = Math.min(20, Math.abs(speed) * 1.2);
+    
+    droplet.style.transform = `translate(${targetX}px, -50%) scaleX(${1 + stretch/60}) scaleY(${1 - stretch/100})`;
+    
+    // Highlight nearest button while dragging
+    const buttons = Array.from(document.querySelectorAll('nav button'));
+    let closestBtn = null;
+    let minDist = Infinity;
+    
+    buttons.forEach(btn => {
+      const bRect = btn.getBoundingClientRect();
+      const center = bRect.left - navRect.left + bRect.width / 2;
+      const dist = Math.abs(center - (targetX + 32));
+      if (dist < minDist) {
+        minDist = dist;
+        closestBtn = btn;
+      }
+    });
+
+    if (closestBtn && !closestBtn.classList.contains('active')) {
+      buttons.forEach(b => b.classList.remove('active'));
+      closestBtn.classList.add('active');
+    }
+  }
+
+  function onDragEnd() {
+    if (!isDraggingNav) return;
+    isDraggingNav = false;
+    droplet.classList.remove('dragging');
+    
+    const activeBtn = document.querySelector('nav button.active');
+    if (activeBtn) {
+      const pageId = activeBtn.id.replace('nav-', '');
+      goPage(pageId);
+    }
+  }
+
+  navEl.addEventListener('touchstart', (e) => onDragStart(e.touches[0].clientX), {passive: true});
+  navEl.addEventListener('touchmove', (e) => onDragMove(e.touches[0].clientX), {passive: true});
+  navEl.addEventListener('touchend', onDragEnd);
+  navEl.addEventListener('mousedown', (e) => onDragStart(e.clientX));
+  window.addEventListener('mousemove', (e) => isDraggingNav && onDragMove(e.clientX));
+  window.addEventListener('mouseup', onDragEnd);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(initNavDragPhysics, 300);
+});
+
 function goPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
+  const pageEl = document.getElementById('page-'+name);
+  if (!pageEl) { name = 'home'; document.getElementById('page-home').classList.add('active'); }
+  else { pageEl.classList.add('active'); }
   const navBtn = document.getElementById('nav-'+name);
-  if (navBtn) navBtn.classList.add('active');
-  if(name==='orders') loadOrders();
+  if (navBtn) {
+    navBtn.classList.add('active');
+    moveDropletTo(navBtn);
+  }
   if(name==='monitor') loadMonitors();
   if(name==='market') loadMarketplace();
   if(name==='my-listings') loadMyListings();
   if(name==='balance'||name==='home') { loadUserData(); loadOrders(); }
 }
+
+window.addEventListener('resize', () => {
+  const activeBtn = document.querySelector('nav button.active');
+  if (activeBtn) moveDropletTo(activeBtn);
+});
+setTimeout(() => {
+  const activeBtn = document.querySelector('nav button.active');
+  if (activeBtn) moveDropletTo(activeBtn);
+}, 100);
 
 // ── MONITORING LOGIC ──────────────────────────
 async function startMonitor() {
@@ -387,8 +713,9 @@ async function startMonitor() {
   if (!username) { showToast('Username kiriting!','error'); return; }
   if (!userData.session_string) { showToast('Avval akkauntni ulang!','error'); goPage('account'); return; }
   
-  if ((userData.balance||0) < 10000) {
-    showToast('Balans yetarli emas (10,000 UZS)','error');
+  const monitorPrice = window.APP_PRICES ? window.APP_PRICES.monitor : 10000;
+  if ((userData.balance||0) < monitorPrice) {
+    showToast(`Balans yetarli emas (${monitorPrice.toLocaleString()} UZS)`,'error');
     return;
   }
   
@@ -736,7 +1063,7 @@ async function buySelected() {
       await loadUserData();
       // Yana natijalarni yangilaymiz (statusi claimed bo'lishi uchun)
       pollSearchResults();
-      goPage('orders');
+      goPage('home');
     } else {
       showToast(d.error||'Xato','error');
       btn.disabled = false;
@@ -754,7 +1081,7 @@ let topupTimerInterval = null;
 async function requestTopup() {
   const amtInput = document.getElementById('topup-amount').value;
   const amt = parseInt(amtInput);
-  if (!amt || amt < 1000) { showToast('Kamida 1,000 so\'m kiriting', 'error'); return; }
+  if (!amt || amt < 15000) { showToast('Kamida 15,000 so\'m kiriting', 'error'); return; }
   
   try {
     const res = await fetch(`${API}/api/topup/request`, {
@@ -783,7 +1110,8 @@ async function requestTopup() {
         timeLeft--;
         if(timeLeft <= 0) {
           clearInterval(topupTimerInterval);
-          showToast('Vaqt tugadi. Boshqatdan summa yozing!', 'error');
+          showToast('⏳ 3 daqiqalik to\'lov vaqti tugadi!', 'error');
+          alert("⏳ 3 daqiqalik to'lov vaqti tugadi!\n\nAgar to'lovni o'tkazgan bo'lsangiz xavotir olmang, balans avtomatik to'ldiriladi. Lekin yangi to'lov uchun yangidan summa kiritishingiz so'raladi.");
           cancelTopup();
         } else {
           updateTimerDisplay();
@@ -898,4 +1226,84 @@ function showToast(msg, type='success') {
   setTimeout(() => t.classList.remove('show'), 3000);
 }
 
+// ── PREMIUM & SUBSCRIPTIONS ───────────────────
+async function buyPremium() {
+  const premiumPriceStr = window.APP_PRICES ? window.APP_PRICES.premium.toLocaleString() : '20,000';
+  if(!confirm(`${premiumPriceStr} so'm evaziga 30 kunga Premium sotib olasizmi?`)) return;
+  const btn = document.getElementById('btn-buy-premium');
+  btn.disabled = true; btn.innerText = 'Kuting...';
+  try {
+    const res = await fetch(`${API}/api/premium/buy`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({init_data: tg.initData})
+    });
+    const d = await res.json();
+    if(d.ok) {
+      showToast('Premium faollashtirildi!', 'success');
+      loadUserData();
+    } else {
+      showToast(d.error, 'error');
+    }
+  } catch(e) { showToast('Xato', 'error'); }
+  btn.disabled = false; btn.innerText = 'Sotib olish';
+}
+
+async function loadSubscriptions() {
+  try {
+    const res = await fetch(`${API}/api/subscriptions?init_data=${encodeURIComponent(tg.initData)}`);
+    const d = await res.json();
+    const listEl = document.getElementById('sub-keyword-list');
+    listEl.innerHTML = d.map(s => `
+      <div style="background:var(--accent); color:#fff; padding:6px 12px; border-radius:16px; font-size:12px; display:flex; align-items:center; gap:6px;">
+        ${s.keyword}
+        <span style="cursor:pointer; font-weight:bold; background:rgba(0,0,0,0.2); border-radius:50%; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center;" onclick="removeSubKeyword(${s.id})">×</span>
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+async function addSubKeyword() {
+  const kw = document.getElementById('sub-keyword-input').value.trim();
+  if(kw.length < 3) { showToast('Kamida 3 ta harf', 'error'); return; }
+  try {
+    const res = await fetch(`${API}/api/subscriptions/add`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({init_data: tg.initData, keyword: kw})
+    });
+    const d = await res.json();
+    if(d.ok) {
+      document.getElementById('sub-keyword-input').value = '';
+      loadSubscriptions();
+    } else { showToast(d.error, 'error'); }
+  } catch(e) { showToast('Xato', 'error'); }
+}
+
+async function removeSubKeyword(id) {
+  try {
+    await fetch(`${API}/api/subscriptions/remove`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({init_data: tg.initData, id: id})
+    });
+    loadSubscriptions();
+  } catch(e) {}
+}
+
+function copyEscrowLink(id, username) {
+  const link = `https://t.me/usernamechi_bot?start=escrow_${id}`;
+  navigator.clipboard.writeText(link).then(() => {
+    showToast('Havola nusxalandi!', 'success');
+  }).catch(() => {
+    showToast('Nusxalashda xatolik', 'error');
+  });
+}
+
 init();
+
+// Twemoji — barcha emoji'larni yuqori sifatli vektor SVG rasmga aylantiradi (100% har qanday qurilmada ishlaydi)
+if (typeof twemoji !== 'undefined') {
+  twemoji.parse(document.body, {
+    folder: 'svg',
+    ext: '.svg',
+    base: 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/'
+  });
+}
