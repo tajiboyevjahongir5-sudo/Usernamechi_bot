@@ -896,9 +896,8 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int):
                     unsubbed.append(ch)
             except Exception as e:
                 logger.warning(f"Check channel sub error for {dict(ch)}: {e}")
-                # XATOLIK BO'LSA (masalan bot admin bo'lmasa, yoki channel xato kiritilgan bo'lsa) 
-                # xavfsizlik uchun OBUNA BO'LMAGAN deb hisoblaymiz, toki admin to'g'irlamaguncha!
-                unsubbed.append(ch)
+                # Xatolik bo'lsa (masalan bot admin bo'lmasa yoki kanal xato kiritilgan bo'lsa)
+                # barcha foydalanuvchilar qulflanib qolmasligi uchun bu kanalni o'tkazib yuboramiz.
     except Exception as e:
         logger.error(f"get_unsubscribed_channels error: {e}")
     return unsubbed
