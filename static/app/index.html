@@ -1912,6 +1912,15 @@ async function submitPostListing() {
 }
 
 async function buyListing(id) {
+  // Tasdiqlash so'rash
+  const listing = await fetch(`${API}/api/marketplace/${id}?init_data=${encodeURIComponent(tg.initData)}`).then(r=>r.json()).catch(()=>null);
+  if (!listing) return showToast("E'lon topilmadi", "error");
+  
+  const price = (listing.price || 0).toLocaleString();
+  const uname = listing.username || '';
+  
+  if (!confirm(`@${uname} ni ${price} so'm balansingizdan sotib olasizmi?`)) return;
+  
   try {
     const res = await fetch(`${API}/api/marketplace/buy`, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -1919,13 +1928,16 @@ async function buyListing(id) {
     });
     const d = await res.json();
     if(d.ok) {
-      document.getElementById('market-buy-username').textContent = '@' + d.username;
-      document.getElementById('market-buy-amount').textContent = d.amount.toLocaleString() + " so'm";
-      document.getElementById('market-buy-card').textContent = d.card.slice(0,4)+' '+d.card.slice(4,8)+' '+d.card.slice(8,12)+' '+d.card.slice(12);
-      document.getElementById('market-buy-modal').style.display = 'block';
-      document.getElementById('market-overlay').style.display = 'block';
+      // E'lonni ro'yxatdan o'chirish
+      const card = document.getElementById(`listing-item-${id}`);
+      if (card) card.remove();
+      
+      showToast(`✅ @${d.username} sotib olindi! Username akkauntingizga o'tkazilmoqda...`, "success");
+      
+      // Balansni yangilash
+      await loadUserData();
     } else {
-      showToast(d.error, "error");
+      showToast(d.error || "Xatolik yuz berdi", "error");
     }
   } catch(e) { showToast("Xato yuz berdi", "error"); }
 }

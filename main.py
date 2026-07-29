@@ -2606,12 +2606,16 @@ async def api_marketplace_buy(request: Request):
     tid = user['id']
     listing_id = int(data.get('listing_id', 0))
     
-    row = await get_user(tid)
-    if not row or not row.get('session_string'):
-        return {"ok": False, "error": "Avval akkauntingizni ulang!"}
+    buyer = await get_user(tid)
+    if not buyer:
+        return {"ok": False, "error": "Foydalanuvchi topilmadi"}
+    if not buyer.get('session_string'):
+        return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
         
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+        
+        # E'lonni olish
         async with db.execute("SELECT * FROM listings WHERE id=? AND status='active'", (listing_id,)) as c:
             listing = await c.fetchone()
         if not listing:
@@ -2619,20 +2623,51 @@ async def api_marketplace_buy(request: Request):
         if listing['seller_id'] == tid:
             return {"ok": False, "error": "O'z e'loningizni sotib ololmaysiz"}
         
-        # Generate unique amount
-        for _ in range(100):
-            unique_amount = listing['price'] + random.randint(1, 99)
-            async with db.execute("SELECT id FROM listing_orders WHERE expected_amount=? AND status='pending'", (unique_amount,)) as c:
-                if not await c.fetchone():
-                    await db.execute(
-                        "INSERT INTO listing_orders (listing_id, buyer_id, expected_amount) VALUES (?,?,?)",
-                        (listing_id, tid, unique_amount)
-                    )
-                    await db.commit()
-                    card = await get_setting("payment_card", "")
-                    return {"ok": True, "amount": unique_amount, "card": card, "username": listing['username']}
+        price = int(listing['price'])
+        buyer_balance = int(buyer.get('balance', 0))
+        
+        # Balansni tekshirish
+        if buyer_balance < price:
+            return {
+                "ok": False, 
+                "error": f"Balansingiz yetarli emas! Kerak: {price:,} so'm, Mavjud: {buyer_balance:,} so'm"
+            }
+        
+        username = listing['username']
+        seller_id = listing['seller_id']
+        
+        # Atomik tranzaksiya: balansdan yechish + e'lonni sotilgan deb belgilash
+        await db.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (price, tid))
+        await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, seller_id))
+        await db.execute("UPDATE listings SET status='sold' WHERE id=?", (listing_id,))
+        
+        # Xarid tarixini saqlash
+        await db.execute(
+            "INSERT INTO listing_orders (listing_id, buyer_id, expected_amount, status) VALUES (?,?,?,'completed')",
+            (listing_id, tid, price)
+        )
+        await db.commit()
     
-    return {"ok": False, "error": "Xatolik yuz berdi"}
+    # Username transfer fonda boshlanadi
+    asyncio.create_task(transfer_username(bot, seller_id, tid, username))
+    
+    # Sotuvchiga xabar
+    try:
+        await bot.send_message(
+            seller_id,
+            f"💰 <b>E'loningiz sotildi!</b>\n\n"
+            f"@{username} username'i sotib olindi.\n"
+            f"<b>{price:,} so'm</b> balansingizga qo'shildi. ✅",
+            parse_mode="HTML"
+        )
+    except: pass
+    
+    return {
+        "ok": True, 
+        "username": username,
+        "price": price,
+        "message": f"✅ @{username} muvaffaqiyatli sotib olindi! Username akkauntingizga o'tkazilmoqda..."
+    }
 
 # ── TOP LISTINGS & USERNAME CHECKER ─────────────
 @app.get("/api/marketplace/top")
