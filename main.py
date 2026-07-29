@@ -1843,13 +1843,13 @@ async def monitoring_loop(bot):
                 sess_key = str(hash(task["session_string"]))
 
                 if sess_key in spamblocked_sessions:
-                    logger.warning(f"⛔ Sessiya {task['telegram_id']} SpamBlock ekanligi uchun o'tkazildi.")
+                    logger.debug(f"⛔ Sessiya {task['telegram_id']} SpamBlock ekanligi uchun o'tkazildi.")
                     continue
 
                 fw_until = session_floodwait.get(sess_key, 0)
                 if fw_until > time.time():
                     remaining = int(fw_until - time.time())
-                    logger.warning(f"⏭ Sessiya {task['telegram_id']} FloodWait ({remaining}s) uchun o'tkazildi.")
+                    logger.debug(f"⏭ Sessiya {task['telegram_id']} FloodWait ({remaining}s) uchun o'tkazildi.")
                     continue
 
                 ch = None
