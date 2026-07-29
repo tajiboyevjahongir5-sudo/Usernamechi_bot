@@ -521,14 +521,7 @@ body::before {
           <label class="form-label">📢 To'lovlar Kanali ID</label>
           <input type="text" id="set-channel" class="form-input" placeholder="-100123456789">
         </div>
-        <div class="form-group">
-          <label class="form-label">🛒 user_market (Bozor E'lonlari Kanali Username yoki ID)</label>
-          <input type="text" id="set-mkt-channel" class="form-input" placeholder="@user_market yoki -1001987654321">
-        </div>
-        <div class="form-group">
-          <label class="form-label">💰 Username Izlash Narxi (so'm)</label>
-          <input type="number" id="set-price" class="form-input" placeholder="5000">
-        </div>
+
         <div class="form-group">
           <label class="form-label">👑 Premium Obuna Narxi (30 kun / so'm)</label>
           <input type="number" id="set-premium-price" class="form-input" placeholder="20000">
@@ -1327,8 +1320,7 @@ async function loadSettings() {
     const res = await fetch('/api/admin/settings', { headers: headers() });
     const s = await res.json();
     document.getElementById('set-channel').value = s.payment_channel_id || '';
-    document.getElementById('set-mkt-channel').value = s.marketplace_channel_id || '';
-    document.getElementById('set-price').value = s.username_price || '5000';
+
     document.getElementById('set-premium-price').value = s.premium_price || '20000';
     document.getElementById('set-monitor-price').value = s.monitor_price || '10000';
     document.getElementById('set-listing-price').value = s.listing_price || '1000';
@@ -1340,8 +1332,6 @@ async function loadSettings() {
 async function saveSettings() {
   const data = {
     payment_channel_id: document.getElementById('set-channel').value,
-    marketplace_channel_id: document.getElementById('set-mkt-channel').value,
-    username_price: document.getElementById('set-price').value,
     premium_price: document.getElementById('set-premium-price').value,
     monitor_price: document.getElementById('set-monitor-price').value,
     listing_price: document.getElementById('set-listing-price').value

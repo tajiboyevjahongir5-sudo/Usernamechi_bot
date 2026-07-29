@@ -3397,16 +3397,12 @@ async def api_admin_settings_get(x_admin_token: str = Header(default="")):
     
     card = await get_setting("payment_card", "")
     channel = await get_setting("payment_channel_id", "")
-    mkt_channel = await get_setting("marketplace_channel_id", "0")
-    price = await get_setting("username_price", "5000")
     premium_price = await get_setting("premium_price", "20000")
     monitor_price = await get_setting("monitor_price", "10000")
     listing_price = await get_setting("listing_price", "1000")
     return {
         "payment_card": card, 
         "payment_channel_id": channel, 
-        "marketplace_channel_id": mkt_channel,
-        "username_price": price,
         "premium_price": premium_price,
         "monitor_price": monitor_price,
         "listing_price": listing_price
@@ -3423,10 +3419,6 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
         await set_setting("payment_card", data['payment_card'])
     if 'payment_channel_id' in data:
         await set_setting("payment_channel_id", data['payment_channel_id'])
-    if 'marketplace_channel_id' in data:
-        await set_setting("marketplace_channel_id", data['marketplace_channel_id'])
-    if 'username_price' in data:
-        await set_setting("username_price", data['username_price'])
     if 'premium_price' in data:
         await set_setting("premium_price", data['premium_price'])
     if 'monitor_price' in data:
