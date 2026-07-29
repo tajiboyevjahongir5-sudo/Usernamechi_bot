@@ -39,7 +39,7 @@ if not os.getenv("RAILWAY_ENVIRONMENT") and not os.getenv("RAILWAY_SERVICE_ID"):
     load_dotenv()
 
 # ─── SOZLAMALAR ──────────────────────────────
-BOT_TOKEN     = os.getenv("BOT_TOKEN", "")
+BOT_TOKEN     = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_CHANNEL = int(os.getenv("ADMIN_CHANNEL", "0"))
 API_ID        = int(os.getenv("API_ID", "0"))
 API_HASH      = os.getenv("API_HASH", "")
