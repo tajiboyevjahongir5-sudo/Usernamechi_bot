@@ -1711,6 +1711,12 @@ async function loadMarketplace(reset = true) {
     const res = await fetch(`${API}/api/marketplace?init_data=${encodeURIComponent(tg.initData)}&sort=${sort}&offset=${currentMarketOffset}`);
     const d = await res.json();
     
+    // Javob array bo'lmasa (masalan, xato yoki obuna kerak)
+    if (!Array.isArray(d)) {
+      if (reset) listEl.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted);">E'lonlarni yuklashda xato yuz berdi</div>`;
+      return;
+    }
+    
     let html = '';
     if (d.length > 0) {
       html = '<div class="market-grid">' + d.map((l, i) => {
@@ -1760,7 +1766,7 @@ async function loadMarketplace(reset = true) {
       loadMoreEl.style.display = 'none';
     }
   } catch(e) {
-    if (reset) listEl.innerHTML = 'Xato';
+    if (reset) listEl.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted);">Sotuv bozorini yuklashda xato.<br><small>Internetni tekshiring yoki qayta urinib ko'ring</small></div>`;
   } finally {
     loadMoreBtn.innerText = 'Yana yuklash';
     loadMoreBtn.disabled = false;

@@ -2227,16 +2227,20 @@ async def api_marketplace(init_data: str = "", sort: str = "newest", offset: int
     elif sort == "expensive":
         order_clause = "ORDER BY u.is_premium DESC, l.price DESC"
         
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(f"""
-            SELECT l.*, u.first_name as seller_name, u.username as seller_username, 
-                   (CASE WHEN u.is_premium = 1 AND (u.premium_until IS NULL OR CAST(u.premium_until AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)) THEN 1 ELSE 0 END) as is_premium
-            FROM listings l LEFT JOIN users u ON l.seller_id = u.telegram_id
-            WHERE l.status='active' {order_clause} LIMIT 20 OFFSET ?
-        """, (offset,)) as c:
-            rows = [dict(r) for r in await c.fetchall()]
-    return rows
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(f"""
+                SELECT l.*, u.first_name as seller_name, u.username as seller_username, 
+                       (CASE WHEN u.is_premium = 1 AND (u.premium_until IS NULL OR CAST(u.premium_until AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)) THEN 1 ELSE 0 END) as is_premium
+                FROM listings l LEFT JOIN users u ON l.seller_id = u.telegram_id
+                WHERE l.status='active' {order_clause} LIMIT 20 OFFSET ?
+            """, (offset,)) as c:
+                rows = [dict(r) for r in await c.fetchall()]
+        return rows
+    except Exception as e:
+        logger.error(f"Marketplace API xato: {e}")
+        return []
 
 @app.get("/api/marketplace/my")
 async def api_marketplace_my(init_data: str = ""):
@@ -3756,22 +3760,25 @@ async def admin_orders(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("""
-            SELECT o.*, u.first_name, u.username as user_username
-            FROM orders o
-            LEFT JOIN users u ON o.telegram_id = u.telegram_id
-            WHERE o.created_at >= strftime('%s','now', '-3 days') OR o.created_at IS NULL
-            ORDER BY o.id DESC LIMIT 100
-        """) as c:
-            orders = [dict(r) for r in await c.fetchall()]
-        
-        for order in orders:
-            async with db.execute("SELECT username FROM registered_usernames WHERE order_id=?", (order['id'],)) as c:
-                order['registered_usernames'] = [r['username'] for r in await c.fetchall()]
-                
-        return orders
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT o.*, u.first_name, u.username as user_username
+                FROM orders o
+                LEFT JOIN users u ON o.telegram_id = u.telegram_id
+                WHERE o.created_at >= strftime('%s','now', '-3 days') OR o.created_at IS NULL
+                ORDER BY o.id DESC LIMIT 100
+            """) as c:
+                orders = [dict(r) for r in await c.fetchall()]
+            
+            for order in orders:
+                async with db.execute("SELECT username FROM registered_usernames WHERE order_id=?", (order['id'],)) as c:
+                    order['registered_usernames'] = [r['username'] for r in await c.fetchall()]
+    except Exception as e:
+        logger.error(f"Admin orders xato: {e}")
+        orders = []
+    return orders
 
 async def auto_cleanup_db_loop():
     """Baza hajm juda kattalashib ketmasligi uchun eskirgan va keraksiz ma'lumotlarni avtomatik tozalaydi (har 6 soatda)."""

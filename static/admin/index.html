@@ -1260,7 +1260,10 @@ async function loadOrders() {
         </div>
       `;
     }).join('');
-  } catch(e) {}
+  } catch(e) {
+    const container = document.getElementById('list-orders');
+    if (container) container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Buyurtmalarni yuklashda xato yuz berdi. Sahifani yangilang.</div>';
+  }
 }
 
 /* WITHDRAWALS */
