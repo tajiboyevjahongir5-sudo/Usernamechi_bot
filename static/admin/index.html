@@ -641,39 +641,28 @@ body::before {
 </div>
 
 <!-- FLOATING DRAGGABLE DROPLET NAV BAR -->
+<!-- FLOATING DRAGGABLE DROPLET NAV BAR -->
 <nav class="floating-nav" id="main-admin-nav">
   <div class="nav-droplet" id="nav-droplet"></div>
 
-  <button class="nav-item active" onclick="switchTab('dashboard', this)">
+  <button class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/></svg>
     Bosh
   </button>
-  <button class="nav-item" onclick="switchTab('payments', this)">
+  <button class="nav-item" data-tab="payments" onclick="switchTab('payments', this)">
     <div class="nav-badge" id="nav-badge-payments"></div>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
     To'lovlar
   </button>
-  <button class="nav-item" onclick="switchTab('users', this)">
+  <button class="nav-item" data-tab="users" onclick="switchTab('users', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
     Userlar
   </button>
-  <button class="nav-item" onclick="switchTab('orders', this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-    Orderlar
-  </button>
-  <button class="nav-item" onclick="switchTab('listings', this)">
+  <button class="nav-item" data-tab="listings" onclick="switchTab('listings', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     E'lonlar
   </button>
-  <button class="nav-item" onclick="switchTab('withdrawals', this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
-    Yechish
-  </button>
-  <button class="nav-item" onclick="switchTab('broadcast', this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-    Xabarnoma
-  </button>
-  <button class="nav-item" onclick="switchTab('settings', this)">
+  <button class="nav-item" data-tab="settings" onclick="switchTab('settings', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     Sozlama
   </button>
@@ -855,12 +844,23 @@ async function checkAuth() {
 }
 
 function switchTab(tabId, btn) {
+  let targetTab = tabId;
+  if (tabId === 'withdrawals') targetTab = 'payments';
+  if (tabId === 'orders') targetTab = 'listings';
+  if (tabId === 'broadcast') targetTab = 'settings';
+
+  const activeBtn = btn || document.querySelector(`.nav-item[data-tab="${targetTab}"]`);
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById(`page-${tabId}`).classList.add('active');
-  btn.classList.add('active');
 
-  moveDropletTo(btn, true);
+  const pageEl = document.getElementById(`page-${tabId}`);
+  if (pageEl) pageEl.classList.add('active');
+
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+    moveDropletTo(activeBtn, true);
+  }
 
   if (tabId === 'dashboard') loadDashboard();
   if (tabId === 'payments') loadPayments();
