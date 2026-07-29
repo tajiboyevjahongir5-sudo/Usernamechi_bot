@@ -3790,20 +3790,20 @@ async def auto_cleanup_db_loop():
                     DELETE FROM search_results 
                     WHERE (search_id IN (
                         SELECT id FROM search_tasks 
-                        WHERE created_at < strftime('%s','now', '-1 day') OR status='completed'
+                        WHERE created_at < CAST(strftime('%s','now', '-1 day') AS REAL) OR status='completed'
                     ) OR search_id NOT IN (SELECT id FROM search_tasks)) AND status='free'
                 """)
                 
                 # 2. 7 kundan eski yakunlangan search_tasks
-                await db.execute("DELETE FROM search_tasks WHERE created_at < strftime('%s','now', '-7 days') AND status='completed'")
+                await db.execute("DELETE FROM search_tasks WHERE created_at < CAST(strftime('%s','now', '-7 days') AS REAL) AND status='completed'")
                 
                 # 3. 14 kundan eski yakunlangan yoki bekor qilingan payments/topups
-                await db.execute("DELETE FROM topups WHERE created_at < strftime('%s','now', '-14 days') AND status!='pending'")
-                await db.execute("DELETE FROM payments WHERE created_at < strftime('%s','now', '-14 days') AND status!='pending'")
+                await db.execute("DELETE FROM topups WHERE created_at < CAST(strftime('%s','now', '-14 days') AS REAL) AND status!='pending'")
+                await db.execute("DELETE FROM payments WHERE created_at < CAST(strftime('%s','now', '-14 days') AS REAL) AND status!='pending'")
                 
                 # 4. 7 kundan eski tasdiqlanmagan kutilayotgan referral takliflar
                 try:
-                    await db.execute("DELETE FROM pending_referrals WHERE created_at < strftime('%s','now', '-7 days')")
+                    await db.execute("DELETE FROM pending_referrals WHERE created_at < CAST(strftime('%s','now', '-7 days') AS REAL)")
                 except Exception: pass
 
                 # 5. 3 kundan o'tgan buyurtmalarni (orders) avtomatik o'chirish
@@ -3811,10 +3811,10 @@ async def auto_cleanup_db_loop():
                     await db.execute("""
                         DELETE FROM registered_usernames 
                         WHERE order_id IN (
-                            SELECT id FROM orders WHERE created_at < strftime('%s','now', '-3 days')
+                            SELECT id FROM orders WHERE created_at < CAST(strftime('%s','now', '-3 days') AS REAL)
                         )
                     """)
-                    await db.execute("DELETE FROM orders WHERE created_at < strftime('%s','now', '-3 days')")
+                    await db.execute("DELETE FROM orders WHERE created_at < CAST(strftime('%s','now', '-3 days') AS REAL)")
                 except Exception as ord_err:
                     logger.warning(f"Orders cleanup error: {ord_err}")
 
