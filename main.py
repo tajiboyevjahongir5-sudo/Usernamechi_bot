@@ -1804,13 +1804,21 @@ async def monitoring_loop(bot):
                     timeout=aiohttp.ClientTimeout(total=3.0)
                 ) as resp2:
                     text2 = await resp2.text()
+                    # Kanal yoki guruh profili mavjud bo'lsa — band
                     if 'tgme_page_title' in text2 or 'tgme_page_extra' in text2:
-                        return  # Sahifa qayta paydo bo'ldi — hali bo'shmagan
+                        return  # Hali band (kanal/guruh profili topildi)
             except Exception:
                 pass  # Ikkinchi tekshiruv xato bo'lsa ham urinib ko'ramiz
 
-            # 3-qadam: Har bir foydalanuvchi bilan band qilishga urinamiz
+            # 3-qadam: Har bir foydalanuvchi sessiyasi bilan band qilishga urinamiz
+            # ESLATMA: CheckUsernameRequest OLIB TASHLANDI — u account.checkUsername bo'lib,
+            # kanal username uchun noto'g'ri natija berishini aniqladik. 
+            # To'g'ridan-to'g'ri CreateChannel+UpdateUsername sinab ko'ramiz.
+            username_is_taken = False  # Boshqa birov oldi yoki band — barcha sessiyalarni to'xtatish
+            
             for task in task_group:
+                if username_is_taken:
+                    break
                 if not task["session_string"]:
                     continue
                 
@@ -1820,14 +1828,7 @@ async def monitoring_loop(bot):
                 try:
                     client = await _get_fast_client(task["session_string"])
                     
-                    # Avval CheckUsername — kanal ochmasdan tekshiramiz (keraksiz kanal ochishdan saqlanish)
-                    from telethon.tl.functions.account import CheckUsernameRequest
-                    is_free = await client(CheckUsernameRequest(username=uname))
-                    if not is_free:
-                        # Username hali band — boshqa foydalanuvchiga o'tamiz (yoki to'xtatamiz)
-                        break
-                    
-                    # Username bo'sh — kanal ochib username beramiz
+                    # Kanal ochamiz
                     ch = await client(CreateChannelRequest(
                         title=uname.capitalize(),
                         about="@usernamechi_bot orqali band qilingan",
@@ -1839,10 +1840,14 @@ async def monitoring_loop(bot):
                         await client(UpdateUsernameRequest(channel=ch_id, username=uname))
                         success = True
                     except Exception as ue:
-                        err_u = str(ue).lower()
-                        if "username_occupied" in err_u:
-                            pass  # Boshqa birov oldi — kanal o'chiriladi, hammani to'xtatamiz
-                        elif "ChannelsAdminPublicTooMuchError" in str(type(ue)):
+                        err_str = str(ue).lower()
+                        err_type = str(type(ue))
+                        
+                        if "username_occupied" in err_str or "username_invalid" in err_str:
+                            # Username allaqachon band (user akkaunt yoki kanal tomonidan)
+                            logger.info(f"⛔ @{uname} band (UpdateUsername: {ue})")
+                            username_is_taken = True  # Boshqa sessiyalar bilan ham urinmaylik
+                        elif "ChannelsAdminPublicTooMuchError" in err_type:
                             # Bu foydalanuvchining limiti tugagan — keyingi sessiyaga o'tamiz
                             async with aiosqlite.connect(DB_PATH) as db:
                                 await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
@@ -1870,6 +1875,7 @@ async def monitoring_loop(bot):
                                 parse_mode="HTML"
                             )
                         except Exception: pass
+                        logger.info(f"✅ @{uname} muvaffaqiyatli olindi! (user: {task['telegram_id']})")
                         break  # Birinchi muvaffaqiyatdan keyin to'xtatamiz
 
                 except FloodWaitError as e:
@@ -1881,7 +1887,7 @@ async def monitoring_loop(bot):
                     logger.warning(f"Claim xato (@{uname}): {e}")
 
                 finally:
-                    # KARITANI ALBATTA O'CHIRISH — agar username berilmagan bo'lsa
+                    # KANALCHANI ALBATTA O'CHIRISH — agar username berilmagan bo'lsa
                     if ch and not success and client:
                         try:
                             await client(DeleteChannelRequest(channel=ch.chats[0].id))
@@ -1891,6 +1897,7 @@ async def monitoring_loop(bot):
 
         finally:
             claiming_now.discard(uname)
+
 
     while True:
         try:
