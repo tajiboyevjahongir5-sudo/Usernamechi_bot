@@ -2490,8 +2490,8 @@ async def api_marketplace(init_data: str = "", sort: str = "newest", offset: int
             async with db.execute(f"""
                 SELECT l.*, u.first_name as seller_name, u.username as seller_username, 
                        (CASE WHEN u.is_premium = 1 AND (u.premium_until IS NULL OR CAST(u.premium_until AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)) THEN 1 ELSE 0 END) as is_premium
-                FROM listings l LEFT JOIN users u ON l.seller_id = u.telegram_id
-                WHERE l.status='active' {order_clause} LIMIT 20 OFFSET ?
+                FROM listings l INNER JOIN users u ON l.seller_id = u.telegram_id
+                WHERE l.status='active' AND u.session_string IS NOT NULL AND u.session_string != '' {order_clause} LIMIT 20 OFFSET ?
             """, (offset,)) as c:
                 rows = [dict(r) for r in await c.fetchall()]
         return rows
@@ -4001,6 +4001,15 @@ async def session_checker_loop():
     while True:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
+                # Seansi yo'q sotuvchilar e'lonlarini avtomatik o'chiramiz
+                await db.execute("""
+                    DELETE FROM listings 
+                    WHERE status='active' AND seller_id IN (
+                        SELECT telegram_id FROM users WHERE session_string IS NULL OR session_string = ''
+                    )
+                """)
+                await db.commit()
+                
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT telegram_id, session_string, phone FROM users WHERE session_string IS NOT NULL AND session_string != ''") as c:
                     rows = await c.fetchall()
