@@ -1813,6 +1813,7 @@ async def monitoring_loop(bot):
         if uname in claiming_now:
             return
         claiming_now.add(uname)
+        logger.info(f"🎯 [CLAIM START] @{uname} bo'sh joy sarlavhasi aniqlandi! Jarayon boshlanmoqda...")
         try:
             # 2-qadam: t.me orqali IKKI MARTA tasdiqlash (false-positive'dan saqlanish)
             await asyncio.sleep(0.3)
@@ -1824,15 +1825,13 @@ async def monitoring_loop(bot):
                     text2 = await resp2.text()
                     # Kanal yoki guruh profili mavjud bo'lsa — band
                     if 'tgme_page_title' in text2 or 'tgme_page_extra' in text2:
-                        return  # Hali band (kanal/guruh profili topildi)
-            except Exception:
-                pass  # Ikkinchi tekshiruv xato bo'lsa ham urinib ko'ramiz
+                        logger.info(f"⚠️ [CLAIM CANCEL] @{uname} 2-tekshiruvda bandligi aniqlandi.")
+                        return
+            except Exception as e2:
+                logger.debug(f"2-tekshiruv xatosi (davom etamiz): {e2}")
 
-            # 3-qadam: Har bir foydalanuvchi sessiyasi bilan band qilishga urinamiz
-            # ESLATMA: CheckUsernameRequest OLIB TASHLANDI — u account.checkUsername bo'lib,
-            # kanal username uchun noto'g'ri natija berishini aniqladik. 
-            # To'g'ridan-to'g'ri CreateChannel+UpdateUsername sinab ko'ramiz.
-            username_is_taken = False  # Boshqa birov oldi yoki band — barcha sessiyalarni to'xtatish
+            username_is_taken = False
+            valid_sessions_count = 0
             
             for task in task_group:
                 if username_is_taken:
@@ -1840,36 +1839,33 @@ async def monitoring_loop(bot):
                 if not task["session_string"]:
                     continue
 
-                # Sessiya kaliti
+                valid_sessions_count += 1
                 sess_key = str(hash(task["session_string"]))
 
-                # Spam-report sessiyani butunlay o'tkazib yuboramiz
                 if sess_key in spamblocked_sessions:
-                    logger.debug(f"⛔ Spamblok sessiya o'tkazildi (user: {task['telegram_id']})")
+                    logger.warning(f"⛔ Sessiya {task['telegram_id']} SpamBlock ekanligi uchun o'tkazildi.")
                     continue
 
-                # FloodWait tekshiruv — bloklangan sessiyani o'tkazib yuboramiz
                 fw_until = session_floodwait.get(sess_key, 0)
                 if fw_until > time.time():
                     remaining = int(fw_until - time.time())
-                    logger.debug(f"⏭ Sessiya FloodWait ({remaining}s qoldi), o'tkazib yuborildi")
+                    logger.warning(f"⏭ Sessiya {task['telegram_id']} FloodWait ({remaining}s) uchun o'tkazildi.")
                     continue
-                elif sess_key in session_floodwait:
-                    del session_floodwait[sess_key]  # FloodWait tugagan — tozalaymiz
 
                 ch = None
                 client = None
                 success = False
                 try:
+                    logger.info(f"🔑 User {task['telegram_id']} sessiyasi bilan @{uname} uchun kanal ochilmoqda...")
                     client = await _get_fast_client(task["session_string"])
                     
-                    # Kanal ochamiz
                     ch = await client(CreateChannelRequest(
                         title=uname.capitalize(),
                         about="@usernamechi_bot orqali band qilingan",
                         megagroup=False
                     ))
                     ch_id = ch.chats[0].id
+                    logger.info(f"📺 Kanal yaratildi (ID: {ch_id}). @{uname} biriktirilmoqda...")
                     
                     try:
                         await client(UpdateUsernameRequest(channel=ch_id, username=uname))
@@ -1879,27 +1875,23 @@ async def monitoring_loop(bot):
                         err_type = str(type(ue))
                         
                         if "username_occupied" in err_str or "username_invalid" in err_str:
-                            # Username allaqachon band (user akkaunt yoki kanal tomonidan)
-                            logger.info(f"⛔ @{uname} band (UpdateUsername: {ue})")
-                            username_is_taken = True  # Boshqa sessiyalar bilan ham urinmaylik
-                        elif "ChannelsAdminPublicTooMuchError" in err_type:
-                            # Bu foydalanuvchining limiti tugagan — keyingi sessiyaga o'tamiz
+                            logger.info(f"⛔ @{uname} band yoki yaroqsiz (UpdateUsername: {ue})")
+                            username_is_taken = True
+                        elif "ChannelsAdminPublicTooMuchError" in err_type or "channels_admin_public_too_much" in err_str:
+                            logger.warning(f"❌ User {task['telegram_id']} ning ommaviy link limiti tugagan!")
                             async with aiosqlite.connect(DB_PATH) as db:
                                 await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
                                 await db.commit()
                             try:
                                 await bot.send_message(task["telegram_id"],
-                                    f"❌ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
+                                    f"❌ @{uname} bo'shadi, lekin ommaviy link limiti (10 ta) tugagani uchun ololmadim.")
                             except Exception: pass
-                            # Keyingi foydalanuvchi sessiyasi bilan urinib ko'ramiz
                             continue
                         else:
                             logger.warning(f"UpdateUsername xato (@{uname}): {ue}")
-                            # Keyingi foydalanuvchi sessiyasi bilan urinib ko'ramiz
                             continue
 
                     if success:
-                        # Muvaffaqiyatli band qilindi!
                         async with aiosqlite.connect(DB_PATH) as db:
                             await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
                             await db.commit()
@@ -1910,30 +1902,25 @@ async def monitoring_loop(bot):
                                 parse_mode="HTML"
                             )
                         except Exception: pass
-                        logger.info(f"✅ @{uname} muvaffaqiyatli olindi! (user: {task['telegram_id']})")
-                        break  # Birinchi muvaffaqiyatdan keyin to'xtatamiz
+                        logger.info(f"🎉 MUVAFFAQIYAT! @{uname} olindi (User: {task['telegram_id']})")
+                        break
 
                 except FloodWaitError as e:
                     fw_until_ts = time.time() + e.seconds
                     session_floodwait[sess_key] = fw_until_ts
-                    logger.warning(f"⛔ FloodWait {e.seconds}s (@{uname}) — sessiya {e.seconds}s ga bloklandi, keyingi sessiyaga o'tamiz")
-                    continue  # Bu sessiyani o'tkazib yuboramiz — boshqasini sinab ko'ramiz
+                    logger.warning(f"⛔ FloodWait {e.seconds}s (@{uname}) — User {task['telegram_id']}")
+                    continue
 
                 except Exception as e:
                     err_lower = str(e).lower()
-                    if "spamreported" in err_lower or "spam" in err_lower and "create" in err_lower:
-                        # Sessiya spam-report tushgan — keyingi sessiyaga o'tamiz, bu sessiyani eslab qolamiz
+                    if "spamreported" in err_lower or ("spam" in err_lower and "create" in err_lower):
                         spamblocked_sessions.add(sess_key)
-                        logger.warning(f"🚫 Spam-report sessiya ({task['telegram_id']}) — butunlay skip qilindi: {e}")
-                        # Admin va foydalanuvchiga bir marta xabar yuboramiz
+                        logger.warning(f"🚫 Spam-report sessiya ({task['telegram_id']}) — skip qilindi: {e}")
                         try:
                             await bot.send_message(
                                 task["telegram_id"],
-                                "⚠️ <b>Akkauntingiz SpamBlock!</b>\n\n"
-                                "Telegram akkauntingiz spam-report tushgani sababli yangi kanal yoki guruh ocha olmayapti.\n\n"
-                                "🔧 <b>Yechim:</b>\n"
-                                "1️⃣ @SpamBot ga /start yuboring va cheklov yechilishini kuting\n"
-                                "2️⃣ Akkaunt bo'limida boshqa yangi akkaunt seansi ulang",
+                                "⚠️ <b>Akkauntingiz SpamBlock!</b>\n\nTelegram akkauntingiz spam-report tushgani sababli yangi kanal ocha olmayapti.\n\n"
+                                "🔧 @SpamBot ga yozing yoki boshqa yangi akkaunt ulang.",
                                 parse_mode="HTML"
                             )
                         except Exception: pass
@@ -1941,15 +1928,16 @@ async def monitoring_loop(bot):
                     else:
                         logger.warning(f"Claim xato (@{uname}): {e}")
 
-
                 finally:
-                    # KANALCHANI ALBATTA O'CHIRISH — agar username berilmagan bo'lsa
                     if ch and not success and client:
                         try:
                             await client(DeleteChannelRequest(channel=ch.chats[0].id))
                             logger.info(f"🗑 Bo'sh kanal o'chirildi: {uname}")
                         except Exception as de:
                             logger.warning(f"Kanal o'chirishda xato ({uname}): {de}")
+
+            if valid_sessions_count == 0:
+                logger.warning(f"⚠️ @{uname} uchun yaroqli faol sessiya topilmadi!")
 
         finally:
             claiming_now.discard(uname)
