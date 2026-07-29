@@ -4246,6 +4246,11 @@ async def auto_cleanup_db_loop():
                     await db.execute("DELETE FROM pending_referrals WHERE created_at < CAST(strftime('%s','now', '-7 days') AS REAL)")
                 except Exception: pass
 
+                # 4.5. 7 kundan eski yakunlangan yoki bekor qilingan monitoring nishonlarini tozalash
+                try:
+                    await db.execute("DELETE FROM monitoring_tasks WHERE status IN ('claimed', 'failed_limit', 'cancelled') AND created_at < CAST(strftime('%s','now', '-7 days') AS REAL)")
+                except Exception: pass
+
                 # 5. 3 kundan o'tgan buyurtmalarni (orders) avtomatik o'chirish
                 try:
                     await db.execute("""
