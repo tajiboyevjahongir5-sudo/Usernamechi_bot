@@ -3150,12 +3150,12 @@ async def api_monitor_start(request: Request):
     valid_usernames = set()
     for u in raw_list:
         u = u.replace('@', '').strip().lower()
-        # Basic validation for username length
-        if len(u) >= 4:
+        # Basic validation for username length (Telegram requires min 5 chars for standard usernames)
+        if len(u) >= 5:
             valid_usernames.add(u)
             
     if not valid_usernames:
-        return {"ok": False, "error": "Kiritilgan matnda haqiqiy username'lar topilmadi (kamida 4 ta harf bo'lishi kerak)"}
+        return {"ok": False, "error": "Kiritilgan matnda haqiqiy username'lar topilmadi (kamida 5 ta harf bo'lishi kerak)"}
         
     async with aiosqlite.connect(DB_PATH) as db:
         # Check existing targets for this user
@@ -4301,6 +4301,68 @@ class AntiSpamMiddleware(BaseMiddleware):
 
         return await handler(event, data)
 
+async def cleanup_short_monitoring_tasks(bot_inst: Bot):
+    """5 ta harfdan kam bo'lgan barcha monitoring tasks larni o'chirib, pullarini foydalanuvchilar balansiga qaytaradi."""
+    try:
+        price_per_item = int(await get_setting("monitor_price", 10000))
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT id, telegram_id, username FROM monitoring_tasks WHERE LENGTH(username) < 5 AND status='monitoring'"
+            ) as c:
+                tasks = await c.fetchall()
+
+            if not tasks:
+                return
+
+            user_refunds = {}
+            user_usernames = {}
+            task_ids_to_delete = []
+
+            for t in tasks:
+                tid = t["telegram_id"]
+                u = t["username"]
+                task_ids_to_delete.append(t["id"])
+                
+                if tid not in user_refunds:
+                    user_refunds[tid] = 0
+                    user_usernames[tid] = []
+                user_refunds[tid] += price_per_item
+                user_usernames[tid].append(f"@{u}")
+
+            # Balanslarni to'ldiramiz va vazifalarni o'chiramiz
+            for tid, refund_amount in user_refunds.items():
+                await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (refund_amount, tid))
+                
+            for task_id in task_ids_to_delete:
+                await db.execute("DELETE FROM monitoring_tasks WHERE id = ?", (task_id,))
+
+            await db.commit()
+            logger.info(f"🧹 Kalta nishonlar tozalandi: {len(task_ids_to_delete)} ta task o'chirildi, {len(user_refunds)} ta userga pul qaytarildi")
+
+            # Har bir foydalanuvchiga bildirishnoma yuboramiz
+            for tid, refund_amount in user_refunds.items():
+                unames = user_usernames[tid]
+                count = len(unames)
+                uname_str = ", ".join(unames[:10])
+                if count > 10:
+                    uname_str += f" va yana {count - 10} ta"
+                
+                msg = (
+                    f"⚠️ <b>Nishonlar tozalandi!</b>\n\n"
+                    f"Telegram qoidalariga ko'ra 5 ta harfdan kam bo'lgan usernamelarni oddiy kanallarga berib bo'lmaydi.\n"
+                    f"Shu sababli Siz qo'shgan <b>{count} ta</b> kalta nishon o'chirildi:\n"
+                    f"<code>{uname_str}</code>\n\n"
+                    f"💰 Balansingizga <b>+{refund_amount:,} so'm</b> to'liq qaytarildi!"
+                )
+                try:
+                    await bot_inst.send_message(tid, msg, parse_mode="HTML")
+                except Exception as ne:
+                    logger.warning(f"Short target notify xato ({tid}): {ne}")
+
+    except Exception as e:
+        logger.error(f"cleanup_short_monitoring_tasks xato: {e}")
+
 async def main():
     import signal
 
@@ -4318,6 +4380,9 @@ async def main():
     dp.message.outer_middleware(save_user)
     dp.callback_query.outer_middleware(save_user)
     logger.info("🤖 Bot + 🌐 Web ishga tushdi!")
+
+    # 5-dan kam harfli nishonlarni tozalab pulini qaytarish
+    asyncio.create_task(cleanup_short_monitoring_tasks(bot))
 
     # Orqa fonda monitoring loop ni ishga tushiramiz
     monitoring_task = asyncio.create_task(monitoring_loop(bot))
