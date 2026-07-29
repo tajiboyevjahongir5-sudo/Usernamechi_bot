@@ -1890,7 +1890,6 @@ if os.path.exists("static"):
 
 # ── Helper: Telegram initData verifikatsiya ────
 def verify_init_data(init_data: str) -> dict | None:
-    """Telegram WebApp init_data ni tekshiradi."""
     try:
         from urllib.parse import parse_qsl
         if not init_data: return None
@@ -1900,12 +1899,22 @@ def verify_init_data(init_data: str) -> dict | None:
         secret = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
         calc_hash = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
         
+        # LOGGING
+        try:
+            with open("/app/data/app_debug.log", "a", encoding="utf-8") as f:
+                f.write(f"\n[VERIFY] REC_HASH: {received_hash[:10]}... CALC_HASH: {calc_hash[:10]}... TOKEN_PREFIX: {BOT_TOKEN[:15]}\n")
+        except: pass
+        
         if not hmac.compare_digest(calc_hash, received_hash):
             return None
             
         user_str = params.get('user', '{}')
         return json.loads(user_str)
-    except:
+    except Exception as e:
+        try:
+            with open("/app/data/app_debug.log", "a", encoding="utf-8") as f:
+                f.write(f"\n[VERIFY EXCEPTION] {e}\n")
+        except: pass
         return None
 
 def get_admin_token(telegram_id: int) -> str:
