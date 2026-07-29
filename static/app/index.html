@@ -1334,10 +1334,13 @@ async function init() {
     return;
   }
   // ── Obuna tasdiqlandi - ilovani to'liq yuklaymiz ──
-
-  await loadUserData();
-  await loadOrders();
-  loadCardNumber();
+  try {
+    await loadUserData();
+    await loadOrders();
+    loadCardNumber();
+  } catch(e) {
+    alert("Init init() XATO: " + e.message);
+  }
   
 
   // Telegram Start Param (Direct Deep Linking: listing_123, market_123, market)
@@ -1384,11 +1387,14 @@ async function init() {
 async function loadUserData() {
   try {
     const res = await fetch(`${API}/api/user?init_data=${encodeURIComponent(tg.initData)}`);
-    if (!res.ok) return;
+    if (!res.ok) {
+        alert("API_USER xato: HTTP " + res.status);
+        return;
+    }
     const d = await res.json();
     if (!d || d.error === 'subscription_required' || d.error === 'Invalid init_data') return;
     if (d.error) { alert("XATOLIK: " + d.error); return; }
-    if (d.balance === undefined && d.detail) return;  // 403 HTTPException
+    if (d.balance === undefined && d.detail) { alert("API XATO: " + d.detail); return; }
     userData = d;
     const bal = userData.balance || 0;
     
@@ -2797,6 +2803,11 @@ if (typeof twemoji !== 'undefined') {
           method: 'GET',
           headers: { 'X-Telegram-Init-Data': tg.initData }
         });
+        if (!res.ok) {
+            const data = await res.json();
+            alert("Telegram xeshi xato (403)! Bot Token to'g'riligini tekshiring.");
+            return false;
+        }
         const data = await res.json();
         if (data.ok) {
           return true;  // Obunadan o'tdi
@@ -2808,6 +2819,7 @@ if (typeof twemoji !== 'undefined') {
           return false;  // To'xtatamiz
         }
       } catch(e) {
+        alert("checkSubscriptionOnStart XATO: " + e.message);
         // Tarmoq xatoligi yoki kanallar yo'q - ilovani ochamiz
         return true;
       }
@@ -2884,9 +2896,13 @@ if (typeof twemoji !== 'undefined') {
           setTimeout(async () => {
             overlay.style.display = 'none';
             // Ilovani to'liq qayta yuklaymiz (init() ni chaqiramiz)
-            await loadUserData();
-            await loadOrders();
-            loadCardNumber();
+            try {
+              await loadUserData();
+              await loadOrders();
+              loadCardNumber();
+            } catch(e) {
+              alert("loadUserData XATO: " + e.message);
+            }
           }, 300);
         } else {
           // Update channels list
