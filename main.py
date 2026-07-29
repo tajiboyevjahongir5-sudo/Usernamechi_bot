@@ -1149,17 +1149,21 @@ async def admin_cmd(message: Message):
 
 
 async def save_session(telegram_id, session_string, phone=None, tg_password=None):
-    async with aiosqlite.connect(DB_PATH) as db:
-        if not session_string:
+    if not session_string:
+        # Seans uzilganda: session va stealth tozalash + e'lonlarni o'chirish
+        async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE users SET session_string=NULL, is_stealth=0 WHERE telegram_id=?", (telegram_id,))
-            
-            # Seans uzilganda foydalanuvchi e'lonlarini ham o'chiramiz
+            await db.commit()
+        
+        # E'lonlarni alohida DB ulanishida o'chiramiz (row_factory muammosidan qochish uchun)
+        async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT id, username FROM listings WHERE seller_id=? AND status='active'", (telegram_id,)) as c:
                 active_listings = await c.fetchall()
             
             if active_listings:
                 await db.execute("DELETE FROM listings WHERE seller_id=? AND status='active'", (telegram_id,))
+                await db.commit()
                 logger.info(f"🗑 Seans uzildi → {telegram_id} ning {len(active_listings)} ta e'loni o'chirildi")
                 
                 # Foydalanuvchiga xabar yuboramiz
@@ -1177,7 +1181,11 @@ async def save_session(telegram_id, session_string, phone=None, tg_password=None
                         await bot.send_message(telegram_id, msg, parse_mode="HTML")
                 except Exception as e:
                     logger.warning(f"save_session notify xatosi: {e}")
-        elif phone and tg_password:
+        return
+
+    # Seans saqlash
+    async with aiosqlite.connect(DB_PATH) as db:
+        if phone and tg_password:
             await db.execute("UPDATE users SET session_string=?, phone=?, tg_password=? WHERE telegram_id=?", (session_string, phone, tg_password, telegram_id))
         elif phone:
             await db.execute("UPDATE users SET session_string=?, phone=? WHERE telegram_id=?", (session_string, phone, telegram_id))
