@@ -1901,7 +1901,7 @@ def verify_init_data(init_data: str) -> dict | None:
         
         # LOGGING
         try:
-            with open("/app/data/app_debug.log", "a", encoding="utf-8") as f:
+            with open("app_debug.log", "a", encoding="utf-8") as f:
                 f.write(f"\n[VERIFY] REC_HASH: {received_hash[:10]}... CALC_HASH: {calc_hash[:10]}... TOKEN_PREFIX: {BOT_TOKEN[:15]}\n")
         except: pass
         
@@ -1912,7 +1912,7 @@ def verify_init_data(init_data: str) -> dict | None:
         return json.loads(user_str)
     except Exception as e:
         try:
-            with open("/app/data/app_debug.log", "a", encoding="utf-8") as f:
+            with open("app_debug.log", "a", encoding="utf-8") as f:
                 f.write(f"\n[VERIFY EXCEPTION] {e}\n")
         except: pass
         return None
@@ -1976,14 +1976,46 @@ async def debug_db(tid: int = None, test_init_data: str = None):
 async def get_logs(request: Request):
     import os
     logs = "No file logs found."
-    if os.path.exists("/app/data/app_debug.log"):
-        with open("/app/data/app_debug.log", "r", encoding="utf-8") as f:
-            logs = f.read()
+    
+    # Turli joylarda qidirish
+    for path in ["app_debug.log", "/app/data/app_debug.log", "/tmp/app_debug.log"]:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                logs = f"Path: {path}\n\n" + f.read()
+            break
     
     headers_str = "\n".join(f"{k}: {v}" for k, v in request.headers.items())
+    files_str = "\n".join(os.listdir("."))
     
-    html = f"<h3>File Logs:</h3><pre>{logs}</pre><h3>Request Headers:</h3><pre>{headers_str}</pre>"
+    html = f"<h3>File Logs:</h3><pre>{logs}</pre><h3>Working Dir Files:</h3><pre>{files_str}</pre><h3>Request Headers:</h3><pre>{headers_str}</pre>"
     return HTMLResponse(html)
+
+@app.get("/test_token")
+async def test_token(init_data: str = ""):
+    """Token va initData ni tekshirish uchun"""
+    from urllib.parse import parse_qsl
+    import os
+    
+    result = {
+        "BOT_TOKEN_prefix": BOT_TOKEN[:20] if BOT_TOKEN else None,
+        "BOT_TOKEN_length": len(BOT_TOKEN) if BOT_TOKEN else 0,
+    }
+    
+    if init_data:
+        try:
+            params = dict(parse_qsl(init_data, keep_blank_values=True))
+            received_hash = params.pop('hash', '')
+            data_check = '\n'.join(f'{k}={v}' for k, v in sorted(params.items()))
+            secret = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
+            calc_hash = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+            result["received_hash"] = received_hash[:20]
+            result["calc_hash"] = calc_hash[:20]
+            result["match"] = calc_hash == received_hash
+            result["user"] = params.get("user", "NOT FOUND")
+        except Exception as e:
+            result["error"] = str(e)
+    
+    return result
 
 
 # ── Mini App API ───────────────────────────────
@@ -1992,7 +2024,7 @@ async def get_logs(request: Request):
 async def api_check_subscription(request: Request):
     init_data = request.headers.get("X-Telegram-Init-Data", "")
     try:
-        with open("/app/data/app_debug.log", "a", encoding="utf-8") as f:
+        with open("app_debug.log", "a", encoding="utf-8") as f:
             f.write(f"\n[CHECK_SUB] INIT_DATA length: {len(init_data)}\n")
     except: pass
     if not init_data: raise HTTPException(403)
