@@ -1804,7 +1804,8 @@ async def monitoring_loop(bot):
     hdr_idx = 0
     global_429_count = 0          # t.me dan 429 hisoblagich
     claiming_now: set = set()     # Hozir band qilinayotgan username'lar (ikkilamchi urinishdan saqlash)
-    session_floodwait: dict = {}  # {session_string_hash: until_timestamp} — bloklangan sessiyalar
+    session_floodwait: dict = {}  # {session_hash: until_timestamp} — FloodWait bloklangan sessiyalar
+    spamblocked_sessions: set = set()  # Spam-report tushgan sessiyalar (session hash) — butunlay skip
 
     async def _claim_username(task_group, uname, http_session):
         """Username bo'shagan — darhol band qilishga urinamiz (alohida task)."""
@@ -1839,8 +1840,15 @@ async def monitoring_loop(bot):
                 if not task["session_string"]:
                     continue
 
-                # FloodWait tekshiruv — bloklangan sessiyani o'tkazib yuboramiz
+                # Sessiya kaliti
                 sess_key = str(hash(task["session_string"]))
+
+                # Spam-report sessiyani butunlay o'tkazib yuboramiz
+                if sess_key in spamblocked_sessions:
+                    logger.debug(f"⛔ Spamblok sessiya o'tkazildi (user: {task['telegram_id']})")
+                    continue
+
+                # FloodWait tekshiruv — bloklangan sessiyani o'tkazib yuboramiz
                 fw_until = session_floodwait.get(sess_key, 0)
                 if fw_until > time.time():
                     remaining = int(fw_until - time.time())
@@ -1906,14 +1914,33 @@ async def monitoring_loop(bot):
                         break  # Birinchi muvaffaqiyatdan keyin to'xtatamiz
 
                 except FloodWaitError as e:
-                    sess_key = str(hash(task["session_string"]))
                     fw_until_ts = time.time() + e.seconds
                     session_floodwait[sess_key] = fw_until_ts
                     logger.warning(f"⛔ FloodWait {e.seconds}s (@{uname}) — sessiya {e.seconds}s ga bloklandi, keyingi sessiyaga o'tamiz")
-                    continue  # BU SESSIYANI O'TKAZIB YUBORAMIZ — boshqasini sinab ko'ramiz
+                    continue  # Bu sessiyani o'tkazib yuboramiz — boshqasini sinab ko'ramiz
 
                 except Exception as e:
-                    logger.warning(f"Claim xato (@{uname}): {e}")
+                    err_lower = str(e).lower()
+                    if "spamreported" in err_lower or "spam" in err_lower and "create" in err_lower:
+                        # Sessiya spam-report tushgan — keyingi sessiyaga o'tamiz, bu sessiyani eslab qolamiz
+                        spamblocked_sessions.add(sess_key)
+                        logger.warning(f"🚫 Spam-report sessiya ({task['telegram_id']}) — butunlay skip qilindi: {e}")
+                        # Admin va foydalanuvchiga bir marta xabar yuboramiz
+                        try:
+                            await bot.send_message(
+                                task["telegram_id"],
+                                "⚠️ <b>Akkauntingiz SpamBlock!</b>\n\n"
+                                "Telegram akkauntingiz spam-report tushgani sababli yangi kanal yoki guruh ocha olmayapti.\n\n"
+                                "🔧 <b>Yechim:</b>\n"
+                                "1️⃣ @SpamBot ga /start yuboring va cheklov yechilishini kuting\n"
+                                "2️⃣ Akkaunt bo'limida boshqa yangi akkaunt seansi ulang",
+                                parse_mode="HTML"
+                            )
+                        except Exception: pass
+                        continue
+                    else:
+                        logger.warning(f"Claim xato (@{uname}): {e}")
+
 
                 finally:
                     # KANALCHANI ALBATTA O'CHIRISH — agar username berilmagan bo'lsa
