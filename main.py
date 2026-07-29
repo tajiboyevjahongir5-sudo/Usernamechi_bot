@@ -34,7 +34,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 
-load_dotenv()
+# Faqat local dev uchun .env yuklash (Railway da env variable'lar avtomatik bo'ladi)
+if not os.getenv("RAILWAY_ENVIRONMENT") and not os.getenv("RAILWAY_SERVICE_ID"):
+    load_dotenv()
 
 # ─── SOZLAMALAR ──────────────────────────────
 BOT_TOKEN     = os.getenv("BOT_TOKEN", "")
