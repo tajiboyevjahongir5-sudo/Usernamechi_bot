@@ -1849,22 +1849,8 @@ class SubscriptionMiddleware(BaseHTTPMiddleware):
             if not init_data:
                 init_data = request.query_params.get("init_data", "")
             
-            # 3. Request body dan tekshiramiz (POST JSON: {"init_data": "..."})
-            if not init_data:
-                content_type = request.headers.get("content-type", "")
-                if "application/json" in content_type:
-                    try:
-                        body_bytes = await request.body()
-                        if body_bytes:
-                            import json as _json
-                            body_json = _json.loads(body_bytes)
-                            init_data = body_json.get("init_data", "")
-                            # Body o'qildi, qayta o'qilishi uchun saqlaymiz
-                            async def receive():
-                                return {"type": "http.request", "body": body_bytes}
-                            request._receive = receive
-                    except:
-                        pass
+            # Request body dan o'qish (Starlette da o'qish body ni yo'qotadi, lekin biz header-da doim yuboramiz)
+            # Shuning uchun body dan o'qish shart emas.
             
             if init_data:
                 user = verify_init_data(init_data)
@@ -2241,7 +2227,7 @@ async def api_marketplace(init_data: str = "", sort: str = "newest", offset: int
         db.row_factory = aiosqlite.Row
         async with db.execute(f"""
             SELECT l.*, u.first_name as seller_name, u.username as seller_username, 
-                   (CASE WHEN u.is_premium = 1 AND (u.premium_until IS NULL OR u.premium_until > datetime('now')) THEN 1 ELSE 0 END) as is_premium
+                   (CASE WHEN u.is_premium = 1 AND (u.premium_until IS NULL OR CAST(u.premium_until AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)) THEN 1 ELSE 0 END) as is_premium
             FROM listings l LEFT JOIN users u ON l.seller_id = u.telegram_id
             WHERE l.status='active' {order_clause} LIMIT 20 OFFSET ?
         """, (offset,)) as c:
@@ -2495,7 +2481,7 @@ async def api_marketplace_top(init_data: str = ""):
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT l.*, u.first_name as seller_name, u.username as seller_username,
-                   (CASE WHEN u.is_premium = 1 AND (u.premium_until IS NULL OR u.premium_until > datetime('now')) THEN 1 ELSE 0 END) as is_premium
+                   (CASE WHEN u.is_premium = 1 AND (u.premium_until IS NULL OR CAST(u.premium_until AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)) THEN 1 ELSE 0 END) as is_premium
             FROM listings l LEFT JOIN users u ON l.seller_id = u.telegram_id
             WHERE l.status='active' AND u.is_premium=1
             ORDER BY l.id DESC LIMIT 10
