@@ -1806,6 +1806,8 @@ async def monitoring_loop(bot):
     claiming_now: set = set()     # Hozir band qilinayotgan username'lar (ikkilamchi urinishdan saqlash)
     session_floodwait: dict = {}  # {session_hash: until_timestamp} — FloodWait bloklangan sessiyalar
     spamblocked_sessions: set = set()  # Spam-report tushgan sessiyalar (session hash) — butunlay skip
+    taken_usernames_cache: dict = {}   # {uname_lower: expiry_ts} — Band deb tasdiqlangan nomlarni vaqtincha keshlashtirish (FloodWait'dan saqlash)
+    last_channel_created: dict = {}    # {session_hash: timestamp} — Kanal ochish tezligini cheklash (10 soniyaga 1 ta)
 
     async def _claim_username(task_group, uname, http_session):
         """Username bo'shagan — darhol band qilishga urinamiz (alohida task)."""
@@ -1877,6 +1879,7 @@ async def monitoring_loop(bot):
                         if "username_occupied" in err_str or "username_invalid" in err_str:
                             logger.info(f"⛔ @{uname} band yoki yaroqsiz (UpdateUsername: {ue})")
                             username_is_taken = True
+                            taken_usernames_cache[uname.lower()] = time.time() + 600  # 10 minut keshlashtirish
                         elif "ChannelsAdminPublicTooMuchError" in err_type or "channels_admin_public_too_much" in err_str:
                             logger.warning(f"❌ User {task['telegram_id']} ning ommaviy link limiti tugagan!")
                             async with aiosqlite.connect(DB_PATH) as db:
@@ -1985,6 +1988,8 @@ async def monitoring_loop(bot):
 
                 async def check_uname_group(uname_lower, task_group):
                     nonlocal global_429_count
+                    if taken_usernames_cache.get(uname_lower, 0) > time.time():
+                        return  # Allaqachon band ekanligi tasdiqlangan (FloodWait'dan saqlash)
                     async with sem:
                         # Global 429 cheklovi bo'lsa — kutamiz
                         if global_429_count > 0:
