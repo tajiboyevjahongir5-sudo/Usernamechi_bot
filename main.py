@@ -61,13 +61,7 @@ WEB_URL       = os.getenv("WEB_HOST", "https://your-app.railway.app")
 # Global bot instance - API endpointlardan foydalanish uchun
 bot: Bot = None
 
-import sys
-logging.basicConfig(
-    level=logging.INFO, 
-    format="%(asctime)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
+
 
 # ─── MA'LUMOTLAR BAZASI ───────────────────────
 async def init_db():
@@ -1558,6 +1552,9 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
     except Exception as e:
         logger.error(f"Search task error: {e}")
     finally:
+        if telethon_client:
+            await telethon_client.disconnect()
+            _telethon_cache.pop(session_string, None)
         async with aiosqlite.connect(DB_PATH) as db:
             if found_count == 0:
                 async with db.execute("SELECT charged_amount, used_free FROM search_tasks WHERE id=?", (search_id,)) as c:
@@ -1811,7 +1808,7 @@ async def monitoring_loop(bot):
 
     async def _claim_username(task_group, uname, http_session):
         """Username bo'shagan — darhol band qilishga urinamiz (alohida task)."""
-        nonlocal claiming_now
+        nonlocal claiming_now, session_floodwait, spamblocked_sessions, taken_usernames_cache, last_channel_created
         if uname in claiming_now:
             return
         claiming_now.add(uname)
@@ -1854,6 +1851,11 @@ async def monitoring_loop(bot):
                     logger.debug(f"⏭ Sessiya {task['telegram_id']} FloodWait ({remaining}s) uchun o'tkazildi.")
                     continue
 
+                last_created = last_channel_created.get(sess_key, 0)
+                if time.time() - last_created < 5.0:
+                    logger.debug(f"⏭ Sessiya {task['telegram_id']} 5s limit sababli kutmoqda.")
+                    await asyncio.sleep(5.0 - (time.time() - last_created))
+
                 ch = None
                 client = None
                 success = False
@@ -1861,6 +1863,7 @@ async def monitoring_loop(bot):
                     logger.info(f"🔑 User {task['telegram_id']} sessiyasi bilan @{uname} uchun kanal ochilmoqda...")
                     client = await _get_fast_client(task["session_string"])
                     
+                    last_channel_created[sess_key] = time.time()
                     ch = await client(CreateChannelRequest(
                         title=uname.capitalize(),
                         about="@usernamechi_bot orqali band qilingan",
@@ -1938,6 +1941,9 @@ async def monitoring_loop(bot):
                             logger.info(f"🗑 Bo'sh kanal o'chirildi: {uname}")
                         except Exception as de:
                             logger.warning(f"Kanal o'chirishda xato ({uname}): {de}")
+                    if client:
+                        await client.disconnect()
+                        _telethon_cache.pop(task["session_string"], None)
 
             if valid_sessions_count == 0:
                 logger.warning(f"⚠️ @{uname} uchun yaroqli faol sessiya topilmadi!")
@@ -1987,7 +1993,7 @@ async def monitoring_loop(bot):
             ) as http_session:
 
                 async def check_uname_group(uname_lower, task_group):
-                    nonlocal global_429_count
+                    nonlocal global_429_count, taken_usernames_cache, last_channel_created
                     if taken_usernames_cache.get(uname_lower, 0) > time.time():
                         return  # Allaqachon band ekanligi tasdiqlangan (FloodWait'dan saqlash)
                     async with sem:
@@ -4222,7 +4228,9 @@ async def admin_orders(x_admin_token: str = Header(default="")):
 
 async def auto_cleanup_db_loop():
     """Baza hajm juda kattalashib ketmasligi uchun eskirgan va keraksiz ma'lumotlarni avtomatik tozalaydi (har 6 soatda)."""
+    vacuum_counter = 0
     while True:
+        vacuum_counter += 1
         try:
             async with aiosqlite.connect(DB_PATH) as db:
                 # 1. 24 soatdan eski, yakunlangan va bo'sh search_results (qidiruv natijalari)
@@ -4271,7 +4279,9 @@ async def auto_cleanup_db_loop():
                 await db.commit()
                 
                 # Bazani optimallashtirish (bo'shagan diska hajmini qaytarish)
-                await db.execute("VACUUM")
+                if vacuum_counter >= 4:
+                    await db.execute("VACUUM")
+                    vacuum_counter = 0
                 
             logger.info("🧹 DB Auto-cleanup bajarildi: eskirgan va keraksiz ma'lumotlar tozalandi.")
         except Exception as e:
