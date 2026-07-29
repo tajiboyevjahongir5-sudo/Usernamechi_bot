@@ -1385,7 +1385,10 @@ async function loadUserData() {
   try {
     const res = await fetch(`${API}/api/user?init_data=${encodeURIComponent(tg.initData)}`);
     if (!res.ok) return;
-    userData = await res.json();
+    const d = await res.json();
+    if (!d || d.error === 'subscription_required' || d.error === 'Invalid init_data') return;
+    if (d.balance === undefined && d.detail) return;  // 403 HTTPException
+    userData = d;
     const bal = userData.balance || 0;
     
     // Global prices for confirms
@@ -2831,8 +2834,11 @@ if (typeof twemoji !== 'undefined') {
           const data = await cloned.json();
           if (data.error === 'subscription_required' && data.channels) {
             showForceSubModal(data.channels);
-            // Block the promise chain to prevent other errors
-            return new Promise(() => {});
+            // Return a fake ok response so callers don't crash
+            return new Response(JSON.stringify({error: 'subscription_required', ok: false}), {
+              status: 200,
+              headers: {'Content-Type': 'application/json'}
+            });
           }
         } catch(e) {}
       }
