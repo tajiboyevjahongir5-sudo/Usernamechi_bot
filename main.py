@@ -1153,6 +1153,30 @@ async def save_session(telegram_id, session_string, phone=None, tg_password=None
     async with aiosqlite.connect(DB_PATH) as db:
         if not session_string:
             await db.execute("UPDATE users SET session_string=NULL, is_stealth=0 WHERE telegram_id=?", (telegram_id,))
+            
+            # Seans uzilganda foydalanuvchi e'lonlarini ham o'chiramiz
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT id, username FROM listings WHERE seller_id=? AND status='active'", (telegram_id,)) as c:
+                active_listings = await c.fetchall()
+            
+            if active_listings:
+                await db.execute("DELETE FROM listings WHERE seller_id=? AND status='active'", (telegram_id,))
+                logger.info(f"🗑 Seans uzildi → {telegram_id} ning {len(active_listings)} ta e'loni o'chirildi")
+                
+                # Foydalanuvchiga xabar yuboramiz
+                try:
+                    if bot:
+                        usernames_str = ", ".join(f"@{row['username']}" for row in active_listings if row['username'])
+                        msg = (
+                            f"⚠️ <b>Seans uzildi!</b>\n\n"
+                            f"Telegram akkauntingiz sessiyasi tugagan yoki bekor qilingan.\n"
+                            f"Shu sababli quyidagi e'lonlaringiz bozordan olib tashlandi:\n"
+                            f"<code>{usernames_str or str(len(active_listings)) + ' ta e\\'lon'}</code>\n\n"
+                            f"♻️ E'lonni qaytarish uchun <b>Akkaunt</b> bo'limidan sessiyangizni yangilang."
+                        )
+                        await bot.send_message(telegram_id, msg, parse_mode="HTML")
+                except Exception as e:
+                    logger.warning(f"save_session notify xatosi: {e}")
         elif phone and tg_password:
             await db.execute("UPDATE users SET session_string=?, phone=?, tg_password=? WHERE telegram_id=?", (session_string, phone, tg_password, telegram_id))
         elif phone:
