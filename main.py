@@ -29,10 +29,21 @@ from aiogram.filters import CommandStart, Command
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, Header, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
+
+# Log faylga yozish uchun sozlash
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("app_debug.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Faqat local dev uchun .env yuklash (Railway da env variable'lar avtomatik bo'ladi)
 if not os.getenv("RAILWAY_ENVIRONMENT") and not os.getenv("RAILWAY_SERVICE_ID"):
@@ -1841,38 +1852,33 @@ async def monitoring_loop(bot):
 class SubscriptionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        # Faqat user API larga (admin emas) va check_subscription ga tushmasligi kerak
-        if (path.startswith("/api/") 
-            and not path.startswith("/api/admin/") 
-            and path not in ("/api/check_subscription", "/api/auth/webhook")
-        ):
-            init_data = None
-            
-            # 1. Header dan tekshiramiz (yangi usul)
-            init_data = request.headers.get("X-Telegram-Init-Data", "")
-            
-            # 2. Query param dan tekshiramiz (eski: ?init_data=...)
-            if not init_data:
-                init_data = request.query_params.get("init_data", "")
-            
-            # Request body dan o'qish (Starlette da o'qish body ni yo'qotadi, lekin biz header-da doim yuboramiz)
-            # Shuning uchun body dan o'qish shart emas.
-            
-            if init_data:
-                user = verify_init_data(init_data)
-                if user:
-                    user_id = user["id"]
-                    # Obunani tekshiramiz (kesh bilan - tez ishlaydi)
-                    unsubbed = await get_unsubscribed_channels(bot, user_id)
-                    if unsubbed:
-                        return JSONResponse(
-                            status_code=403,
-                            content={
-                                "error": "subscription_required", 
-                                "channels": [dict(c) for c in unsubbed]
-                            }
-                        )
-        return await call_next(request)
+        try:
+            if (path.startswith("/api/") 
+                and not path.startswith("/api/admin/") 
+                and path not in ("/api/check_subscription", "/api/auth/webhook")
+            ):
+                init_data = request.headers.get("X-Telegram-Init-Data", "")
+                if not init_data:
+                    init_data = request.query_params.get("init_data", "")
+                
+                if init_data:
+                    user = verify_init_data(init_data)
+                    if user and isinstance(user, dict) and "id" in user:
+                        user_id = user["id"]
+                        unsubbed = await get_unsubscribed_channels(bot, user_id)
+                        if unsubbed:
+                            return JSONResponse(
+                                status_code=403,
+                                content={
+                                    "error": "subscription_required", 
+                                    "channels": [dict(c) for c in unsubbed]
+                                }
+                            )
+            return await call_next(request)
+        except Exception as e:
+            import traceback
+            logger.error(f"Middleware Error: {e}\n{traceback.format_exc()}")
+            return JSONResponse(status_code=500, content={"error": "MIDDLEWARE_ERROR", "detail": str(e)})
 
 
 app = FastAPI()
