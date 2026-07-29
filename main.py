@@ -58,6 +58,9 @@ ADMIN_IDS     = [int(x) for x in os.getenv("ADMIN_IDS", "0").split(",") if x.str
 DB_PATH       = os.getenv("DB_PATH", "/app/data/usernamechi.db")
 WEB_URL       = os.getenv("WEB_HOST", "https://your-app.railway.app")
 
+# Global bot instance - API endpointlardan foydalanish uchun
+bot: Bot = None
+
 import sys
 logging.basicConfig(
     level=logging.INFO, 
@@ -4047,6 +4050,7 @@ class AntiSpamMiddleware(BaseMiddleware):
 async def main():
     import signal
 
+    global bot
     await init_db()
     bot = Bot(token=BOT_TOKEN)
     dp  = Dispatcher()
