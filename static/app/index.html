@@ -2256,9 +2256,12 @@ async function loadMonitors(isLoadMore = false) {
     };
     
     const html = d.tasks.map(t => `
-      <div style="padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
-        <div style="font-weight:600;">@${t.username}</div>
-        <div style="font-size:12px;">${stMap[t.status] || t.status}</div>
+      <div style="padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div>
+          <div style="font-weight:600;">@${t.username}</div>
+          <div style="font-size:12px;">${stMap[t.status] || t.status}</div>
+        </div>
+        <button onclick="deleteMonitorTask(${t.id}, '${t.username}')" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#ef4444; border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer;">🗑</button>
       </div>
     `).join('');
     
@@ -2271,6 +2274,26 @@ async function loadMonitors(isLoadMore = false) {
     monitorOffset += d.tasks.length;
   } catch(e) {}
   monitorLoading = false;
+}
+
+async function deleteMonitorTask(taskId, username) {
+  if (!confirm(`@${username} nishondan olib tashlansinmi? (Pul qaytarilmaydi)`)) return;
+  try {
+    const res = await fetch(`${API}/api/monitor/delete`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({init_data: tg.initData, task_id: taskId})
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`@${username} nishondan o'chirildi`, 'success');
+      await loadMonitors();
+    } else {
+      showToast(d.error || 'Xatolik', 'error');
+    }
+  } catch(e) {
+    showToast('Tarmoq xatosi', 'error');
+  }
 }
 
 // ── INTERACTIVE SEARCH & BUY ──────────────────

@@ -498,6 +498,26 @@ body::before {
     </div>
   </div>
 
+  <!-- LISTINGS PAGE -->
+  <div class="page" id="page-listings">
+    <div class="glass-panel">
+      <div class="panel-header">
+        <div class="panel-title">🏪 Bozor E'lonlari</div>
+        <span class="status-chip chip-purple" id="listings-total-chip">0 ta</span>
+      </div>
+      <div style="margin-bottom:16px; display:flex; gap:10px; flex-wrap:wrap;">
+        <input type="text" id="listings-search" class="form-input" placeholder="Username yoki user ID qidirish..." style="flex:1; min-width:200px;" oninput="loadAdminListings()">
+        <select id="listings-status-filter" class="form-input" style="width:140px;" onchange="loadAdminListings()">
+          <option value="">Barchasi</option>
+          <option value="active">Aktiv</option>
+          <option value="sold">Sotilgan</option>
+          <option value="cancelled">Bekor</option>
+        </select>
+      </div>
+      <div id="list-listings"><div style="text-align:center;padding:30px;color:var(--text-muted);">Yuklanmoqda...</div></div>
+    </div>
+  </div>
+
   <!-- WITHDRAWALS PAGE -->
   <div class="page" id="page-withdrawals">
     <div class="glass-panel">
@@ -640,6 +660,10 @@ body::before {
   <button class="nav-item" onclick="switchTab('orders', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
     Orderlar
+  </button>
+  <button class="nav-item" onclick="switchTab('listings', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    E'lonlar
   </button>
   <button class="nav-item" onclick="switchTab('withdrawals', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
@@ -842,6 +866,7 @@ function switchTab(tabId, btn) {
   if (tabId === 'payments') loadPayments();
   if (tabId === 'users') loadUsers();
   if (tabId === 'orders') loadOrders();
+  if (tabId === 'listings') loadAdminListings();
   if (tabId === 'withdrawals') loadWithdrawals();
   if (tabId === 'settings') loadSettings();
 }
@@ -1260,6 +1285,49 @@ async function loadOrders() {
 }
 
 /* WITHDRAWALS */
+async function loadAdminListings() {
+  const search = (document.getElementById('listings-search')?.value || '').trim();
+  const status = document.getElementById('listings-status-filter')?.value || '';
+  try {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    const res = await fetch(`/api/admin/listings?${params}`, { headers: headers() });
+    const d = await res.json();
+    const el = document.getElementById('list-listings');
+    const chip = document.getElementById('listings-total-chip');
+    if (!d.ok || !d.listings || !d.listings.length) {
+      el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);">E\'lonlar topilmadi</div>';
+      if (chip) chip.textContent = '0 ta';
+      return;
+    }
+    if (chip) chip.textContent = `${d.listings.length} ta`;
+    const stColors = { active: '#10b981', sold: '#8b5cf6', cancelled: '#ef4444' };
+    const stLabels = { active: 'Aktiv', sold: 'Sotilgan', cancelled: 'Bekor' };
+    el.innerHTML = d.listings.map(l => `
+      <div style="padding:12px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <div>
+          <div style="font-weight:700;">@${l.username || '—'}</div>
+          <div style="font-size:12px; color:var(--text-muted);">ID: ${l.seller_id} &nbsp;|&nbsp; ${(l.price||0).toLocaleString()} so'm &nbsp;|&nbsp; <span style="color:${stColors[l.status]||'#ccc'}">${stLabels[l.status]||l.status}</span></div>
+        </div>
+        <button onclick="deleteAdminListing(${l.id}, '${l.username}')" style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.4); color:#ef4444; padding:6px 14px; border-radius:8px; cursor:pointer; font-size:12px; white-space:nowrap;">🗑 O'chir</button>
+      </div>
+    `).join('');
+  } catch(e) { document.getElementById('list-listings').innerHTML = '<div style="color:red;padding:20px;">Xato: ' + e + '</div>'; }
+}
+
+async function deleteAdminListing(id, username) {
+  if (!confirm(`@${username} e'lonini o'chirishni tasdiqlang?`)) return;
+  try {
+    const res = await fetch(`/api/admin/listings/${id}`, { method: 'DELETE', headers: headers() });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`@${username} e'loni o'chirildi`, 'success');
+      loadAdminListings();
+    } else { showToast(d.error || 'Xato', 'error'); }
+  } catch(e) { showToast('Tarmoq xatosi', 'error'); }
+}
+
 async function loadWithdrawals() {
   try {
     const res = await fetch('/api/admin/withdrawals', { headers: headers() });

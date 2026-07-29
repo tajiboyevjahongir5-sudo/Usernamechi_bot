@@ -3208,6 +3208,55 @@ async def api_monitor_list(init_data: str = "", offset: int = 0, limit: int = 10
             
     return {"ok": True, "tasks": tasks, "total_count": total_count}
 
+@app.post("/api/monitor/delete")
+async def api_monitor_delete(request: Request):
+    data = await request.json()
+    user = verify_init_data(data.get('init_data',''))
+    if not user: raise HTTPException(403)
+    tid = user['id']
+    task_id = data.get('task_id')
+    if not task_id:
+        return {"ok": False, "error": "Task ID kiritilmadi"}
+        
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM monitoring_tasks WHERE id=? AND telegram_id=?", (task_id, tid))
+        await db.commit()
+    return {"ok": True}
+
+@app.get("/api/admin/listings")
+async def admin_listings_get(x_admin_token: str = Header(default=""), search: str = "", status: str = ""):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    
+    query = "SELECT * FROM listings WHERE 1=1"
+    params = []
+    if status:
+        query += " AND status=?"
+        params.append(status)
+    if search:
+        query += " AND (username LIKE ? OR seller_id LIKE ?)"
+        params.append(f"%{search}%")
+        params.append(f"%{search}%")
+    query += " ORDER BY id DESC LIMIT 200"
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(query, params) as c:
+            listings = [dict(r) for r in await c.fetchall()]
+    return {"ok": True, "listings": listings}
+
+@app.delete("/api/admin/listings/{listing_id}")
+async def admin_listing_delete(listing_id: int, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM listings WHERE id=?", (listing_id,))
+        await db.commit()
+    return {"ok": True}
+
 @app.post("/api/search/start")
 async def api_search_start(request: Request):
     data = await request.json()
