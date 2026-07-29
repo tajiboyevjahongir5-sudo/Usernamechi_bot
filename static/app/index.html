@@ -918,6 +918,7 @@
     <div id="monitor-list">
       <div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">📭 Hozircha nishonlar yo'q</div>
     </div>
+    <div id="monitor-sentinel" style="height:1px;"></div>
   </div>
 </div>
 
@@ -2211,6 +2212,21 @@ let monitorOffset = 0;
 let monitorLoading = false;
 let monitorHasMore = true;
 
+// Monitor uchun IntersectionObserver bilan cheksiz scroll
+let monitorObserver = null;
+function setupMonitorObserver() {
+  if (monitorObserver) monitorObserver.disconnect();
+  const sentinel = document.getElementById('monitor-sentinel');
+  if (!sentinel) return;
+  monitorObserver = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && !monitorLoading && monitorHasMore) {
+      loadMonitors(true);
+    }
+  }, { threshold: 0.1 });
+  monitorObserver.observe(sentinel);
+}
+
+// Eski window scroll (zaxira sifatida saqlab qolamiz)
 window.addEventListener('scroll', () => {
   if (document.getElementById('page-monitor').classList.contains('active')) {
     if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
@@ -2272,7 +2288,11 @@ async function loadMonitors(isLoadMore = false) {
     }
     
     monitorOffset += d.tasks.length;
-  } catch(e) {}
+    
+    // IntersectionObserver ni qayta ulash (har render da)
+    setupMonitorObserver();
+    
+  } catch(e) { console.error('loadMonitors error:', e); }
   monitorLoading = false;
 }
 
