@@ -1387,6 +1387,7 @@ async function loadUserData() {
     if (!res.ok) return;
     const d = await res.json();
     if (!d || d.error === 'subscription_required' || d.error === 'Invalid init_data') return;
+    if (d.error) { alert("XATOLIK: " + d.error); return; }
     if (d.balance === undefined && d.detail) return;  // 403 HTTPException
     userData = d;
     const bal = userData.balance || 0;
