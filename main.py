@@ -31,6 +31,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, UploadFile, File, Form, Header, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 
 load_dotenv()
@@ -1831,20 +1832,45 @@ async def monitoring_loop(bot):
 
 # ─── FASTAPI APP ──────────────────────────────
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import JSONResponse
-
 class SubscriptionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        # Faqat user apilarga (admin emas) va check_subscription ga tushmasligi kerak
-        if path.startswith("/api/") and not path.startswith("/api/admin/") and path != "/api/check_subscription" and path != "/api/auth/webhook":
+        # Faqat user API larga (admin emas) va check_subscription ga tushmasligi kerak
+        if (path.startswith("/api/") 
+            and not path.startswith("/api/admin/") 
+            and path not in ("/api/check_subscription", "/api/auth/webhook")
+        ):
+            init_data = None
+            
+            # 1. Header dan tekshiramiz (yangi usul)
             init_data = request.headers.get("X-Telegram-Init-Data", "")
+            
+            # 2. Query param dan tekshiramiz (eski: ?init_data=...)
+            if not init_data:
+                init_data = request.query_params.get("init_data", "")
+            
+            # 3. Request body dan tekshiramiz (POST JSON: {"init_data": "..."})
+            if not init_data:
+                content_type = request.headers.get("content-type", "")
+                if "application/json" in content_type:
+                    try:
+                        body_bytes = await request.body()
+                        if body_bytes:
+                            import json as _json
+                            body_json = _json.loads(body_bytes)
+                            init_data = body_json.get("init_data", "")
+                            # Body o'qildi, qayta o'qilishi uchun saqlaymiz
+                            async def receive():
+                                return {"type": "http.request", "body": body_bytes}
+                            request._receive = receive
+                    except:
+                        pass
+            
             if init_data:
                 user = verify_init_data(init_data)
                 if user:
                     user_id = user["id"]
-                    # Obunani tekshiramiz
+                    # Obunani tekshiramiz (kesh bilan - tez ishlaydi)
                     unsubbed = await get_unsubscribed_channels(bot, user_id)
                     if unsubbed:
                         return JSONResponse(
@@ -1855,6 +1881,7 @@ class SubscriptionMiddleware(BaseHTTPMiddleware):
                             }
                         )
         return await call_next(request)
+
 
 app = FastAPI()
 app.add_middleware(SubscriptionMiddleware)

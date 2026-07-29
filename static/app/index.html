@@ -1326,10 +1326,20 @@ async function init() {
   if (tgUser) {
     document.getElementById('user-name').textContent = tgUser.first_name || 'Foydalanuvchi';
   }
+
+  // ── MAJBURIY OBUNA TEKSHIRUVI (ilova ochilganda birinchi navbatda) ──
+  const subOk = await checkSubscriptionOnStart();
+  if (!subOk) {
+    // Obuna bo'lmagan - faqat modal ko'rinadi, boshqa hech narsa yuklanmaydi
+    return;
+  }
+  // ── Obuna tasdiqlandi - ilovani to'liq yuklaymiz ──
+
   await loadUserData();
   await loadOrders();
   loadCardNumber();
   
+
   // Telegram Start Param (Direct Deep Linking: listing_123, market_123, market)
   const startParam = tg.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('tgWebAppStartParam') || '';
   if (startParam) {
@@ -2758,7 +2768,6 @@ function copyEscrowLink(id, username) {
   });
 }
 
-init();
 
 // Twemoji — barcha emoji'larni yuqori sifatli vektor SVG rasmga aylantiradi (100% har qanday qurilmada ishlaydi)
 if (typeof twemoji !== 'undefined') {
@@ -2769,8 +2778,34 @@ if (typeof twemoji !== 'undefined') {
   });
 }
 
+    // --- SUBSCRIPTION CHECK ON APP START ---
+    async function checkSubscriptionOnStart() {
+      // Agar majburiy kanallar bo'lmasa, to'g'ridan-to'g'ri o'tamiz
+      if (!tg.initData) return true;
+      try {
+        const res = await window._rawFetch(`${API}/api/check_subscription`, {
+          method: 'GET',
+          headers: { 'X-Telegram-Init-Data': tg.initData }
+        });
+        const data = await res.json();
+        if (data.ok) {
+          return true;  // Obunadan o'tdi
+        } else {
+          // Obuna bo'lmagan - modalni ko'rsatamiz
+          if (data.channels && data.channels.length > 0) {
+            showForceSubModal(data.channels);
+          }
+          return false;  // To'xtatamiz
+        }
+      } catch(e) {
+        // Tarmoq xatoligi yoki kanallar yo'q - ilovani ochamiz
+        return true;
+      }
+    }
+
     // --- GLOBAL FETCH INTERCEPTOR FOR FORCE SUBSCRIPTION ---
-    const originalFetch = window.fetch;
+    window._rawFetch = window.fetch;  // originalFetch saqlab qo'yamiz
+    const originalFetch = window._rawFetch;
     window.fetch = async function() {
       let [resource, config] = arguments;
       if (!config) config = {};
@@ -2829,16 +2864,17 @@ if (typeof twemoji !== 'undefined') {
         });
         const data = await res.json();
         if (data.ok) {
-          // Success! Hide modal and reload the current app logic
+          // Muvaffaqiyat! Modalni yashiramiz va ilovani to'liq yuklaymiz
           const overlay = document.getElementById('force-sub-overlay');
           overlay.classList.remove('show');
-          setTimeout(() => {
-            overlay.style.display = 'none';
-            // Reload user data or page smoothly
-            if (typeof loadUserData === 'function') loadUserData();
-            else window.location.reload();
-          }, 300);
           if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+          setTimeout(async () => {
+            overlay.style.display = 'none';
+            // Ilovani to'liq qayta yuklaymiz (init() ni chaqiramiz)
+            await loadUserData();
+            await loadOrders();
+            loadCardNumber();
+          }, 300);
         } else {
           // Update channels list
           if (data.channels) showForceSubModal(data.channels);
@@ -2852,6 +2888,9 @@ if (typeof twemoji !== 'undefined') {
         loader.style.display = 'none';
       }
     }
+
+    // Barcha setup (interceptor + modallar) tayyor bo'lgach ilovani ishga tushiramiz
+    init();
 
 </script>
 </body>
