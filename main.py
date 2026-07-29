@@ -1971,9 +1971,15 @@ async def debug_db(tid: int = None, test_init_data: str = None):
         }
     except Exception as e:
         return {"error": str(e), "DB_PATH": DB_PATH}
-        return HTMLResponse(content=f.read(), headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
-        })
+
+@app.get("/logs")
+async def get_logs():
+    import os
+    if os.path.exists("/app/data/app_debug.log"):
+        with open("/app/data/app_debug.log", "r", encoding="utf-8") as f:
+            return HTMLResponse(f"<pre>{f.read()}</pre>")
+    return HTMLResponse("No logs found.")
+
 
 # ── Mini App API ───────────────────────────────
 
