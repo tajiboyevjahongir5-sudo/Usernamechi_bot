@@ -2007,42 +2007,51 @@ async def process_referral_reward(user_id: int):
 
 @app.get("/api/user")
 async def api_user(init_data: str = ""):
-    user = verify_init_data(init_data)
-    if not user:
-        raise HTTPException(403, "Invalid init_data")
-    tid = user['id']
-    await create_or_update_user(user)
-    row = await get_user(tid)
-    
-    # Count stats
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT COUNT(*) FROM orders WHERE telegram_id=?", (tid,)) as c:
-            total_orders = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM registered_usernames ru JOIN orders o ON ru.order_id=o.id WHERE o.telegram_id=?", (tid,)) as c:
-            total_usernames = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (tid,)) as c:
-            referral_count = (await c.fetchone())[0]
-            
-    bot_username = (await Bot(token=BOT_TOKEN).get_me()).username
-    ref_link = f"https://t.me/{bot_username}?start=ref_{tid}"
-    
-    premium_price = int(await get_setting("premium_price", 20000))
-    monitor_price = int(await get_setting("monitor_price", 10000))
-    listing_price = int(await get_setting("listing_price", 1000))
-    
-    return {"balance": row["balance"] if row else 0, 
-            "seller_balance": row.get("seller_balance", 0) if row else 0,
-            "free_searches": row.get("free_searches", 1) if row else 1,
-            "session_string": bool(row["session_string"]) if row else False,
-            "first_name": row.get("first_name", "") if row else "",
-            "is_premium": row.get("is_premium", 0) if row else 0,
-            "premium_until": row.get("premium_until", "") if row else "",
-            "total_orders": total_orders, "total_usernames": total_usernames,
-            "referral_count": referral_count,
-            "ref_link": ref_link,
-            "premium_price": premium_price,
-            "monitor_price": monitor_price,
-            "listing_price": listing_price}
+    try:
+        user = verify_init_data(init_data)
+        if not user:
+            raise HTTPException(403, "Invalid init_data")
+        tid = user['id']
+        await create_or_update_user(user)
+        row = await get_user(tid)
+        
+        # Count stats
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM orders WHERE telegram_id=?", (tid,)) as c:
+                total_orders = (await c.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM registered_usernames ru JOIN orders o ON ru.order_id=o.id WHERE o.telegram_id=?", (tid,)) as c:
+                total_usernames = (await c.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (tid,)) as c:
+                referral_count = (await c.fetchone())[0]
+                
+        bot_instance = Bot(token=BOT_TOKEN)
+        bot_me = await bot_instance.get_me()
+        bot_username = bot_me.username
+        await bot_instance.session.close()
+        
+        ref_link = f"https://t.me/{bot_username}?start=ref_{tid}"
+        
+        premium_price = int(await get_setting("premium_price", 20000))
+        monitor_price = int(await get_setting("monitor_price", 10000))
+        listing_price = int(await get_setting("listing_price", 1000))
+        
+        return {"balance": row["balance"] if row else 0, 
+                "seller_balance": row.get("seller_balance", 0) if row else 0,
+                "free_searches": row.get("free_searches", 1) if row else 1,
+                "session_string": bool(row["session_string"]) if row else False,
+                "first_name": row.get("first_name", "") if row else "",
+                "is_premium": row.get("is_premium", 0) if row else 0,
+                "premium_until": row.get("premium_until", "") if row else "",
+                "total_orders": total_orders, "total_usernames": total_usernames,
+                "referral_count": referral_count,
+                "ref_link": ref_link,
+                "premium_price": premium_price,
+                "monitor_price": monitor_price,
+                "listing_price": listing_price}
+    except Exception as e:
+        import traceback
+        return {"error": f"API_USER_ERROR: {str(e)}\n{traceback.format_exc()}"}
+
 
 @app.post("/api/account/set_username")
 async def api_account_set_username(request: Request):
