@@ -1973,12 +1973,17 @@ async def debug_db(tid: int = None, test_init_data: str = None):
         return {"error": str(e), "DB_PATH": DB_PATH}
 
 @app.get("/logs")
-async def get_logs():
+async def get_logs(request: Request):
     import os
+    logs = "No file logs found."
     if os.path.exists("/app/data/app_debug.log"):
         with open("/app/data/app_debug.log", "r", encoding="utf-8") as f:
-            return HTMLResponse(f"<pre>{f.read()}</pre>")
-    return HTMLResponse("No logs found.")
+            logs = f.read()
+    
+    headers_str = "\n".join(f"{k}: {v}" for k, v in request.headers.items())
+    
+    html = f"<h3>File Logs:</h3><pre>{logs}</pre><h3>Request Headers:</h3><pre>{headers_str}</pre>"
+    return HTMLResponse(html)
 
 
 # ── Mini App API ───────────────────────────────
@@ -1986,6 +1991,10 @@ async def get_logs():
 @app.get("/api/check_subscription")
 async def api_check_subscription(request: Request):
     init_data = request.headers.get("X-Telegram-Init-Data", "")
+    try:
+        with open("/app/data/app_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"\n[CHECK_SUB] INIT_DATA length: {len(init_data)}\n")
+    except: pass
     if not init_data: raise HTTPException(403)
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
