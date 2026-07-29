@@ -362,6 +362,22 @@ async def init_db():
             await db.commit()
         except Exception:
             pass  # Ustun allaqachon mavjud
+
+        # referrer_id migration (users jadvaliga)
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER DEFAULT 0")
+            await db.commit()
+            logger.info("✅ users.referrer_id ustuni qo'shildi")
+        except Exception:
+            pass  # Allaqachon mavjud
+
+        # reward_given migration (users jadvaliga)
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN reward_given INTEGER DEFAULT 0")
+            await db.commit()
+        except Exception:
+            pass
+
     logger.info("✅ Baza tayyor")
 
 async def get_setting(key, default=None):
@@ -1788,6 +1804,7 @@ async def monitoring_loop(bot):
     hdr_idx = 0
     global_429_count = 0          # t.me dan 429 hisoblagich
     claiming_now: set = set()     # Hozir band qilinayotgan username'lar (ikkilamchi urinishdan saqlash)
+    session_floodwait: dict = {}  # {session_string_hash: until_timestamp} — bloklangan sessiyalar
 
     async def _claim_username(task_group, uname, http_session):
         """Username bo'shagan — darhol band qilishga urinamiz (alohida task)."""
@@ -1821,7 +1838,17 @@ async def monitoring_loop(bot):
                     break
                 if not task["session_string"]:
                     continue
-                
+
+                # FloodWait tekshiruv — bloklangan sessiyani o'tkazib yuboramiz
+                sess_key = str(hash(task["session_string"]))
+                fw_until = session_floodwait.get(sess_key, 0)
+                if fw_until > time.time():
+                    remaining = int(fw_until - time.time())
+                    logger.debug(f"⏭ Sessiya FloodWait ({remaining}s qoldi), o'tkazib yuborildi")
+                    continue
+                elif sess_key in session_floodwait:
+                    del session_floodwait[sess_key]  # FloodWait tugagan — tozalaymiz
+
                 ch = None
                 client = None
                 success = False
@@ -1879,9 +1906,11 @@ async def monitoring_loop(bot):
                         break  # Birinchi muvaffaqiyatdan keyin to'xtatamiz
 
                 except FloodWaitError as e:
-                    logger.warning(f"FloodWait {e.seconds}s (@{uname})")
-                    await asyncio.sleep(e.seconds)
-                    continue  # Keyingi foydalanuvchi sessiyasi bilan urinib ko'ramiz
+                    sess_key = str(hash(task["session_string"]))
+                    fw_until_ts = time.time() + e.seconds
+                    session_floodwait[sess_key] = fw_until_ts
+                    logger.warning(f"⛔ FloodWait {e.seconds}s (@{uname}) — sessiya {e.seconds}s ga bloklandi, keyingi sessiyaga o'tamiz")
+                    continue  # BU SESSIYANI O'TKAZIB YUBORAMIZ — boshqasini sinab ko'ramiz
 
                 except Exception as e:
                     logger.warning(f"Claim xato (@{uname}): {e}")
