@@ -67,7 +67,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id INTEGER UNIQUE,
-                balance INTEGER DEFAULT 0,
+                balance INTEGER DEFAULT 5000,
                 session_string TEXT,
                 free_searches INTEGER DEFAULT 1
             )
@@ -281,6 +281,10 @@ async def init_db():
         try: await db.execute("ALTER TABLE users ADD COLUMN subscription_verified INTEGER DEFAULT 0")
         except: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN reward_given INTEGER DEFAULT 0")
+        except: pass
+        
+        # Balansi 0 bo'lgan foydalanuvchilarga boshlang'ich 5000 so'm berish (tiklash)
+        try: await db.execute("UPDATE users SET balance=5000 WHERE balance=0 OR balance IS NULL")
         except: pass
         
         # Sozlamalarni kiritish
