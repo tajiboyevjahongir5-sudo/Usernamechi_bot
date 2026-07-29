@@ -1167,11 +1167,12 @@ async def save_session(telegram_id, session_string, phone=None, tg_password=None
                 try:
                     if bot:
                         usernames_str = ", ".join(f"@{row['username']}" for row in active_listings if row['username'])
+                        count_text = f"{len(active_listings)} ta elon"
                         msg = (
                             f"⚠️ <b>Seans uzildi!</b>\n\n"
                             f"Telegram akkauntingiz sessiyasi tugagan yoki bekor qilingan.\n"
                             f"Shu sababli quyidagi e'lonlaringiz bozordan olib tashlandi:\n"
-                            f"<code>{usernames_str or str(len(active_listings)) + ' ta e\\'lon'}</code>\n\n"
+                            f"<code>{usernames_str or count_text}</code>\n\n"
                             f"♻️ E'lonni qaytarish uchun <b>Akkaunt</b> bo'limidan sessiyangizni yangilang."
                         )
                         await bot.send_message(telegram_id, msg, parse_mode="HTML")
