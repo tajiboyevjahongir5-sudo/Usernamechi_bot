@@ -2009,11 +2009,26 @@ async def process_referral_reward(user_id: int):
 async def api_user(init_data: str = ""):
     try:
         user = verify_init_data(init_data)
+        
+        # DEBUG LOGGING (vaqtinchalik)
+        import datetime
+        try:
+            with open("/app/data/debug_api.txt", "a", encoding="utf-8") as f:
+                f.write(f"\n--- {datetime.datetime.now()} ---\n")
+                f.write(f"INIT_DATA: {init_data}\n")
+                f.write(f"USER_VERIFIED: {user}\n")
+        except: pass
+        
         if not user:
             raise HTTPException(403, "Invalid init_data")
         tid = user['id']
         await create_or_update_user(user)
         row = await get_user(tid)
+        
+        try:
+            with open("/app/data/debug_api.txt", "a", encoding="utf-8") as f:
+                f.write(f"USER_ROW_FROM_DB: {dict(row) if row else None}\n")
+        except: pass
         
         # Count stats
         async with aiosqlite.connect(DB_PATH) as db:
