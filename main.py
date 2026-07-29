@@ -1841,9 +1841,9 @@ async def monitoring_loop(bot):
                     except Exception as ue:
                         err_u = str(ue).lower()
                         if "username_occupied" in err_u:
-                            pass  # Boshqa birov oldi
+                            pass  # Boshqa birov oldi — kanal o'chiriladi, hammani to'xtatamiz
                         elif "ChannelsAdminPublicTooMuchError" in str(type(ue)):
-                            # Limit tugagan — foydalanuvchiga xabar
+                            # Bu foydalanuvchining limiti tugagan — keyingi sessiyaga o'tamiz
                             async with aiosqlite.connect(DB_PATH) as db:
                                 await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
                                 await db.commit()
@@ -1851,10 +1851,12 @@ async def monitoring_loop(bot):
                                 await bot.send_message(task["telegram_id"],
                                     f"❌ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
                             except Exception: pass
+                            # Keyingi foydalanuvchi sessiyasi bilan urinib ko'ramiz
+                            continue
                         else:
                             logger.warning(f"UpdateUsername xato (@{uname}): {ue}")
-                        # Har qanday holatda kanalchani o'chiramiz
-                        return
+                            # Keyingi foydalanuvchi sessiyasi bilan urinib ko'ramiz
+                            continue
 
                     if success:
                         # Muvaffaqiyatli band qilindi!
