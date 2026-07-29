@@ -893,8 +893,8 @@
     </div>
 
     <div class="form-group">
-      <label>USERNAME (@ belgisisiz)</label>
-      <input type="text" id="monitor-username" placeholder="super_biznes">
+      <label>USERNAME (@ belgisisiz yoki vergul bilan ajrating)</label>
+      <textarea id="monitor-username" placeholder="sinov, bugun, jinnilar" rows="3" style="width:100%; padding:14px; border-radius:12px; border:2px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.3); color:#fff; font-family:inherit; resize:none; font-size:15px; outline:none; transition:all 0.2s;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='rgba(255,255,255,0.05)'"></textarea>
     </div>
 
     <button class="btn btn-primary" onclick="startMonitor()">
@@ -2191,12 +2191,6 @@ async function startMonitor() {
   if (!username) { showToast('Username kiriting!','error'); return; }
   if (!userData.session_string) { showToast('Avval akkauntni ulang!','error'); goPage('account'); return; }
   
-  const monitorPrice = window.APP_PRICES ? window.APP_PRICES.monitor : 10000;
-  if ((userData.balance||0) < monitorPrice) {
-    showToast(`Balans yetarli emas (${monitorPrice.toLocaleString()} UZS)`,'error');
-    return;
-  }
-  
   try {
     const res = await fetch(`${API}/api/monitor/start`, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -2204,7 +2198,8 @@ async function startMonitor() {
     });
     const d = await res.json();
     if (d.ok) {
-      showToast('✅ Kuzatuv boshlandi!','success');
+      // Backend qaytargan xabarni ko'rsatamiz
+      showToast(d.message || '✅ Kuzatuv boshlandi!','success');
       document.getElementById('monitor-username').value = '';
       await loadUserData();
       await loadMonitors();

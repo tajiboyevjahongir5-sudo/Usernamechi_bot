@@ -3031,29 +3031,61 @@ async def api_monitor_start(request: Request):
     user = verify_init_data(data.get('init_data',''))
     if not user: raise HTTPException(403)
     tid = user['id']
-    username = data.get('username','').strip().replace('@', '').lower()
+    usernames_str = data.get('username','').strip()
     
-    if not username or len(username) < 5:
-        return {"ok": False, "error": "Noto'g'ri username"}
+    if not usernames_str:
+        return {"ok": False, "error": "Username kiritilmadi"}
         
     row = await get_user(tid)
-    if not row or not row['session_string']:
+    if not row or not row.get('session_string'):
         return {"ok": False, "error": "Akkaunt ulanmagan"}
         
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT id FROM monitoring_tasks WHERE telegram_id=? AND username=? AND status='monitoring'", (tid, username)) as c:
-            if await c.fetchone():
-                return {"ok": False, "error": f"@{username} allaqachon nishonga qo'shilgan!"}
-
-    price = int(await get_setting("monitor_price", 10000)) # Kafolat puli (monitor qilish uchun)
-    if (row['balance'] or 0) < price:
-        return {"ok": False, "error": f"Balans yetarli emas (Kerak: {price:,} so'm)"}
+    # Split string by commas, newlines, or spaces
+    import re
+    raw_list = re.split(r'[,\n\s]+', usernames_str)
+    valid_usernames = set()
+    for u in raw_list:
+        u = u.replace('@', '').strip().lower()
+        # Basic validation for username length
+        if len(u) >= 4:
+            valid_usernames.add(u)
+            
+    if not valid_usernames:
+        return {"ok": False, "error": "Kiritilgan matnda haqiqiy username'lar topilmadi (kamida 4 ta harf bo'lishi kerak)"}
         
-    await deduct_balance(tid, price)
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT INTO monitoring_tasks (telegram_id, username) VALUES (?,?)", (tid, username))
+        # Check existing targets for this user
+        existing_targets = set()
+        for u in valid_usernames:
+            async with db.execute("SELECT id FROM monitoring_tasks WHERE telegram_id=? AND username=? AND status='monitoring'", (tid, u)) as c:
+                if await c.fetchone():
+                    existing_targets.add(u)
+                    
+        new_targets = valid_usernames - existing_targets
+        
+        if not new_targets:
+            return {"ok": False, "error": "Kiritilgan barcha username'lar allaqachon nishonga qo'shilgan!"}
+
+        price_per_item = int(await get_setting("monitor_price", 10000)) # Kafolat puli (monitor qilish uchun)
+        total_price = price_per_item * len(new_targets)
+        
+        if (row['balance'] or 0) < total_price:
+            return {"ok": False, "error": f"Balans yetarli emas (Kerak: {total_price:,} so'm, Mavjud: {row['balance'] or 0:,})"}
+            
+        # Deduct balance
+        await db.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (total_price, tid))
+        
+        # Insert all new targets
+        for u in new_targets:
+            await db.execute("INSERT INTO monitoring_tasks (telegram_id, username) VALUES (?,?)", (tid, u))
         await db.commit()
-    return {"ok": True}
+        
+    added_count = len(new_targets)
+    msg = f"✅ {added_count} ta username nishonga olindi (-{total_price:,} so'm)!"
+    if existing_targets:
+        msg += f" (Qolgan {len(existing_targets)} tasi allaqachon qo'shilgan)"
+        
+    return {"ok": True, "message": msg}
 
 @app.get("/api/monitor/list")
 async def api_monitor_list(init_data: str = ""):
