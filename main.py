@@ -1922,7 +1922,7 @@ async def admin_panel():
         })
 
 @app.get("/debug_db")
-async def debug_db(tid: int = None):
+async def debug_db(tid: int = None, test_init_data: str = None):
     try:
         import os
         async with aiosqlite.connect(DB_PATH) as db:
@@ -1939,13 +1939,20 @@ async def debug_db(tid: int = None):
                 async with db.execute("SELECT * FROM users WHERE telegram_id=?", (tid,)) as c:
                     u_row = await c.fetchone()
                     if u_row: user_info = dict(u_row)
+                    
+            init_data_result = None
+            if test_init_data:
+                init_data_result = verify_init_data(test_init_data)
 
         return {
             "DB_PATH": DB_PATH,
             "is_file_exists": os.path.exists(DB_PATH),
             "users_count": users_count,
             "orders_count": orders_count,
-            "user_info": user_info
+            "user_info": user_info,
+            "bot_token_prefix": BOT_TOKEN[:15] if BOT_TOKEN else None,
+            "init_data_valid": init_data_result is not None,
+            "init_data_parsed": init_data_result
         }
     except Exception as e:
         return {"error": str(e), "DB_PATH": DB_PATH}
