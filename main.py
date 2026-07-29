@@ -1810,75 +1810,83 @@ async def monitoring_loop(bot):
                 pass  # Ikkinchi tekshiruv xato bo'lsa ham urinib ko'ramiz
 
             # 3-qadam: Har bir foydalanuvchi bilan band qilishga urinamiz
-            # CheckUsernameRequest o'tkazib yuboramiz — to'g'ri CreateChannel ga o'tamiz (1 API call tejash)
             for task in task_group:
                 if not task["session_string"]:
                     continue
+                
                 ch = None
+                client = None
+                success = False
                 try:
                     client = await _get_fast_client(task["session_string"])
+                    
+                    # Avval CheckUsername — kanal ochmasdan tekshiramiz (keraksiz kanal ochishdan saqlanish)
+                    from telethon.tl.functions.account import CheckUsernameRequest
+                    is_free = await client(CheckUsernameRequest(username=uname))
+                    if not is_free:
+                        # Username hali band — boshqa foydalanuvchiga o'tamiz (yoki to'xtatamiz)
+                        break
+                    
+                    # Username bo'sh — kanal ochib username beramiz
                     ch = await client(CreateChannelRequest(
                         title=uname.capitalize(),
                         about="@usernamechi_bot orqali band qilingan",
                         megagroup=False
                     ))
                     ch_id = ch.chats[0].id
-                    await client(UpdateUsernameRequest(channel=ch_id, username=uname))
-
-                    # Muvaffaqiyatli band qilindi!
-                    async with aiosqlite.connect(DB_PATH) as db:
-                        await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
-                        await db.commit()
-
+                    
                     try:
-                        await bot.send_message(
-                            task["telegram_id"],
-                            f"🎯 <b>Nishon olindi!</b>\n\nKutgan usernamengiz bo'shadi va Siz uchun band qilindi: <b>@{uname}</b>",
-                            parse_mode="HTML"
-                        )
-                    except Exception:
-                        pass
-                    # Birinchi muvaffaqiyatli band qilishdan keyin to'xtatamiz
-                    break
+                        await client(UpdateUsernameRequest(channel=ch_id, username=uname))
+                        success = True
+                    except Exception as ue:
+                        err_u = str(ue).lower()
+                        if "username_occupied" in err_u:
+                            pass  # Boshqa birov oldi
+                        elif "ChannelsAdminPublicTooMuchError" in str(type(ue)):
+                            # Limit tugagan — foydalanuvchiga xabar
+                            async with aiosqlite.connect(DB_PATH) as db:
+                                await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
+                                await db.commit()
+                            try:
+                                await bot.send_message(task["telegram_id"],
+                                    f"❌ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim.")
+                            except Exception: pass
+                        else:
+                            logger.warning(f"UpdateUsername xato (@{uname}): {ue}")
+                        # Har qanday holatda kanalchani o'chiramiz
+                        return
 
-                except ChannelsAdminPublicTooMuchError:
-                    if ch:
+                    if success:
+                        # Muvaffaqiyatli band qilindi!
+                        async with aiosqlite.connect(DB_PATH) as db:
+                            await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
+                            await db.commit()
                         try:
-                            client2 = await _get_fast_client(task["session_string"])
-                            await client2(DeleteChannelRequest(channel=ch.chats[0].id))
-                        except Exception:
-                            pass
-                    async with aiosqlite.connect(DB_PATH) as db:
-                        await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
-                        await db.commit()
-                    try:
-                        await bot.send_message(
-                            task["telegram_id"],
-                            f"❌ @{uname} bo'shadi, lekin ommaviy link limiti tugagani uchun ololmadim."
-                        )
-                    except Exception:
-                        pass
-                    # Limit tugagan foydalanuvchidan keyingisiga o'tamiz
-                    continue
+                            await bot.send_message(
+                                task["telegram_id"],
+                                f"🎯 <b>Nishon olindi!</b>\n\nKutgan usernamengiz bo'shadi va Siz uchun band qilindi: <b>@{uname}</b>",
+                                parse_mode="HTML"
+                            )
+                        except Exception: pass
+                        break  # Birinchi muvaffaqiyatdan keyin to'xtatamiz
 
                 except FloodWaitError as e:
                     logger.warning(f"FloodWait {e.seconds}s (@{uname})")
                     await asyncio.sleep(e.seconds)
-                    # FloodWait bo'lsa keyingi foydalanuvchi bilan urinib ko'ramiz
-                    continue
+                    continue  # Keyingi foydalanuvchi sessiyasi bilan urinib ko'ramiz
 
                 except Exception as e:
-                    err = str(e).lower()
-                    # Username kimdir band qilib olganligi — to'xtatamiz
-                    if "username_occupied" in err or "username_invalid" in err:
-                        break
                     logger.warning(f"Claim xato (@{uname}): {e}")
-                    if ch:
+
+                finally:
+                    # KARITANI ALBATTA O'CHIRISH — agar username berilmagan bo'lsa
+                    if ch and not success and client:
                         try:
-                            client3 = await _get_fast_client(task["session_string"])
-                            await client3(DeleteChannelRequest(channel=ch.chats[0].id))
-                        except Exception:
-                            pass
+                            await client(DeleteChannelRequest(channel=ch.chats[0].id))
+                            logger.info(f"🗑 Bo'sh kanal o'chirildi: {uname}")
+                        except Exception as de:
+                            logger.warning(f"Kanal o'chirishda xato ({uname}): {de}")
+
         finally:
             claiming_now.discard(uname)
 
