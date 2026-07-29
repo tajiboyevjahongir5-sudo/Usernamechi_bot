@@ -1919,6 +1919,29 @@ async def admin_panel():
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
         })
 
+@app.get("/debug_db")
+async def debug_db():
+    try:
+        import os
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT count(*) FROM users") as c:
+                row = await c.fetchone()
+                users_count = row[0]
+            async with db.execute("SELECT count(*) FROM orders") as c:
+                row = await c.fetchone()
+                orders_count = row[0]
+        return {
+            "DB_PATH": DB_PATH,
+            "is_file_exists": os.path.exists(DB_PATH),
+            "users_count": users_count,
+            "orders_count": orders_count
+        }
+    except Exception as e:
+        return {"error": str(e), "DB_PATH": DB_PATH}
+        return HTMLResponse(content=f.read(), headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
+        })
+
 # ── Mini App API ───────────────────────────────
 
 @app.get("/api/check_subscription")
