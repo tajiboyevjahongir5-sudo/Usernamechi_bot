@@ -914,7 +914,7 @@
   </div>
 
   <div class="card" style="padding:0;overflow:hidden; margin-top:20px;">
-    <div style="padding:16px 20px 12px;font-size:15px;font-weight:700;">Aktiv nishonlar</div>
+    <div style="padding:16px 20px 12px;font-size:15px;font-weight:700;">Aktiv nishonlar <span id="monitor-count" style="font-size:12px; color:var(--muted); font-weight:normal; margin-left:6px;"></span></div>
     <div id="monitor-list">
       <div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">📭 Hozircha nishonlar yo'q</div>
     </div>
@@ -2207,30 +2207,70 @@ async function startMonitor() {
   } catch(e) { showToast('Tarmoq xatosi','error'); }
 }
 
-async function loadMonitors() {
+let monitorOffset = 0;
+let monitorLoading = false;
+let monitorHasMore = true;
+
+window.addEventListener('scroll', () => {
+  if (document.getElementById('page-monitor').classList.contains('active')) {
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+      if (!monitorLoading && monitorHasMore) {
+        loadMonitors(true);
+      }
+    }
+  }
+});
+
+async function loadMonitors(isLoadMore = false) {
+  if (monitorLoading) return;
+  if (!isLoadMore) {
+    monitorOffset = 0;
+    monitorHasMore = true;
+  }
+  if (!monitorHasMore) return;
+  
+  monitorLoading = true;
   try {
-    const res = await fetch(`${API}/api/monitor/list?init_data=${encodeURIComponent(tg.initData)}`);
+    const res = await fetch(`${API}/api/monitor/list?init_data=${encodeURIComponent(tg.initData)}&offset=${monitorOffset}&limit=100`);
     const d = await res.json();
-    if(!d.ok) return;
+    if(!d.ok) { monitorLoading = false; return; }
+    
+    document.getElementById('monitor-count').textContent = `(${d.total_count} ta)`;
     
     const el = document.getElementById('monitor-list');
-    if (!d.tasks || !d.tasks.length) {
-      el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">📭 Hozircha nishonlar yo'q</div>`;
-    } else {
-      const stMap = {
-        'monitoring': '<span style="color:var(--warning);">🔍 Kuzatilmoqda</span>',
-        'claimed': '<span style="color:var(--success);">✅ Olingan!</span>',
-        'failed_limit': '<span style="color:var(--danger);">❌ Limit tugagan</span>'
-      };
-      
-      el.innerHTML = d.tasks.map(t => `
-        <div style="padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
-          <div style="font-weight:600;">@${t.username}</div>
-          <div style="font-size:12px;">${stMap[t.status] || t.status}</div>
-        </div>
-      `).join('');
+    
+    if (!d.tasks || d.tasks.length < 100) {
+      monitorHasMore = false;
     }
+    
+    if (monitorOffset === 0 && (!d.tasks || d.tasks.length === 0)) {
+      el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">📭 Hozircha nishonlar yo'q</div>`;
+      monitorLoading = false;
+      return;
+    }
+    
+    const stMap = {
+      'monitoring': '<span style="color:var(--warning);">🔍 Kuzatilmoqda</span>',
+      'claimed': '<span style="color:var(--success);">✅ Olingan!</span>',
+      'failed_limit': '<span style="color:var(--danger);">❌ Limit tugagan</span>'
+    };
+    
+    const html = d.tasks.map(t => `
+      <div style="padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-weight:600;">@${t.username}</div>
+        <div style="font-size:12px;">${stMap[t.status] || t.status}</div>
+      </div>
+    `).join('');
+    
+    if (isLoadMore) {
+      el.insertAdjacentHTML('beforeend', html);
+    } else {
+      el.innerHTML = html;
+    }
+    
+    monitorOffset += d.tasks.length;
   } catch(e) {}
+  monitorLoading = false;
 }
 
 // ── INTERACTIVE SEARCH & BUY ──────────────────

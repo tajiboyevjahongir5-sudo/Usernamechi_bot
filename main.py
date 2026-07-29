@@ -3088,15 +3088,23 @@ async def api_monitor_start(request: Request):
     return {"ok": True, "message": msg}
 
 @app.get("/api/monitor/list")
-async def api_monitor_list(init_data: str = ""):
+async def api_monitor_list(init_data: str = "", offset: int = 0, limit: int = 100):
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
     
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM monitoring_tasks WHERE telegram_id=? ORDER BY id DESC", (user['id'],)) as c:
+        
+        # Get total count
+        async with db.execute("SELECT COUNT(*) as count FROM monitoring_tasks WHERE telegram_id=?", (user['id'],)) as c:
+            row = await c.fetchone()
+            total_count = row['count'] if row else 0
+            
+        # Get paginated tasks
+        async with db.execute("SELECT * FROM monitoring_tasks WHERE telegram_id=? ORDER BY id DESC LIMIT ? OFFSET ?", (user['id'], limit, offset)) as c:
             tasks = [dict(r) for r in await c.fetchall()]
-    return {"ok": True, "tasks": tasks}
+            
+    return {"ok": True, "tasks": tasks, "total_count": total_count}
 
 @app.post("/api/search/start")
 async def api_search_start(request: Request):
