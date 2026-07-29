@@ -809,10 +809,9 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         logger.error(f"Transfer error for @{username}: {e}")
         from telethon.errors import AuthKeyUnregisteredError
         if isinstance(e, AuthKeyUnregisteredError) or "unregistered" in str(e).lower():
-            async with aiosqlite.connect(DB_PATH) as db:
                 # E'lonni qayta faol qilish yoki bekor qilish mumkin, lekin hozircha sotuvchi sessiyasi kuygan
-                await db.execute("UPDATE users SET session_string=NULL WHERE telegram_id IN (?, ?)", (seller_id, buyer_id))
-                await db.commit()
+                await save_session(seller_id, None)
+                await save_session(buyer_id, None)
             try:
                 await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik: Telegram akkauntingiz sessiyasi uzilgan! Iltimos, qaytadan ulang.")
                 await bot.send_message(buyer_id, f"❌ @{username} sotib olish bekor qilindi, chunki kimdir profilidan chiqib ketgan. Pulingiz tez orada qaytariladi.")
