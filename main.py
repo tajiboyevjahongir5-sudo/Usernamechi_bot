@@ -1777,6 +1777,7 @@ async def monitoring_loop(bot):
     from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest, DeleteChannelRequest
     from telethon.errors import FloodWaitError
     import aiohttp
+    import random
     
     headers_list = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -1786,6 +1787,8 @@ async def monitoring_loop(bot):
     ]
     
     hdr_idx = 0
+    global_429_count = 0  # Ketma-ket 429 soni — cheklov holatini kuzatish uchun
+    
     while True:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
@@ -1806,21 +1809,46 @@ async def monitoring_loop(bot):
                 uname_map[u_lower].append(t)
 
             hdr_idx = (hdr_idx + 1) % len(headers_list)
-            # Semafordan foydalanib bir vaqtning o'zida 30 ta parallel so'rov ishlatamiz
-            sem = asyncio.Semaphore(30)
+            
+            # 300+ username bo'lsa parallel so'rovlarni kamaytirish — cheklovdan saqlanish uchun
+            total_uniq = len(uname_map)
+            if total_uniq > 200:
+                concurrent = 10   # Ko'p username bo'lsa ehtiyotkor
+            elif total_uniq > 100:
+                concurrent = 15
+            else:
+                concurrent = 25
+            
+            sem = asyncio.Semaphore(concurrent)
 
             async with aiohttp.ClientSession(headers={'User-Agent': headers_list[hdr_idx]}) as http_session:
                 
                 async def check_uname_group(uname_lower, task_group):
+                    nonlocal global_429_count
                     async with sem:
+                        # Agar global 429 cheklovi bo'lsa — kutamiz
+                        if global_429_count > 0:
+                            await asyncio.sleep(min(global_429_count * 2.0, 30.0))
+                        
+                        # Har bir so'rovdan oldin kichik tasodifiy kutish (cheklovdan saqlanish)
+                        await asyncio.sleep(random.uniform(0.05, 0.2))
+                        
                         sample_task = task_group[0]
                         uname = sample_task["username"]
                         try:
                             # 1-qadam: HTTP t.me orqali tezkor va xavfsiz profil bor-yo'qligini tekshiramiz
-                            async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=1.8)) as resp:
+                            async with http_session.get(f"https://t.me/{uname}", allow_redirects=True, timeout=aiohttp.ClientTimeout(total=3.0)) as resp:
                                 if resp.status == 429:
-                                    await asyncio.sleep(0.2)
+                                    global_429_count += 1
+                                    wait_time = min(5.0 * global_429_count, 60.0)
+                                    logger.warning(f"⚠️ t.me 429 cheklovi! #{global_429_count} — {wait_time:.0f}s kutilyapti")
+                                    await asyncio.sleep(wait_time)
                                     return
+                                
+                                # 429 bo'lmasa — hisoblagichni kamaytir
+                                if global_429_count > 0:
+                                    global_429_count = max(0, global_429_count - 1)
+                                
                                 text = await resp.text()
                                 
                                 # Profil yoki kanal mavjud bo'lsa — hali bo'shamagan
@@ -1874,13 +1902,14 @@ async def monitoring_loop(bot):
                             except Exception as e:
                                 logger.error(f"Nishon client ulanishda xato: {e}")
 
-                # Barcha noyob usernamelarni 30 oqimli Semaphore orqali parallel bajaramiz
+                # Barcha noyob usernamelarni parallel bajaramiz
                 await asyncio.gather(*[check_uname_group(u, group) for u, group in uname_map.items()])
 
         except Exception as e:
             logger.error(f"Monitoring loop xato: {e}")
             
-        await asyncio.sleep(0.2)
+        # Bir aylanish tugagandan keyin kichik pauza
+        await asyncio.sleep(0.5)
 
 # ─── FASTAPI APP ──────────────────────────────
 
