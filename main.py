@@ -500,12 +500,11 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         nouns, adjectives, uz_dict
     )
 
-
     cat = base_word.strip().lower()
     TELEGRAM_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
 
-    def valid(u):
-        return (4 <= len(u) <= 32
+    def valid(u: str) -> bool:
+        return (5 <= len(u) <= 32
                 and '__' not in u
                 and not u.startswith('_')
                 and not u.endswith('_')
@@ -513,16 +512,16 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
 
     pool = []
 
+    prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'iam', 'official', 'go', 'get', 'one', 'club', 'hub', 'app', 'new', 'hot', 'cool', 'fast', 'king', 'boss', 'dark', 'neo', 'ultra', 'max']
+    suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'ok', 'go', 'gg', 'co', 'ai', 'x', 'real', 'live', 'plus', 'max', 'mini', 'app', 'base']
+    numbers = ['', '1', '2', '3', '4', '5', '7', '8', '9', '10', '11', '24', '25', '77', '88', '99', '100', '777', '888', '999', '2024', '2025', '2026', '007', '01', '07', '700', '900']
+
     if cat.startswith('custom:'):
-        # O'zim kiritaman: kiritilgan so'z atrofida ko'p variantlar
         cw = ''.join(c for c in cat.split(':', 1)[1].strip() if c.isalnum() or c == '_').lower()
         if not cw:
             cw = 'user'
-        prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'iam', 'official', 'go', 'get', 'one', 'club', 'hub', 'app', 'new', 'hot', 'cool', 'fast', 'king', 'boss', 'dark', 'neo', 'ultra', 'max']
-        suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'ok', 'go', 'gg', 'co', 'ai', 'x', 'real', 'live', 'plus', 'max', 'mini', 'app', 'base']
-        numbers = ['', '1', '2', '3', '4', '5', '7', '8', '9', '10', '11', '24', '25', '77', '88', '99', '100', '777', '888', '999', '2024', '2025', '2026', '007', '01', '07', '700', '900']
         c_set = set()
-        c_set.add(cw)
+        if valid(cw): c_set.add(cw)
         for p in prefixes:
             for s in suffixes:
                 c_set.add(f'{p}{cw}{s}')
@@ -537,22 +536,74 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         pool = list(c_set)
 
     elif cat == 'qisqa':
-        # Qisqa noyob: ismlar, familiyalar, nomlar, so'zlar (4-8 harf, toza)
         if lang == 'uz':
-            all_names = UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES
-            all_words = UZ_WORDS_CLEAN + uz_dict
+            all_words = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES + UZ_WORDS_CLEAN + uz_dict))
         else:
-            all_names = EN_MALE_NAMES + EN_FEMALE_NAMES
-            all_words = ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN + nouns + adjectives
+            all_words = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN + nouns + adjectives))
 
-        names_list = list(set(w.lower() for w in all_names if str(w).isalpha() and 4 <= len(str(w)) <= 8))
-        words_list = list(set(w.lower() for w in all_words if str(w).isalpha() and 4 <= len(str(w)) <= 8))
-        random.shuffle(names_list)
-        random.shuffle(words_list)
-        pool = names_list + words_list
+        words = [str(w).lower() for w in all_words if str(w).isalpha() and 5 <= len(str(w)) <= 8]
+        random.shuffle(words)
+
+        short_sfx = ['1', '7', '99', '777', '_uz', '_me', 'x', 'ai', '_go']
+        var_pool = []
+        for w in words[:1000]:
+            for s in short_sfx:
+                var_pool.append(f"{w}{s}")
+        random.shuffle(var_pool)
+        pool = words + var_pool
+
+    elif cat in ('brend', 'biznes', 'business'):
+        b_words = ['store', 'shop', 'market', 'trade', 'brand', 'group', 'company', 'corp', 'studio', 'agency', 'media', 'express', 'center', 'global', 'service', 'hub', 'lab']
+        if lang == 'uz':
+            bases = list(set(UZ_WORDS_CLEAN + uz_dict))
+        else:
+            bases = list(set(nouns + EN_COOL_CLEAN))
+        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+        random.shuffle(bases)
+        var_pool = []
+        for w in bases[:800]:
+            for bw in b_words[:8]:
+                var_pool.append(f"{w}_{bw}")
+                var_pool.append(f"{w}{bw}")
+                var_pool.append(f"{bw}_{w}")
+        random.shuffle(var_pool)
+        pool = var_pool
+
+    elif cat in ('gaming', 'game'):
+        g_words = ['game', 'gaming', 'play', 'player', 'pro', 'gg', 'craft', 'sniper', 'kill', 'quest', 'clan', 'squad', 'legend', 'cyber', 'esports']
+        if lang == 'uz':
+            bases = list(set(UZ_MALE_NAMES + UZ_WORDS_CLEAN))
+        else:
+            bases = list(set(EN_COOL_CLEAN + nouns))
+        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+        random.shuffle(bases)
+        var_pool = []
+        for w in bases[:800]:
+            for gw in g_words[:8]:
+                var_pool.append(f"{w}_{gw}")
+                var_pool.append(f"{w}{gw}")
+                var_pool.append(f"{gw}_{w}")
+        random.shuffle(var_pool)
+        pool = var_pool
+
+    elif cat in ('kripto', 'crypto'):
+        c_words = ['crypto', 'coin', 'token', 'ton', 'btc', 'eth', 'trade', 'invest', 'hodl', 'dex', 'nft', 'chain', 'capital', 'fund']
+        if lang == 'uz':
+            bases = list(set(UZ_WORDS_CLEAN + uz_dict))
+        else:
+            bases = list(set(nouns + EN_COOL_CLEAN))
+        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+        random.shuffle(bases)
+        var_pool = []
+        for w in bases[:800]:
+            for cw_kw in c_words[:8]:
+                var_pool.append(f"{w}_{cw_kw}")
+                var_pool.append(f"{w}{cw_kw}")
+                var_pool.append(f"{cw_kw}_{w}")
+        random.shuffle(var_pool)
+        pool = var_pool
 
     else:
-        # Turli ko'rinishdagi: belgilar, sonlar va kombinatsiyalar
         if lang == 'uz':
             curated = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES + UZ_WORDS_CLEAN))
             dict_pool = [w for w in uz_dict if str(w).isalpha() and 4 <= len(str(w)) <= 10]
@@ -564,16 +615,17 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         random.shuffle(dict_pool)
 
         csuf = ['_uz', '_uzb', '_pro', '_vip', '_top', '_official', '_bot', '_tv', '_real', '_me', '_1', '_7', '_99', '_777', '1', '2', '7', '99', '2025', '2026', '777', '_01', '_07']
-        cpfx = ['the_', 'real_', 'my_', 'mr_', 'pro_', 'top_', 'uzb_', 'neo_', 'mr', 'ms', 'best_', 'i_']
+        cpfx = ['the_', 'real_', 'my_', 'mr_', 'pro_', 'top_', 'uzb_', 'neo_', 'best_', 'i_']
 
         var_pool = []
-        for u in curated + dict_pool:
+        for u in (curated + dict_pool)[:1500]:
             u_str = str(u).strip().lower()
-            if len(u_str) <= 9:
-                for sfx in csuf:
-                    if random.random() > 0.5: var_pool.append(f'{u_str}{sfx}')
-                for pfx in cpfx:
-                    if random.random() > 0.6: var_pool.append(f'{pfx}{u_str}')
+            if len(u_str) >= 4:
+                for sfx in csuf[:10]:
+                    var_pool.append(f'{u_str}{sfx}')
+                for pfx in cpfx[:6]:
+                    var_pool.append(f'{pfx}{u_str}')
+        random.shuffle(var_pool)
         pool = var_pool
 
     random.shuffle(pool)
@@ -1403,15 +1455,23 @@ async def _get_fast_client(session_string: str):
     
     if session_string in _telethon_cache:
         client = _telethon_cache[session_string]
-        if client.is_connected():
-            return client
-        del _telethon_cache[session_string]
+        try:
+            if client.is_connected():
+                return client
+        except Exception:
+            pass
+        _telethon_cache.pop(session_string, None)
     
     client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
     try:
         await asyncio.wait_for(client.connect(), timeout=15.0)
-    except asyncio.TimeoutError:
-        raise Exception("Telethon connect timeout (15s)")
+    except Exception as e:
+        logger.error(f"Telethon connect error: {e}")
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        raise e
     _telethon_cache[session_string] = client
     return client
 
@@ -1420,11 +1480,17 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
     import aiohttp
     found_count = 0
     paid_qty = 1
+    charged_amount = 0
+    used_free = 0
+
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT paid_qty FROM search_tasks WHERE id=?", (search_id,)) as c:
+            async with db.execute("SELECT paid_qty, charged_amount, used_free FROM search_tasks WHERE id=?", (search_id,)) as c:
                 row = await c.fetchone()
-                if row: paid_qty = row[0]
+                if row:
+                    paid_qty = row[0] or 1
+                    charged_amount = row[1] or 0
+                    used_free = row[2] or 0
 
         targets = generate_usernames(category, lang=lang, limit=5000)
 
@@ -1439,12 +1505,34 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 f"go{t}", f"{t}go", f"{t}x", f"{t}ai", f"neo{t}"
             ])
         random.shuffle(extra_targets)
-        all_targets = targets + extra_targets
+
+        # 5-32 belgili va toza Telegram username talablariga moslash
+        TELEGRAM_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
+        all_targets = []
+        seen_t = set()
+        for u in targets + extra_targets:
+            u_clean = str(u).strip().lower()
+            if (u_clean not in seen_t
+                    and 5 <= len(u_clean) <= 32
+                    and '__' not in u_clean
+                    and not u_clean.startswith('_')
+                    and not u_clean.endswith('_')
+                    and bool(TELEGRAM_RE.match(u_clean))):
+                seen_t.add(u_clean)
+                all_targets.append(u_clean)
 
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
-        if not session_string and STEALTH_SESSIONS:
-            session_string = STEALTH_SESSIONS[0]
+        stealth_session_used = None
+
+        if not session_string:
+            stealth_sessions = os.getenv("STEALTH_SESSIONS", "").split(",")
+            stealth_sessions = [s.strip() for s in stealth_sessions if s.strip()]
+            if not stealth_sessions and 'STEALTH_SESSIONS' in globals() and STEALTH_SESSIONS:
+                stealth_sessions = STEALTH_SESSIONS
+            if stealth_sessions:
+                session_string = stealth_sessions[0]
+                stealth_session_used = session_string
 
         telethon_client = None
         if session_string:
@@ -1452,6 +1540,18 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 telethon_client = await _get_fast_client(session_string)
             except Exception as e:
                 logger.warning(f"Search sniper telethon client error: {e}")
+                stealth_sessions = os.getenv("STEALTH_SESSIONS", "").split(",")
+                stealth_sessions = [s.strip() for s in stealth_sessions if s.strip()]
+                if not stealth_sessions and 'STEALTH_SESSIONS' in globals() and STEALTH_SESSIONS:
+                    stealth_sessions = STEALTH_SESSIONS
+                if stealth_sessions and stealth_sessions[0] != session_string:
+                    try:
+                        session_string = stealth_sessions[0]
+                        stealth_session_used = session_string
+                        telethon_client = await _get_fast_client(session_string)
+                    except Exception as se:
+                        logger.warning(f"Search sniper stealth telethon client fallback error: {se}")
+                        telethon_client = None
 
         from telethon.tl.functions.account import CheckUsernameRequest
         from telethon.errors import UsernamePurchaseAvailableError, UsernameInvalidError
@@ -1468,17 +1568,21 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         found_usernames_set = set()
 
         async def check_via_telethon(uname: str) -> bool:
-            if not telethon_client:
+            if not telethon_client or not telethon_client.is_connected():
                 return False
             try:
                 res = await asyncio.wait_for(
                     telethon_client(CheckUsernameRequest(uname)),
-                    timeout=5.0
+                    timeout=4.0
                 )
                 return bool(res)
             except (UsernamePurchaseAvailableError, UsernameInvalidError):
                 return False
-            except Exception:
+            except asyncio.TimeoutError:
+                logger.warning(f"Telethon check timeout for @{uname}")
+                return False
+            except Exception as e:
+                logger.debug(f"Telethon check error for @{uname}: {e}")
                 return False
 
         async def check_via_http(http_session, uname: str) -> str:
@@ -1494,11 +1598,14 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     if resp.status == 404:
                         return 'maybe_free'
                     text = await resp.text()
-                    if any(k in text for k in ('tgme_page_title', 'tgme_page_extra', 'tgme_page_description', 'tgme_page_photo')):
+                    # Aniq band bo'lgan sahifalar (profil, kanal, guruh, bot, fragment)
+                    if 'tgme_page_title' in text or 'tgme_page_extra' in text:
                         return 'taken'
-                    if 'Fragment' in text or 'Auction' in text or 'TON' in text:
+                    if 'fragment.com' in text.lower() or 'auction' in text.lower():
                         return 'taken'
-                    if resp.status == 200 and len(text) < 3000:
+                    if 'tgme_page_icon' in text or 'tgme_action_button_new' in text:
+                        return 'maybe_free'
+                    if resp.status == 200:
                         return 'maybe_free'
                     return 'unknown'
             except asyncio.TimeoutError:
@@ -1520,25 +1627,30 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 if http_result == 'taken':
                     return
 
-                is_free = await check_via_telethon(uname)
-                if is_free:
-                    async with found_lock:
-                        if found_count >= max(25, paid_qty * 5):
-                            return
-                        if uname in found_usernames_set:
-                            return
-                        found_usernames_set.add(uname)
-                        found_count += 1
+                if http_result == 'maybe_free':
+                    if telethon_client and telethon_client.is_connected():
+                        is_free = await check_via_telethon(uname)
+                    else:
+                        is_free = True
 
-                    try:
-                        async with aiosqlite.connect(DB_PATH) as db:
-                            await db.execute(
-                                "INSERT OR IGNORE INTO search_results (search_id, username) VALUES (?,?)",
-                                (search_id, uname)
-                            )
-                            await db.commit()
-                    except Exception as db_err:
-                        logger.error(f"DB insert error for {uname}: {db_err}")
+                    if is_free:
+                        async with found_lock:
+                            if found_count >= max(25, paid_qty * 5):
+                                return
+                            if uname in found_usernames_set:
+                                return
+                            found_usernames_set.add(uname)
+                            found_count += 1
+
+                        try:
+                            async with aiosqlite.connect(DB_PATH) as db:
+                                await db.execute(
+                                    "INSERT OR IGNORE INTO search_results (search_id, username) VALUES (?,?)",
+                                    (search_id, uname)
+                                )
+                                await db.commit()
+                        except Exception as db_err:
+                            logger.error(f"DB insert error for {uname}: {db_err}")
             except Exception as e:
                 logger.debug(f"verify_target error for {uname}: {e}")
 
@@ -1566,22 +1678,29 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         logger.error(f"Search task error: {e}")
     finally:
         if telethon_client:
-            await telethon_client.disconnect()
+            try:
+                if telethon_client.is_connected():
+                    await telethon_client.disconnect()
+            except Exception as err:
+                logger.debug(f"Error disconnecting telethon_client: {err}")
+        if session_string:
             _telethon_cache.pop(session_string, None)
+        if stealth_session_used:
+            _telethon_cache.pop(stealth_session_used, None)
+
         async with aiosqlite.connect(DB_PATH) as db:
             if found_count == 0:
                 async with db.execute("SELECT charged_amount, used_free FROM search_tasks WHERE id=?", (search_id,)) as c:
                     task_info = await c.fetchone()
                     if task_info:
                         charged = task_info[0] or 0
-                        used_free = task_info[1] or 0
+                        ufree = task_info[1] or 0
                         if charged > 0:
                             logger.warning(f"Search {search_id}: 0 results, refunding {charged} so'm to user {telegram_id}")
                             await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id=?", (charged, telegram_id))
-                        if used_free > 0:
-                            # free_searches 1 dan oshib ketmasligi shart!
+                        if ufree > 0:
+                            logger.warning(f"Search {search_id}: 0 results, restoring free_search for user {telegram_id}")
                             await db.execute("UPDATE users SET free_searches = MIN(1, IFNULL(free_searches, 0) + 1) WHERE telegram_id=?", (telegram_id,))
-                        
                         await db.commit()
 
             await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
