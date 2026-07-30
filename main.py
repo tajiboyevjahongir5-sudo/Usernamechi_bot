@@ -2407,8 +2407,9 @@ async def api_account_set_username(request: Request):
     from telethon.tl.functions.account import UpdateUsernameRequest as AccountUpdateUsernameRequest
     from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest, UpdateUsernameRequest as ChannelUpdateUsernameRequest
 
+    client = None
     try:
-        client = await _get_fast_client(row['session_string'])
+        client = await asyncio.wait_for(_get_fast_client(row['session_string']), timeout=8)
         
         # Agar kanal ID frontend dan kelmasa — kanal ro'yxatidan topamiz
         if not source_channel_id:
@@ -2434,9 +2435,15 @@ async def api_account_set_username(request: Request):
             
             # 3-qadam: Eski profil username'ini kanalga qaytarish — FONDA (kutmaydi)
             if old_username:
+                _sess = row['session_string']
+                _ch_id = source_channel_id
+                _old_u = old_username
                 async def restore_old():
                     try:
-                        await client(ChannelUpdateUsernameRequest(channel=source_channel_id, username=old_username))
+                        _cl = await _get_fast_client(_sess)
+                        await _cl(ChannelUpdateUsernameRequest(channel=_ch_id, username=_old_u))
+                        await _cl.disconnect()
+                        _telethon_cache.pop(_sess, None)
                     except Exception:
                         pass
                 asyncio.create_task(restore_old())
@@ -2445,11 +2452,19 @@ async def api_account_set_username(request: Request):
             await client(AccountUpdateUsernameRequest(username=username))
         
         return {"ok": True, "message": f"@{username} profilingizga o'rnatildi!"}
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": "Ulanish vaqti tugadi. Qayta urinib ko'ring."}
     except Exception as e:
         logger.error(f"Set username error: {e}")
-        # Keshdan o'chiramiz — keyingi safar yangi ulanish bo'ladi
-        _telethon_cache.pop(row['session_string'], None)
         return {"ok": False, "error": str(e)}
+    finally:
+        # Har doim disconnect — resource leak oldini olish
+        if client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+            _telethon_cache.pop(row['session_string'], None)
 
 
 @app.post("/api/referral/send_promo")
@@ -2522,9 +2537,10 @@ async def api_account_usernames(init_data: str = ""):
     telethon_owned = set()  # Telethon orqali tasdiqlangan usernamelar
 
     if row and row.get('session_string'):
+        client = None
         try:
             from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
-            client = await asyncio.wait_for(_get_fast_client(row['session_string']), timeout=5)
+            client = await asyncio.wait_for(_get_fast_client(row['session_string']), timeout=6)
 
             me, ch_res = await asyncio.wait_for(
                 asyncio.gather(
@@ -2532,11 +2548,11 @@ async def api_account_usernames(init_data: str = ""):
                     client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)),
                     return_exceptions=True
                 ),
-                timeout=7
+                timeout=8
             )
 
             # Shaxsiy profil username
-            if not isinstance(me, Exception) and me.username:
+            if not isinstance(me, Exception) and me and me.username:
                 uname = me.username.lower()
                 telethon_owned.add(uname)
                 if uname not in seen:
@@ -2547,7 +2563,7 @@ async def api_account_usernames(init_data: str = ""):
                     usernames.insert(0, {"username": me.username, "title": "Shaxsiy profil", "channel_id": None, "is_listed": is_listed})
 
             # Kanal va guruh usernamelar
-            if not isinstance(ch_res, Exception):
+            if not isinstance(ch_res, Exception) and ch_res:
                 async with aiosqlite.connect(DB_PATH) as db:
                     for ch in ch_res.chats:
                         uname = getattr(ch, 'username', None)
@@ -2561,9 +2577,17 @@ async def api_account_usernames(init_data: str = ""):
                                         is_listed = bool(await lc.fetchone())
                                     usernames.append({"username": uname, "title": title or "Kanal/Guruh", "channel_id": ch.id, "is_listed": is_listed})
         except asyncio.TimeoutError:
-            logger.warning(f"Telethon usernames timeout for user {tid} — skipping Telethon check")
+            logger.warning(f"Telethon usernames timeout for user {tid} — DB fallback")
         except Exception as e:
-            logger.warning(f"Telethon usernames fetch warning: {e}")
+            logger.warning(f"Telethon usernames fetch warning ({tid}): {e}")
+        finally:
+            # Har doim disconnect qilish — resource leak oldini olish!
+            if client:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+                _telethon_cache.pop(row['session_string'], None)
 
     # 2. BAZADAN — Buyurtma orqali band qilingan usernamelar
     #    Agar Telethon session mavjud bo'lsa, faqat hozir ham egalik qilinayotganlarini ko'rsatamiz.
