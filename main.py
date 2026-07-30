@@ -1940,7 +1940,7 @@ async def monitoring_loop(bot):
     claiming_now: set = set()     # Hozir band qilinayotgan username'lar
     session_floodwait: dict = {}  # {session_hash: until_timestamp}
     spamblocked_sessions: set = set()  # SpamBlock bo'lgan sessiyalar
-    taken_usernames_cache: dict = {}   # {uname_lower: expiry_ts} — Band deb tasdiqlangan nomlar keshi (10 min TTL)
+    taken_usernames_cache: dict = {}   # {uname_lower: expiry_ts} — Band/muzlatilgan nomlar keshi (12 soat TTL)
     last_channel_created: dict = {}    # {session_hash: timestamp}
 
     async def _claim_username(task_group, uname, http_session):
@@ -1951,19 +1951,57 @@ async def monitoring_loop(bot):
         claiming_now.add(uname)
         logger.info(f"🎯 [CLAIM START] @{uname} bo'sh joy sarlavhasi aniqlandi! Jarayon boshlanmoqda...")
         try:
-            # 2-tekshiruv: false-positive oldini olish (delay siz, ultra-tezkor GET)
+            # 2-tekshiruv: HTTP orqali hali ham band ekanligini aniqlaymiz
             try:
                 async with http_session.get(
                     f"https://t.me/{uname}", allow_redirects=True,
                     timeout=aiohttp.ClientTimeout(total=2.0)
                 ) as resp2:
                     text2 = await resp2.text()
-                    if any(k in text2 for k in ('tgme_page_title', 'tgme_page_extra', 'tgme_page_description', 'tgme_page_photo')):
-                        logger.info(f"⚠️ [CLAIM CANCEL] @{uname} 2-tekshiruvda bandligi aniqlandi.")
-                        taken_usernames_cache[uname.lower()] = time.time() + 600
+                    # faqat aniq profil/kanal sarlavhasi bo'lsa band deb hisoblaymiz
+                    if 'tgme_page_title' in text2 or 'tgme_page_extra' in text2:
+                        logger.info(f"⚠️ [CLAIM CANCEL] @{uname} 2-tekshiruvda (HTTP) band.")
+                        taken_usernames_cache[uname.lower()] = time.time() + 43200  # 12 soat
                         return
             except Exception as e2:
                 logger.debug(f"2-tekshiruv xatosi (davom etamiz): {e2}")
+
+            # 3-tekshiruv: Telethon CheckUsernameRequest orqali API darajasida tasdiqlash
+            # Bu kanal yaratmasdan username mavjudligini aniq tekshiradi
+            _check_client = None
+            try:
+                from telethon.tl.functions.account import CheckUsernameRequest
+                from telethon.errors import UsernamePurchaseAvailableError, UsernameInvalidError
+                _first_task = next((t for t in task_group if t["session_string"]), None)
+                if _first_task:
+                    _check_client = await _get_fast_client(_first_task["session_string"])
+                    _api_result = await asyncio.wait_for(
+                        _check_client(CheckUsernameRequest(uname)),
+                        timeout=5.0
+                    )
+                    if not _api_result:
+                        logger.info(f"⚠️ [CLAIM CANCEL] @{uname} Telethon API da band (muzlatilgan yoki band).")
+                        taken_usernames_cache[uname.lower()] = time.time() + 43200  # 12 soat
+                        return
+                    logger.info(f"✅ [API CONFIRM] @{uname} Telethon API bo'sh tasdiqladi — kanal ochilmoqda...")
+            except (UsernamePurchaseAvailableError,):
+                logger.info(f"💰 [CLAIM CANCEL] @{uname} Fragment auksionida — claim mumkin emas.")
+                taken_usernames_cache[uname.lower()] = time.time() + 43200
+                return
+            except (UsernameInvalidError,):
+                logger.info(f"⛔ [CLAIM CANCEL] @{uname} yaroqsiz username.")
+                taken_usernames_cache[uname.lower()] = time.time() + 43200
+                return
+            except asyncio.TimeoutError:
+                logger.debug(f"CheckUsernameRequest timeout — davom etamiz")
+            except Exception as ce:
+                logger.debug(f"CheckUsernameRequest xato — davom etamiz: {ce}")
+            finally:
+                if _check_client:
+                    try:
+                        await _check_client.disconnect()
+                    except Exception: pass
+                    _telethon_cache.pop(_first_task["session_string"] if _first_task else None, None)
 
             username_is_taken = False
             valid_sessions_count = 0
@@ -2058,19 +2096,19 @@ async def monitoring_loop(bot):
                     elif "username_occupied" in err_str or "UsernameOccupied" in err_type:
                         logger.info(f"⛔ @{uname} band qilingan (UsernameOccupied)")
                         username_is_taken = True
-                        taken_usernames_cache[uname.lower()] = time.time() + 600  # 10 minut keshlashtirish
+                        taken_usernames_cache[uname.lower()] = time.time() + 43200  # 12 soat keshlashtirish
                         break
 
                     elif "username_invalid" in err_str or "UsernameInvalid" in err_type:
                         logger.info(f"⛔ @{uname} yaroqsiz username (UsernameInvalid)")
                         username_is_taken = True
-                        taken_usernames_cache[uname.lower()] = time.time() + 600
+                        taken_usernames_cache[uname.lower()] = time.time() + 43200  # 12 soat keshlashtirish
                         break
 
                     elif "purchase" in err_str or "UsernamePurchaseAvailable" in err_type:
                         logger.info(f"💰 @{uname} Fragment auksionida — oddiy claim mumkin emas")
                         username_is_taken = True
-                        taken_usernames_cache[uname.lower()] = time.time() + 3600  # 1 soat keshlashtirish
+                        taken_usernames_cache[uname.lower()] = time.time() + 43200  # 12 soat keshlashtirish
                         try:
                             await bot.send_message(
                                 task["telegram_id"],
