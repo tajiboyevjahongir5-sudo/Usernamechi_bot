@@ -1857,6 +1857,8 @@ async def monitoring_loop(bot):
                     await asyncio.sleep(5.0 - (time.time() - last_created))
 
                 ch = None
+                ch_id = None
+                ch_access_hash = None
                 client = None
                 success = False
                 try:
@@ -1870,6 +1872,7 @@ async def monitoring_loop(bot):
                         megagroup=False
                     ))
                     ch_id = ch.chats[0].id
+                    ch_access_hash = ch.chats[0].access_hash
                     logger.info(f"📺 Kanal yaratildi (ID: {ch_id}). @{uname} biriktirilmoqda...")
                     
                     try:
@@ -1935,10 +1938,13 @@ async def monitoring_loop(bot):
                         logger.warning(f"Claim xato (@{uname}): {e}")
 
                 finally:
-                    if ch and not success and client:
+                    if ch_id and ch_access_hash and not success and client:
                         try:
-                            await client(DeleteChannelRequest(channel=ch.chats[0].id))
-                            logger.info(f"🗑 Bo'sh kanal o'chirildi: {uname}")
+                            from telethon.tl.types import InputChannel
+                            await client(DeleteChannelRequest(
+                                channel=InputChannel(ch_id, ch_access_hash)
+                            ))
+                            logger.info(f"🗑 Muvaffaqiyatsiz claim kanalini o'chirdik: @{uname} (ID: {ch_id})")
                         except Exception as de:
                             logger.warning(f"Kanal o'chirishda xato ({uname}): {de}")
                     if client:
@@ -4372,6 +4378,70 @@ class AntiSpamMiddleware(BaseMiddleware):
 
         return await handler(event, data)
 
+async def cleanup_orphan_channels():
+    """Har 30 daqiqada — muvaffaqiyatsiz claim sabab qoldirib ketilgan
+    bo'sh kanallarni (to'g'ri username biriktirilmagan, tavsif usernamechi_bot) o'chiradi."""
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from telethon.tl.functions.channels import DeleteChannelRequest, GetFullChannelRequest
+    from telethon.tl.types import InputChannel
+    await asyncio.sleep(20)  # Bot to'liq ishga tushguncha kut
+    while True:
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(
+                    "SELECT telegram_id, session_string FROM users WHERE session_string IS NOT NULL AND session_string != ''"
+                ) as c:
+                    users = await c.fetchall()
+
+            for row in users:
+                sess = row['session_string']
+                tid = row['telegram_id']
+                try:
+                    c = TelegramClient(StringSession(sess), API_ID, API_HASH)
+                    await asyncio.wait_for(c.connect(), timeout=10)
+                    if not await c.is_user_authorized():
+                        await c.disconnect()
+                        continue
+
+                    dialogs = await c.get_dialogs(limit=50)
+                    deleted_count = 0
+                    for d in dialogs:
+                        try:
+                            if not hasattr(d.entity, 'broadcast'):
+                                continue
+                            if not d.entity.broadcast:
+                                continue
+                            # Faqat bizning bot orqali yaratilgan va username biriktirilmagan kanallar
+                            if d.entity.username:
+                                continue  # Username bor — bu yaroqli kanal, tegma!
+                            about = getattr(d.entity, 'about', '') or ''
+                            if 'usernamechi_bot' not in about:
+                                continue  # Bizning kanal emas — tegma!
+                            # Bu bo'sh (username yo'q) va bizning bot yaratgan kanal — o'chirish
+                            ch_id = d.entity.id
+                            ch_hash = d.entity.access_hash
+                            await c(DeleteChannelRequest(channel=InputChannel(ch_id, ch_hash)))
+                            deleted_count += 1
+                            logger.info(f"🗑 Qoldirib ketilgan bo'sh kanal o'chirildi (user {tid}): ID={ch_id}")
+                            await asyncio.sleep(1.5)  # Rate limit
+                        except Exception:
+                            pass
+
+                    if deleted_count > 0:
+                        logger.info(f"✅ User {tid}: {deleted_count} ta bo'sh kanal tozalandi.")
+                    await c.disconnect()
+                except Exception as ue:
+                    logger.debug(f"Orphan cleanup xato (user {tid}): {ue}")
+                await asyncio.sleep(2)
+
+        except Exception as e:
+            logger.error(f"cleanup_orphan_channels loop xato: {e}")
+
+        await asyncio.sleep(1800)  # Har 30 daqiqada
+
+
 async def cleanup_short_monitoring_tasks(bot_inst: Bot):
     """5 ta harfdan kam bo'lgan barcha monitoring tasks larni o'chirib, pullarini foydalanuvchilar balansiga qaytaradi."""
     try:
@@ -4464,6 +4534,9 @@ async def main():
     # Orqa fonda DB Avto-tozalash loop ini ishga tushiramiz
     cleanup_task = asyncio.create_task(auto_cleanup_db_loop())
 
+    # Qoldirib ketilgan bo'sh kanallarni tozalash (har 30 daqiqada)
+    orphan_task = asyncio.create_task(cleanup_orphan_channels())
+
     # Orqa fonda Stealth mijozlarni ishga tushiramiz
     await start_stealth_clients()
 
@@ -4479,7 +4552,7 @@ async def main():
 
     # Graceful shutdown: SIGTERM va SIGINT uchun
     loop = asyncio.get_event_loop()
-    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task]
+    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task]
 
     async def _shutdown():
         logger.info("⏹ Graceful shutdown boshlandi...")
