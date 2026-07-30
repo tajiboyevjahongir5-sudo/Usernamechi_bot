@@ -1073,7 +1073,49 @@
   <button class="btn btn-outline" onclick="closeMarketPost()">Bekor qilish</button>
 </div>
 
-<div id="market-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:999;" onclick="closeMarketBuy(); closeMarketPost();"></div>
+<!-- COMMISSION CONFIRMATION MODAL -->
+<div class="card" id="commission-confirm-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1100; width:92%; max-width:400px; box-shadow:0 20px 60px rgba(0,0,0,0.85); border:1px solid rgba(99,102,241,0.35); background:rgba(15,23,42,0.96); backdrop-filter:blur(24px); border-radius:24px; padding:24px; text-align:center;">
+  <div style="width:56px; height:56px; border-radius:50%; background:linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2)); border:1px solid rgba(168,85,247,0.4); display:flex; align-items:center; justify-content:center; margin:0 auto 16px auto;">
+    <span style="font-size:28px;">💎</span>
+  </div>
+  
+  <div style="font-size:20px; font-weight:800; color:#fff; margin-bottom:6px;">E'lon shartlari va Komissiya</div>
+  <div style="font-size:13px; color:var(--muted); margin-bottom:18px;">E'loningiz sotilganda olinadigan xizmat komissiyasi haqida ma'lumot:</div>
+
+  <div style="background:rgba(30,41,59,0.7); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:16px; margin-bottom:18px; text-align:left;">
+    <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:14px;">
+      <span style="color:var(--muted);">Username:</span>
+      <span style="font-weight:700; color:#a5b4fc;" id="confirm-modal-uname">@username</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:14px;">
+      <span style="color:var(--muted);">Sotuv narxi:</span>
+      <span style="font-weight:700; color:#fff;" id="confirm-modal-price">100,000 so'm</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:14px; padding-bottom:10px; border-bottom:1px dashed rgba(255,255,255,0.1);">
+      <span style="color:#f87171;">Platforma komissiyasi (10%):</span>
+      <span style="font-weight:700; color:#f87171;" id="confirm-modal-fee">-10,000 so'm</span>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-size:15px; font-weight:800;">
+      <span style="color:#34d399;">Sizga o'tkaziladigan net mablag':</span>
+      <span style="color:#34d399;" id="confirm-modal-net">90,000 so'm</span>
+    </div>
+  </div>
+
+  <div style="background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.25); border-radius:14px; padding:12px 14px; margin-bottom:20px; text-align:left; font-size:12px; color:#cbd5e1; line-height:1.5;">
+    💡 <b>Eslatma:</b> E'loningiz sotilganda username narxining <b>10% qismi</b> (ya'ni <span id="confirm-modal-fee-text">10,000 so'm</span>) xizmat komissiyasi sifatida ushlanib qoladi va qolgan summasi balansingizga o'tkaziladi.
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap:10px;">
+    <button class="btn btn-primary" id="btn-confirm-agree" onclick="executePostListing()" style="padding:14px; font-size:15px; font-weight:700; background:linear-gradient(135deg, #6366f1, #a855f7); border:none; box-shadow:0 4px 20px rgba(99,102,241,0.4);">
+      ✅ Roziman
+    </button>
+    <button class="btn btn-outline" onclick="closeCommissionModal()" style="padding:12px; font-size:14px; opacity:0.8;">
+      Bekor qilish
+    </button>
+  </div>
+</div>
+
+<div id="market-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:999;" onclick="closeMarketBuy(); closeMarketPost(); closeCommissionModal();"></div>
 
 <!-- ACCOUNT PAGE -->
 <div class="page" id="page-account">
@@ -1866,9 +1908,18 @@ async function openPostModal() {
   }
 }
 
+let pendingListingData = null;
+
+function closeCommissionModal() {
+  document.getElementById('commission-confirm-modal').style.display = 'none';
+  if (document.getElementById('market-post-modal').style.display === 'none' && document.getElementById('market-buy-modal').style.display === 'none') {
+    document.getElementById('market-overlay').style.display = 'none';
+  }
+}
+
 function closeMarketPost() {
   document.getElementById('market-post-modal').style.display = 'none';
-  if (document.getElementById('market-buy-modal').style.display === 'none') {
+  if (document.getElementById('commission-confirm-modal').style.display === 'none' && document.getElementById('market-buy-modal').style.display === 'none') {
     document.getElementById('market-overlay').style.display = 'none';
   }
 }
@@ -1882,34 +1933,58 @@ async function submitPostListing() {
   if (!username) { showToast('Username tanlang!', 'error'); return; }
   if (!price || price < 1000) { showToast('Narxni to\'g\'ri kiriting (min 1,000)', 'error'); return; }
   
-  let listingPriceStr = window.APP_PRICES ? window.APP_PRICES.listing.toLocaleString() : '1,000';
-  let confirmMsg = is_auction 
-    ? `Haqiqatdan ham @${username} ni ${price.toLocaleString()} so'm boshlang'ich narx bilan AUKSIONGA qo'yib, ${listingPriceStr} so'm to'lov yechishga rozimisiz?`
-    : `Haqiqatdan ham @${username} ni ${price.toLocaleString()} so'mga sotuvga qo'yib, balansingizdan ${listingPriceStr} so'm e'lon to'lovini yechishga rozimisiz?`;
-    
-  if (!confirm(confirmMsg)) return;
+  const fee = Math.round(price * 0.10);
+  const net = price - fee;
+
+  document.getElementById('confirm-modal-uname').innerText = `@${username}`;
+  document.getElementById('confirm-modal-price').innerText = `${price.toLocaleString()} so'm`;
+  document.getElementById('confirm-modal-fee').innerText = `-${fee.toLocaleString()} so'm`;
+  document.getElementById('confirm-modal-net').innerText = `${net.toLocaleString()} so'm`;
+  document.getElementById('confirm-modal-fee-text').innerText = `${fee.toLocaleString()} so'm`;
+
+  pendingListingData = { username, price, is_auction };
+
+  document.getElementById('market-overlay').style.display = 'block';
+  document.getElementById('commission-confirm-modal').style.display = 'block';
+}
+
+async function executePostListing() {
+  if (!pendingListingData) return;
   
-  const btn = document.getElementById('btn-submit-post');
+  const btn = document.getElementById('btn-confirm-agree');
+  const originalHtml = btn.innerHTML;
   btn.disabled = true;
   btn.innerText = 'Joylanmoqda...';
+
   try {
     const res = await fetch(`${API}/api/marketplace/list`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({init_data: tg.initData, username, price, is_auction})
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        init_data: tg.initData,
+        username: pendingListingData.username,
+        price: pendingListingData.price,
+        is_auction: pendingListingData.is_auction
+      })
     });
     const d = await res.json();
-    if(d.ok) {
-      showToast("E'lon qo'shildi!", "success");
+    if (d.ok) {
+      showToast("E'lon muvaffaqiyatli qo'shildi!", "success");
+      closeCommissionModal();
       closeMarketPost();
       document.getElementById('post-price-input').value = '';
       loadUserData();
       loadMyListings();
     } else {
-      showToast(d.error, "error");
+      showToast(d.error || "Xatolik yuz berdi", "error");
     }
-  } catch(e) { showToast("Xato yuz berdi", "error"); }
-  btn.disabled = false;
-  btn.innerText = 'Joylash';
+  } catch (e) {
+    showToast("Xato yuz berdi", "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+    pendingListingData = null;
+  }
 }
 
 async function buyListing(id) {
