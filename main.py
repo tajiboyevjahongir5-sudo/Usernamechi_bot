@@ -2174,10 +2174,11 @@ async def monitoring_loop(bot):
             for t in tasks:
                 u_lower = t["username"].lower().replace('@', '').strip()
                 if not uname_pattern.match(u_lower):
-                    # Yaroqsiz matn (masalan apostrof ' bo'lgan "yo'lboshchi") — qayta tekshirmaslik uchun statusini o'chiramiz
+                    # Yaroqsiz matn (masalan apostrof ' bo'lgan "yo'lboshchi") — avtomatik DB va nishonlar ro'yxatidan o'chirib tashlaymiz
                     async with aiosqlite.connect(DB_PATH) as db:
-                        await db.execute("UPDATE monitoring_tasks SET status='failed_invalid' WHERE id=?", (t["id"],))
+                        await db.execute("DELETE FROM monitoring_tasks WHERE id=?", (t["id"],))
                         await db.commit()
+                    logger.info(f"🗑 Yaroqsiz nishon avtomatik o'chirildi: @{t['username']} (ID: {t['id']})")
                     continue
                 if u_lower not in uname_map:
                     uname_map[u_lower] = []
@@ -4603,9 +4604,17 @@ async def auto_cleanup_db_loop():
                     await db.execute("DELETE FROM pending_referrals WHERE created_at < CAST(strftime('%s','now', '-7 days') AS REAL)")
                 except Exception: pass
 
-                # 4.5. 7 kundan eski yakunlangan yoki bekor qilingan monitoring nishonlarini tozalash
+                # 4.5. 7 kundan eski yakunlangan hamda yaroqsiz (apostrof, qo'shtirnoq bo'lgan) monitoring nishonlarini tozalash
                 try:
-                    await db.execute("DELETE FROM monitoring_tasks WHERE status IN ('claimed', 'failed_limit', 'cancelled') AND created_at < CAST(strftime('%s','now', '-7 days') AS REAL)")
+                    await db.execute("""
+                        DELETE FROM monitoring_tasks 
+                        WHERE (status IN ('claimed', 'failed_limit', 'failed_invalid', 'cancelled') 
+                               AND created_at < CAST(strftime('%s','now', '-7 days') AS REAL))
+                           OR username LIKE "%'%" 
+                           OR username LIKE '%"%' 
+                           OR username LIKE "%’%"
+                           OR username LIKE "%`%"
+                    """)
                 except Exception: pass
 
                 # 5. 3 kundan o'tgan buyurtmalarni (orders) avtomatik o'chirish
