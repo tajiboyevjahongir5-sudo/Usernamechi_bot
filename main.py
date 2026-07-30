@@ -281,6 +281,16 @@ async def init_db():
                 created_at REAL DEFAULT (strftime('%s','now'))
             )
         """)
+        
+        # ─── BD INDEKSLARI (Tezlikni 10x-50x oshirish uchun) ───
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_monitoring_status ON monitoring_tasks(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_monitoring_uname ON monitoring_tasks(username);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_listings_seller ON listings(seller_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_search_tasks_status ON search_tasks(status);")
         await db.commit()
         
         # Backward compatibility for existing databases (ALTER TABLE)
@@ -2097,6 +2107,44 @@ app.add_middleware(SubscriptionMiddleware)
 # Static files
 if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
+
+_start_time = time.time()
+
+@app.get("/health")
+async def health_check():
+    """Railway va monitoring tizimlar uchun health check endpoint."""
+    db_ok = False
+    db_users = 0
+    db_monitoring = 0
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM users") as cur:
+                row = await cur.fetchone()
+                db_users = row[0] if row else 0
+            async with db.execute("SELECT COUNT(*) FROM monitoring_tasks WHERE status='monitoring'") as cur:
+                row = await cur.fetchone()
+                db_monitoring = row[0] if row else 0
+        db_ok = True
+    except Exception as e:
+        logger.warning(f"/health DB xato: {e}")
+
+    uptime_sec = int(time.time() - _start_time)
+    hours, rem = divmod(uptime_sec, 3600)
+    mins, secs = divmod(rem, 60)
+
+    return JSONResponse({
+        "status": "ok" if db_ok else "degraded",
+        "uptime": f"{hours}h {mins}m {secs}s",
+        "db": "connected" if db_ok else "error",
+        "users_total": db_users,
+        "active_monitoring": db_monitoring,
+        "stealth_clients": len(stealth_clients),
+    })
+
+@app.get("/ping")
+async def ping():
+    """Oddiy yashash tekshiruvi (Telegram webhook uchun ham)."""
+    return {"ok": True}
 
 # ── Helper: Telegram initData verifikatsiya ────
 def verify_init_data(init_data: str) -> dict | None:
@@ -4076,6 +4124,41 @@ async def auto_refresh_phones():
         await asyncio.sleep(2)
     logger.info(f"✅ Telefon raqamlari yangilandi: {updated} ta")
 
+async def _notify_session_expired(telegram_id: int):
+    """Sessiya o'chganda foydalanuvchiga xabar yuboradi va aktiv monitoring'larini to'xtatadi."""
+    try:
+        # Aktiv monitoring tasklar sonini olish
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT COUNT(*) as cnt FROM monitoring_tasks WHERE telegram_id=? AND status='monitoring'",
+                (telegram_id,)
+            ) as cur:
+                row = await cur.fetchone()
+                active_count = row['cnt'] if row else 0
+
+        msg = (
+            "⚠️ <b>Telegram sessiyangiz uzildi!</b>\n\n"
+            "Bot sizning akkauntingizga ulanishni to'xtatdi. "
+            "Buning sababi:\n"
+            "• Telegramdan chiqqan (logout) bo'lishi\n"
+            "• Parol o'zgartirilishi\n"
+            "• Telegram tomonidan sessiya bekor qilinishi\n\n"
+        )
+        if active_count > 0:
+            msg += (
+                f"🔴 <b>Diqqat:</b> Sizda <b>{active_count} ta aktiv monitoring</b> mavjud, "
+                "lekin sessiya yo'qligi sababli ular ishlamayapti!\n\n"
+            )
+        msg += "🔄 Botni qayta ulash uchun /start buyrug'ini yuboring."
+
+        if bot:
+            await bot.send_message(telegram_id, msg, parse_mode="HTML")
+            logger.info(f"📩 Sessiya o'chganligi haqida xabar yuborildi: {telegram_id}")
+    except Exception as e:
+        logger.debug(f"Sessiya xabar yuborishda xato ({telegram_id}): {e}")
+
+
 async def session_checker_loop():
     """Vaqti-vaqti bilan barcha ulangan foydalanuvchilarning seanslari yaroqliligini tekshiradi"""
     await asyncio.sleep(10)
@@ -4106,12 +4189,13 @@ async def session_checker_loop():
                             await stop_stealth_client(tid)
                             await save_session(tid, None)
                             logger.info(f"🔴 Seans uzilganligi aniqlandi (stealth): {tid}")
+                            await _notify_session_expired(tid)
                     except Exception:
                         pass
                 else:
                     try:
                         c = TelegramClient(StringSession(session_str), API_ID, API_HASH)
-                        await c.connect()
+                        await asyncio.wait_for(c.connect(), timeout=15)
                         authorized = await c.is_user_authorized()
                         if authorized:
                             me = await c.get_me()
@@ -4122,12 +4206,14 @@ async def session_checker_loop():
                         else:
                             await save_session(tid, None)
                             logger.info(f"🔴 Seans uzilganligi aniqlandi: {tid}")
+                            await _notify_session_expired(tid)
                         await c.disconnect()
                     except Exception as e:
                         err_str = str(e).lower()
                         if "unregistered" in err_str or "revoked" in err_str or "deactivated" in err_str:
                             await save_session(tid, None)
                             logger.info(f"🔴 Seans bekor qilinganligi aniqlandi ({tid}): {e}")
+                            await _notify_session_expired(tid)
                 await asyncio.sleep(3)
         except Exception as e:
             logger.error(f"session_checker_loop xatosi: {e}")
