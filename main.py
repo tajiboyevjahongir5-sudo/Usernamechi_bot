@@ -3008,22 +3008,28 @@ async def api_check_username(request: Request):
         else:
             return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
         
+    client = None
     try:
         from telethon import TelegramClient
         from telethon.sessions import StringSession
         from telethon.tl.functions.account import CheckUsernameRequest
         
         client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
-        await client.connect()
+        await asyncio.wait_for(client.connect(), timeout=8)
         try:
             res = await client(CheckUsernameRequest(username=username))
             available = bool(res)
         except Exception:
             available = False
-        await client.disconnect()
         return {"ok": True, "username": username, "available": available}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    finally:
+        if client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
 @app.get("/api/seller/balance")
 async def api_seller_balance(init_data: str = ""):
     user = verify_init_data(init_data)
