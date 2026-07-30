@@ -2158,7 +2158,8 @@ async def monitoring_loop(bot):
                 async with db.execute(
                     "SELECT t.id, t.telegram_id, t.username, u.session_string "
                     "FROM monitoring_tasks t JOIN users u ON t.telegram_id=u.telegram_id "
-                    "WHERE t.status='monitoring'"
+                    "WHERE t.status='monitoring' "
+                    "ORDER BY t.id DESC"
                 ) as c:
                     tasks = await c.fetchall()
 
@@ -2176,9 +2177,9 @@ async def monitoring_loop(bot):
 
             hdr_idx = (hdr_idx + 1) % len(headers_list)
 
-            # HTTP tekshiruv uchun parallel sonini belgilash (max 20)
+            # HTTP tekshiruv uchun parallel sonini belgilash (max 15)
             total_uniq = len(uname_map)
-            concurrent = min(total_uniq, 20)
+            concurrent = min(total_uniq, 15)
             if concurrent < 1:
                 concurrent = 1
             sem = asyncio.Semaphore(concurrent)
@@ -2216,7 +2217,8 @@ async def monitoring_loop(bot):
                                 global_429_count = max(0, global_429_count - 1)
 
                             text = await resp.text()
-                            if any(k in text for k in ('tgme_page_title', 'tgme_page_extra', 'tgme_page_description', 'tgme_page_photo')):
+                            # Aniq band profil, kanal yoki guruh bo'lsa — keshlaymiz
+                            if 'tgme_page_title' in text or 'tgme_page_extra' in text:
                                 taken_usernames_cache[uname_lower] = time.time() + 600  # 10 minut keshlashtirish
                                 return  # Hali band
 
