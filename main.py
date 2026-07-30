@@ -1176,13 +1176,18 @@ async def save_session(telegram_id, session_string, phone=None, tg_password=None
         # E'lonlarni alohida DB ulanishida o'chiramiz (row_factory muammosidan qochish uchun)
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT id, username FROM listings WHERE seller_id=? AND status='active'", (telegram_id,)) as c:
+            async with db.execute("SELECT id, username, channel_id, telegram_message_id FROM listings WHERE seller_id=? AND status='active'", (telegram_id,)) as c:
                 active_listings = await c.fetchall()
             
             if active_listings:
                 await db.execute("DELETE FROM listings WHERE seller_id=? AND status='active'", (telegram_id,))
                 await db.commit()
                 logger.info(f"🗑 Seans uzildi → {telegram_id} ning {len(active_listings)} ta e'loni o'chirildi")
+                
+                # Kanaldagi e'lon postlarini ham to'liq o'chiramiz
+                for row in active_listings:
+                    if row['channel_id'] and row['telegram_message_id']:
+                        asyncio.create_task(update_channel_listing_post(row['id'], 'cancelled'))
                 
                 # Foydalanuvchiga xabar yuboramiz
                 try:
@@ -4195,14 +4200,26 @@ async def session_checker_loop():
     while True:
         try:
             async with aiosqlite.connect(DB_PATH) as db:
-                # Seansi yo'q sotuvchilar e'lonlarini avtomatik o'chiramiz
-                await db.execute("""
-                    DELETE FROM listings 
+                # Seansi yo'q sotuvchilar e'lonlarini avtomatik o'chiramiz (kanaldan ham postini o'chirish)
+                async with db.execute("""
+                    SELECT id, channel_id, telegram_message_id FROM listings 
                     WHERE status='active' AND seller_id IN (
                         SELECT telegram_id FROM users WHERE session_string IS NULL OR session_string = ''
                     )
-                """)
-                await db.commit()
+                """) as c:
+                    orphan_listings = await c.fetchall()
+
+                if orphan_listings:
+                    for r in orphan_listings:
+                        if r['channel_id'] and r['telegram_message_id']:
+                            asyncio.create_task(update_channel_listing_post(r['id'], 'cancelled'))
+                    await db.execute("""
+                        DELETE FROM listings 
+                        WHERE status='active' AND seller_id IN (
+                            SELECT telegram_id FROM users WHERE session_string IS NULL OR session_string = ''
+                        )
+                    """)
+                    await db.commit()
                 
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT telegram_id, session_string, phone FROM users WHERE session_string IS NOT NULL AND session_string != ''") as c:
