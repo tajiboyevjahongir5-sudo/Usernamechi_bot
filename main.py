@@ -3597,6 +3597,12 @@ async def admin_listing_delete(listing_id: int, x_admin_token: str = Header(defa
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
     
+    # Kanaldagi postni o'chirish
+    try:
+        await update_channel_listing_post(listing_id, 'cancelled')
+    except Exception as e:
+        logger.warning(f"Admin delete listing channel post error: {e}")
+
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM listings WHERE id=?", (listing_id,))
         await db.commit()
@@ -4603,14 +4609,19 @@ async def auto_cleanup_db_loop():
                 except Exception as ord_err:
                     logger.warning(f"Orders cleanup error: {ord_err}")
 
-                # 6. E'lonlar uchun kerakli post ma'lumotlarini tozalash
+                # 7. 3 soatdan eski kutilayotgan (pending) topups/payments va zombi yozuvlarni tozalash
                 try:
-                    await db.execute("UPDATE listings SET channel_id=NULL, telegram_message_id=NULL WHERE status IN ('sold', 'cancelled')")
+                    await db.execute("UPDATE topups SET status='expired' WHERE status='pending' AND created_at < CAST(strftime('%s','now', '-3 hours') AS REAL)")
+                    await db.execute("UPDATE payments SET status='expired' WHERE status='pending' AND created_at < CAST(strftime('%s','now', '-3 hours') AS REAL)")
                 except Exception: pass
                 
                 await db.commit()
                 
-                # Bazani optimallashtirish (bo'shagan diska hajmini qaytarish)
+                # WAL fayli hajmi va xotirani optimallashtirish
+                try:
+                    await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                except Exception: pass
+
                 if vacuum_counter >= 4:
                     await db.execute("VACUUM")
                     vacuum_counter = 0
