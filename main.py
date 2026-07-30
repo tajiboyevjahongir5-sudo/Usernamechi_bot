@@ -1988,57 +1988,16 @@ async def monitoring_loop(bot):
                         _telethon_cache.pop(task["session_string"], None)
 
             if valid_sessions_count == 0:
-                logger.warning(f"⚠️ @{uname} uchun yaroqli faol sessiya topilmadi! STEALTH_SESSIONS orqali urinilmoqda...")
-                # Foydalanuvchi sessiyasi yo'q — STEALTH_SESSIONS bilan urinib ko'ramiz
-                if STEALTH_SESSIONS:
-                    stealth_sess = STEALTH_SESSIONS[0]
-                    stealth_key = str(hash(stealth_sess))
-                    if stealth_key not in spamblocked_sessions and session_floodwait.get(stealth_key, 0) <= time.time():
-                        s_client = None
-                        s_ch = None
-                        s_ch_id = None
-                        s_ch_access_hash = None
-                        s_success = False
-                        try:
-                            s_client = await _get_fast_client(stealth_sess)
-                            last_channel_created[stealth_key] = time.time()
-                            s_ch = await s_client(CreateChannelRequest(
-                                title=uname.capitalize(),
-                                about="@usernamechi_bot orqali band qilingan",
-                                megagroup=False
-                            ))
-                            s_ch_id = s_ch.chats[0].id
-                            s_ch_access_hash = s_ch.chats[0].access_hash
-                            await s_client(UpdateUsernameRequest(channel=s_ch_id, username=uname))
-                            s_success = True
-                            # Task'ni claimed sifatida belgilaymiz
-                            for task in task_group:
-                                async with aiosqlite.connect(DB_PATH) as db:
-                                    await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
-                                    await db.commit()
-                                try:
-                                    await bot.send_message(
-                                        task["telegram_id"],
-                                        f"🎯 <b>Nishon olindi!</b>\n\n@{uname} bo'shadi va bot tomonidan band qilindi!\n"
-                                        f"<i>Akkauntingizni ulasangiz username profilingizga o'tkazishingiz mumkin.</i>",
-                                        parse_mode="HTML"
-                                    )
-                                except Exception: pass
-                            logger.info(f"🎉 STEALTH claim: @{uname} muvaffaqiyatli olindi!")
-                        except FloodWaitError as fe:
-                            session_floodwait[stealth_key] = time.time() + fe.seconds
-                            logger.warning(f"⛔ Stealth FloodWait {fe.seconds}s (@{uname})")
-                        except Exception as se:
-                            logger.warning(f"Stealth claim xato (@{uname}): {se}")
-                        finally:
-                            if s_ch_id and s_ch_access_hash and not s_success and s_client:
-                                try:
-                                    from telethon.tl.types import InputChannel
-                                    await s_client(DeleteChannelRequest(channel=InputChannel(s_ch_id, s_ch_access_hash)))
-                                except Exception: pass
-                            if s_client:
-                                await s_client.disconnect()
-                                _telethon_cache.pop(stealth_sess, None)
+                logger.warning(f"⚠️ @{uname} uchun yaroqli faol sessiya topilmadi!")
+                for task in task_group:
+                    try:
+                        await bot.send_message(
+                            task["telegram_id"],
+                            f"⚠️ <b>@{uname} bo'shadi, lekin olib bo'lmadi!</b>\n\n"
+                            f"Telegram akkauntingiz ulanganini va sessiya faolligini tekshiring.",
+                            parse_mode="HTML"
+                        )
+                    except Exception: pass
 
         finally:
             claiming_now.discard(uname)
