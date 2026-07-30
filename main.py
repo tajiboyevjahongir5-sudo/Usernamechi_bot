@@ -2167,10 +2167,18 @@ async def monitoring_loop(bot):
                 await asyncio.sleep(1.5)
                 continue
 
-            # DEDUPLICATION — bitta username bir marta tekshirilsin
+            # DEDUPLICATION & VALIDATION — faqat haqiqiy Telegram username'lar tekshirilsin (5-32 belgi, a-z, 0-9, _)
+            import re
+            uname_pattern = re.compile(r'^[a-z0-9_]{5,32}$')
             uname_map: dict = {}
             for t in tasks:
-                u_lower = t["username"].lower()
+                u_lower = t["username"].lower().replace('@', '').strip()
+                if not uname_pattern.match(u_lower):
+                    # Yaroqsiz matn (masalan apostrof ' bo'lgan "yo'lboshchi") — qayta tekshirmaslik uchun statusini o'chiramiz
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        await db.execute("UPDATE monitoring_tasks SET status='failed_invalid' WHERE id=?", (t["id"],))
+                        await db.commit()
+                    continue
                 if u_lower not in uname_map:
                     uname_map[u_lower] = []
                 uname_map[u_lower].append(t)
