@@ -3498,9 +3498,10 @@ async def api_monitor_start(request: Request):
             invalid_usernames.add(u)
             
     if not valid_usernames:
+        inv_sample = ", ".join(list(invalid_usernames)[:3]) if invalid_usernames else ""
         return {
             "ok": False, 
-            "error": "Kiritilgan matnda yaroqli username'lar topilmadi! (Telegram qoidasi: 5-32 ta belgi, faqat a-z, 0-9, _)"
+            "error": f"❌ Kiritilgan ({inv_sample or 'matn'}) yaroqsiz! Usernameda apostrof ('), qo'shtirnoq (\") va maxsus belgilar TAQIQLANGAN. Faqat a-z, 0-9 va _ kiritilishi shart (kamida 5 belgi)."
         }
         
     async with aiosqlite.connect(DB_PATH) as db:

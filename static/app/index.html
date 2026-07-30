@@ -2267,6 +2267,12 @@ async function startMonitor() {
   if (!username) { showToast('Username kiriting!','error'); return; }
   if (!userData.session_string) { showToast('Avval akkauntni ulang!','error'); goPage('account'); return; }
   
+  // Qat'iy tekshiruv: apostrof ('), qo'shtirnoq ("), probel va taqiqlangan simvollar
+  if (/'|"|’|`/.test(username)) {
+    showToast("❌ Usernameda apostrof (') yoki qo'shtirnoq (\") ishlatish MUMKIN EMAS! Faqat lotin harflari, raqamlar va pastki chiziq (_) kiritilishi shart.", 'error');
+    return;
+  }
+  
   try {
     const res = await fetch(`${API}/api/monitor/start`, {
       method:'POST', headers:{'Content-Type':'application/json'},
