@@ -480,8 +480,7 @@ from bot.words import (
     EN_PREFIXES, EN_NUMBERS,
     _is_pronounceable,
 )
-import random
-import string
+
 
 def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> list:
     from bot.words import (
@@ -490,11 +489,10 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         ANIMALS_CLEAN, NATURE_CLEAN, EN_COOL_CLEAN,
         nouns, adjectives, uz_dict
     )
-    import random as _rnd
-    import re as _re
+
 
     cat = base_word.strip().lower()
-    TELEGRAM_RE = _re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
+    TELEGRAM_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
 
     def valid(u):
         return (4 <= len(u) <= 32
@@ -539,8 +537,8 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
 
         names_list = list(set(w.lower() for w in all_names if str(w).isalpha() and 4 <= len(str(w)) <= 8))
         words_list = list(set(w.lower() for w in all_words if str(w).isalpha() and 4 <= len(str(w)) <= 8))
-        _rnd.shuffle(names_list)
-        _rnd.shuffle(words_list)
+        random.shuffle(names_list)
+        random.shuffle(words_list)
         pool = names_list + words_list
 
     else:
@@ -552,8 +550,8 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
             curated = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN))
             dict_pool = [w for w in (nouns + adjectives) if str(w).isalpha() and 4 <= len(str(w)) <= 10]
 
-        _rnd.shuffle(curated)
-        _rnd.shuffle(dict_pool)
+        random.shuffle(curated)
+        random.shuffle(dict_pool)
 
         csuf = ['_uz', '_uzb', '_pro', '_vip', '_top', '_official', '_bot', '_tv', '_real', '_me', '_1', '_7', '_99', '_777', '1', '2', '7', '99', '2025', '2026', '777', '_01', '_07']
         cpfx = ['the_', 'real_', 'my_', 'mr_', 'pro_', 'top_', 'uzb_', 'neo_', 'mr', 'ms', 'best_', 'i_']
@@ -563,12 +561,12 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
             u_str = str(u).strip().lower()
             if len(u_str) <= 9:
                 for sfx in csuf:
-                    if _rnd.random() > 0.5: var_pool.append(f'{u_str}{sfx}')
+                    if random.random() > 0.5: var_pool.append(f'{u_str}{sfx}')
                 for pfx in cpfx:
-                    if _rnd.random() > 0.6: var_pool.append(f'{pfx}{u_str}')
+                    if random.random() > 0.6: var_pool.append(f'{pfx}{u_str}')
         pool = var_pool
 
-    _rnd.shuffle(pool)
+    random.shuffle(pool)
 
     seen = set()
     res = []
@@ -1815,7 +1813,7 @@ async def monitoring_loop(bot):
         logger.info(f"🎯 [CLAIM START] @{uname} bo'sh joy sarlavhasi aniqlandi! Jarayon boshlanmoqda...")
         try:
             # 2-qadam: t.me orqali IKKI MARTA tasdiqlash (false-positive'dan saqlanish)
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.1)
             try:
                 async with http_session.get(
                     f"https://t.me/{uname}", allow_redirects=True,
@@ -1958,8 +1956,14 @@ async def monitoring_loop(bot):
             claiming_now.discard(uname)
 
 
+    http_session = None
     while True:
         try:
+            now_ts = time.time()
+            expired = [k for k, v in taken_usernames_cache.items() if v < now_ts]
+            for k in expired:
+                del taken_usernames_cache[k]
+
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute(
@@ -1991,12 +1995,16 @@ async def monitoring_loop(bot):
                 concurrent = 25
             else:
                 concurrent = 30
+            if concurrent > 10:
+                concurrent = 10
             sem = asyncio.Semaphore(concurrent)
 
-            async with aiohttp.ClientSession(
-                headers={'User-Agent': headers_list[hdr_idx]},
-                connector=aiohttp.TCPConnector(limit=concurrent + 5)
-            ) as http_session:
+            if http_session is None or http_session.closed:
+                http_session = aiohttp.ClientSession(
+                    connector=aiohttp.TCPConnector(limit=concurrent + 5)
+                )
+
+            if True:
 
                 async def check_uname_group(uname_lower, task_group):
                     nonlocal global_429_count, taken_usernames_cache, last_channel_created
@@ -2015,7 +2023,8 @@ async def monitoring_loop(bot):
                             # 1-qadam: t.me HTTP tekshiruv (Telegram API ishlatilmaydi — cheklovsiz)
                             async with http_session.get(
                                 f"https://t.me/{uname}", allow_redirects=True,
-                                timeout=aiohttp.ClientTimeout(total=3.0)
+                                timeout=aiohttp.ClientTimeout(total=3.0),
+                                headers={'User-Agent': headers_list[hdr_idx]}
                             ) as resp:
                                 if resp.status == 429:
                                     global_429_count += 1
@@ -2028,6 +2037,7 @@ async def monitoring_loop(bot):
 
                                 text = await resp.text()
                                 if 'tgme_page_title' in text or 'tgme_page_extra' in text:
+                                    taken_usernames_cache[uname_lower] = time.time() + 600
                                     return  # Hali band
 
                         except Exception:
@@ -4063,6 +4073,7 @@ async def auto_refresh_phones():
             await _c.disconnect()
         except Exception as e:
             logger.warning(f"Auto phone refresh xato ({tid}): {e}")
+        await asyncio.sleep(2)
     logger.info(f"✅ Telefon raqamlari yangilandi: {updated} ta")
 
 async def session_checker_loop():
@@ -4117,7 +4128,7 @@ async def session_checker_loop():
                         if "unregistered" in err_str or "revoked" in err_str or "deactivated" in err_str:
                             await save_session(tid, None)
                             logger.info(f"🔴 Seans bekor qilinganligi aniqlandi ({tid}): {e}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(3)
         except Exception as e:
             logger.error(f"session_checker_loop xatosi: {e}")
         await asyncio.sleep(120)  # Har 2 daqiqada tekshirib turadi
@@ -4365,6 +4376,12 @@ class AntiSpamMiddleware(BaseMiddleware):
             timestamps = [t for t in timestamps if now - t < self.RATE_WINDOW]
             timestamps.append(now)
             _spam_tracker[uid] = timestamps
+
+            # Eski yozuvlarni tozalash (Memory leak oldini olish)
+            expired_users = [k for k, ts_list in _spam_tracker.items() if not ts_list or now - ts_list[-1] > self.RATE_WINDOW]
+            for k in expired_users:
+                if k != uid:
+                    del _spam_tracker[k]
 
             if len(timestamps) > self.MAX_REQUESTS:
                 _spam_blocked[uid] = now + self.BLOCK_SECONDS
