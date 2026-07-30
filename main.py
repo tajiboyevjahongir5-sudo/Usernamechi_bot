@@ -1906,11 +1906,34 @@ async def monitoring_loop(bot):
                                 await db.commit()
                             try:
                                 await bot.send_message(task["telegram_id"],
-                                    f"❌ @{uname} bo'shadi, lekin ommaviy link limiti (10 ta) tugagani uchun ololmadim.")
+                                    f"❌ @{uname} bo'shadi, lekin ommaviy link limiti (10 ta) tugagani uchun ololmadim.\n\n"
+                                    f"💡 Telegramingizda ba'zi kanallarni o'chirish orqali joyni bo'shating.")
                             except Exception: pass
                             continue
+                        elif "purchase" in err_str or "UsernamePurchaseAvailable" in err_type:
+                            logger.info(f"💰 @{uname} Fragment auksionida — oddiy claim mumkin emas")
+                            username_is_taken = True
+                            taken_usernames_cache[uname.lower()] = time.time() + 3600  # 1 soat keshlashtirish
+                            try:
+                                await bot.send_message(task["telegram_id"],
+                                    f"💰 <b>@{uname} Fragment auksionida!</b>\n\n"
+                                    f"Bu username hozirda fragment.com auksionida sotilmoqda. "
+                                    f"Oddiy yo'l bilan band qilib bo'lmaydi.\n\n"
+                                    f"🔗 <a href='https://fragment.com/username/{uname}'>Fragment'da ko'rish</a>",
+                                    parse_mode="HTML", disable_web_page_preview=True)
+                            except Exception: pass
+                            break
                         else:
                             logger.warning(f"UpdateUsername xato (@{uname}): {ue}")
+                            # Foydalanuvchiga noma'lum xato haqida xabar
+                            try:
+                                await bot.send_message(task["telegram_id"],
+                                    f"⚠️ <b>@{uname} claim xatosi</b>\n\n"
+                                    f"Username bo'shagan edi, lekin band qilishda xato:\n"
+                                    f"<code>{str(ue)[:200]}</code>\n\n"
+                                    f"<i>Bot qayta urinib ko'radi.</i>",
+                                    parse_mode="HTML")
+                            except Exception: pass
                             continue
 
                     if success:
