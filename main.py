@@ -2331,6 +2331,12 @@ async def monitoring_loop(bot):
                     connector=aiohttp.TCPConnector(limit=concurrent + 5)
                 )
 
+            # Har bir iteratsiyada faol poylanayotgan nishonlar haqida log
+            target_list_str = ", ".join(f"@{u}" for u in list(uname_map.keys())[:5])
+            if total_uniq > 5:
+                target_list_str += f" va yana {total_uniq - 5} ta"
+            logger.info(f"📡 [MONITORING] {total_uniq} ta faol nishon poylanmoqda ({target_list_str})")
+
             async def check_uname_group(uname_lower, task_group):
                 nonlocal global_429_count, taken_usernames_cache, last_channel_created
                 if taken_usernames_cache.get(uname_lower, 0) > time.time():
@@ -2342,6 +2348,7 @@ async def monitoring_loop(bot):
                         await asyncio.sleep(min(global_429_count * 2.0, 30.0))
 
                     uname = task_group[0]["username"]
+                    logger.info(f"Checking target @{uname}...")
                     try:
                         # 1-qadam: t.me HTTP tekshiruv (User-Agent rotatsiyasi, timeout 3.0s)
                         async with http_session.get(
