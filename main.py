@@ -2038,6 +2038,8 @@ async def monitoring_loop(bot):
     spamblocked_sessions: set = set()  # SpamBlock bo'lgan sessiyalar
     taken_usernames_cache: dict = {}   # {uname_lower: expiry_ts} — Band/muzlatilgan nomlar keshi (12 soat TTL)
     last_channel_created: dict = {}    # {session_hash: timestamp}
+    last_checked_ts: dict = {}         # {uname_lower: last_check_time} — har bir nom uchun oxirgi tekshiruv vaqti
+    CHECK_INTERVAL = 5.0               # Har bir username minimum 5 soniyada bir tekshiriladi
 
     async def _claim_username(task_group, uname, http_session):
         """Username bo'shagan — darhol band qilishga urinamiz (alohida task)."""
@@ -2403,9 +2405,16 @@ async def monitoring_loop(bot):
             logger.info(f"📡 [MONITORING] {total_uniq} ta faol nishon poylanmoqda ({target_list_str})")
 
             async def check_uname_group(uname_lower, task_group):
-                nonlocal global_429_count, taken_usernames_cache, last_channel_created
+                nonlocal global_429_count, taken_usernames_cache, last_channel_created, last_checked_ts
+                # Kesh ichida bo'lsa — o'tkazib yuboramiz
                 if taken_usernames_cache.get(uname_lower, 0) > time.time():
-                    return  # Allaqachon band ekanligi tasdiqlangan (TTL ichida)
+                    return
+
+                # Rate limit: har bir username kamida CHECK_INTERVAL soniyada bir tekshiriladi
+                now_t = time.time()
+                last_t = last_checked_ts.get(uname_lower, 0)
+                if now_t - last_t < CHECK_INTERVAL:
+                    return  # Hali erta, keyingi tsiklga qoldiramiz
 
                 async with sem:
                     # Global 429 cheklovi bo'lsa — kutamiz
@@ -2413,22 +2422,25 @@ async def monitoring_loop(bot):
                         await asyncio.sleep(min(global_429_count * 2.0, 30.0))
 
                     uname = task_group[0]["username"]
+                    last_checked_ts[uname_lower] = time.time()  # Tekshiruv vaqtini belgilaymiz
                     logger.info(f"Checking target @{uname}...")
                     try:
-                        # 1-qadam: t.me HTTP tekshiruv (User-Agent rotatsiyasi, timeout 3.0s)
+                        # 1-qadam: t.me HTTP tekshiruv (User-Agent rotatsiyasi, timeout 4.0s)
                         async with http_session.get(
                             f"https://t.me/{uname}", allow_redirects=True,
-                            timeout=aiohttp.ClientTimeout(total=3.0),
+                            timeout=aiohttp.ClientTimeout(total=4.0),
                             headers={'User-Agent': headers_list[hdr_idx]}
                         ) as resp:
                             if resp.status == 429:
                                 global_429_count += 1
-                                wait_time = min(5.0 * global_429_count, 45.0)
+                                wait_time = min(5.0 * global_429_count, 60.0)
                                 logger.warning(f"⚠️ t.me 429 #{global_429_count} — {wait_time:.0f}s kutilmoqda")
                                 await asyncio.sleep(wait_time)
                                 return
                             if global_429_count > 0:
                                 global_429_count = max(0, global_429_count - 1)
+
+                            text = await resp.text()  # HTML matnini o'qiymiz
 
                             # Aniq band profil, kanal, guruh, bot yoki fragment auksioni bo'lsa — keshlaymiz (12 soat TTL)
                             taken_markers = (
@@ -2454,7 +2466,7 @@ async def monitoring_loop(bot):
         except Exception as e:
             logger.error(f"Monitoring loop xato: {e}")
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(2.0)  # 2 soniya kutamiz — ortiqcha so'rovlar oldini oladi
 
 # ─── FASTAPI APP ──────────────────────────────
 
