@@ -2462,14 +2462,14 @@ async def monitoring_loop(bot):
 
                             text = await resp.text()  # HTML matnini o'qiymiz
 
-                            # Aniq band profil, kanal, guruh, bot yoki fragment auksioni bo'lsa — keshlaymiz (12 soat TTL)
+                            # Aniq band profil, kanal, guruh, bot yoki fragment auksioni bo'lsa — monitoring davom etadi (CHECK_INTERVAL bilan)
                             taken_markers = (
                                 'tgme_page_title', 'tgme_page_extra', 'tgme_page_photo',
                                 'tgme_page_action', 'tgme_action_button_new', 'tgme_page_icon',
                                 'fragment.com', 'tgme_page_description'
                             )
                             if any(k in text for k in taken_markers):
-                                taken_usernames_cache[uname_lower] = time.time() + 43200  # 12 soat kesh
+                                # Band bo'lsa keshlamaymiz (CHECK_INTERVAL rate-limit bo'yicha keyinroq qayta tekshiriladi)
                                 return  # Hali band
 
                     except asyncio.TimeoutError:
