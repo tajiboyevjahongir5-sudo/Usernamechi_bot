@@ -2040,6 +2040,7 @@ async def monitoring_loop(bot):
     last_channel_created: dict = {}    # {session_hash: timestamp}
     last_checked_ts: dict = {}         # {uname_lower: last_check_time} — har bir nom uchun oxirgi tekshiruv vaqti
     CHECK_INTERVAL = 5.0               # Har bir username minimum 5 soniyada bir tekshiriladi
+    last_monitor_log_ts = 0.0          # Monitoring log spamini oldini olish uchun
 
     async def _claim_username(task_group, uname, http_session):
         """Username bo'shagan — darhol band qilishga urinamiz (alohida task)."""
@@ -2353,6 +2354,13 @@ async def monitoring_loop(bot):
             for k in expired:
                 del taken_usernames_cache[k]
 
+            # last_checked_ts: monitoring_tasks da bo'lmagan nomlarni tozalash (xotira tejash)
+            active_lower = set()
+            # (active_lower keyinroq tasks dan to'ldiriladi — tozalash keyingi iteratsiyada)
+            stale_keys = [k for k in last_checked_ts if k not in taken_usernames_cache and now_ts - last_checked_ts[k] > 300]
+            for k in stale_keys:
+                del last_checked_ts[k]
+
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute(
@@ -2398,11 +2406,14 @@ async def monitoring_loop(bot):
                     connector=aiohttp.TCPConnector(limit=concurrent + 5)
                 )
 
-            # Har bir iteratsiyada faol poylanayotgan nishonlar haqida log
-            target_list_str = ", ".join(f"@{u}" for u in list(uname_map.keys())[:5])
-            if total_uniq > 5:
-                target_list_str += f" va yana {total_uniq - 5} ta"
-            logger.info(f"📡 [MONITORING] {total_uniq} ta faol nishon poylanmoqda ({target_list_str})")
+            # Monitoring log spami oldini olish: faqat har 60 soniyada
+            nonlocal_now = time.time()
+            if nonlocal_now - last_monitor_log_ts >= 60.0:
+                target_list_str = ", ".join(f"@{u}" for u in list(uname_map.keys())[:5])
+                if total_uniq > 5:
+                    target_list_str += f" va yana {total_uniq - 5} ta"
+                logger.info(f"📡 [MONITORING] {total_uniq} ta faol nishon poylanmoqda ({target_list_str})")
+                last_monitor_log_ts = nonlocal_now
 
             async def check_uname_group(uname_lower, task_group):
                 nonlocal global_429_count, taken_usernames_cache, last_channel_created, last_checked_ts
@@ -2417,6 +2428,9 @@ async def monitoring_loop(bot):
                     return  # Hali erta, keyingi tsiklga qoldiramiz
 
                 async with sem:
+                    # Parallellikni yumshatish: har so'rov orasiga kichik pauza
+                    await asyncio.sleep(0.2)
+
                     # Global 429 cheklovi bo'lsa — kutamiz
                     if global_429_count > 0:
                         await asyncio.sleep(min(global_429_count * 2.0, 30.0))
