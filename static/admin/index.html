@@ -594,11 +594,26 @@ body::before {
   <div class="page" id="page-broadcast">
     <div class="glass-panel">
       <div class="panel-header">
-        <div class="panel-title">📢 Ommaviy Xabarnoma Yuborish (Mass Mailing)</div>
+        <div class="panel-title">📢 Xabarnoma Yuborish (Broadcast & Direct Message)</div>
       </div>
       <div style="max-width:650px;">
         <div style="font-size:13px; color:var(--text-muted); margin-bottom:16px; line-height:1.6;">
-          Botdagi barcha foydalanuvchilarga bir vaqtning o'zida matnli, rasmli yoki tugmali e'lon xabarini yuborish paneli.
+          Barcha foydalanuvchilarga yoki muayyan bitta foydalanuvchiga matnli, rasmli, videoli yoki faylli xabar yuborish paneli.
+        </div>
+
+        <!-- TARGET SELECTION -->
+        <div class="form-group">
+          <label class="form-label">🎯 Kimga yuborilsin?</label>
+          <div style="display:flex; gap:10px; margin-top:6px;">
+            <button id="bc-target-btn-all" class="filter-btn active" style="flex:1; padding:10px;" onclick="setBroadcastTarget('all')">🌐 Barcha Foydalanuvchilar</button>
+            <button id="bc-target-btn-single" class="filter-btn" style="flex:1; padding:10px;" onclick="setBroadcastTarget('single')">👤 Aniq Foydalanuvchiga</button>
+          </div>
+        </div>
+
+        <!-- SINGLE USER INPUT -->
+        <div class="form-group" id="bc-single-user-wrap" style="display:none;">
+          <label class="form-label">👤 Foydalanuvchi Telegram ID yoki @username</label>
+          <input type="text" id="bc-target-user" class="form-input" placeholder="Masalan: 123456789 yoki @username">
         </div>
 
         <div class="form-group">
@@ -606,19 +621,22 @@ body::before {
           <textarea id="bc-message" class="form-input" rows="5" style="resize:vertical;" placeholder="Salom! Yangi aksiya boshlandi..."></textarea>
         </div>
 
-        <!-- RASM YUKLASH (GALLERIYADAN) -->
+        <!-- MEDIA / FILE YUKLASH (RASM, VIDEO, HUJJAT) -->
         <div class="form-group">
-          <label class="form-label">🖼️ Rasm (Galleriyadan tanlash, ixtiyoriy)</label>
-          <div id="bc-photo-area" onclick="document.getElementById('bc-photo-file').click()" style="cursor:pointer; border:2px dashed rgba(139,92,246,0.4); border-radius:14px; padding:20px; text-align:center; background:rgba(139,92,246,0.06); transition:all 0.2s; min-height:80px; display:flex; align-items:center; justify-content:center; gap:12px; flex-direction:column;">
-            <img id="bc-photo-preview" src="" alt="" style="display:none; max-height:140px; max-width:100%; border-radius:10px; object-fit:cover;">
+          <label class="form-label">🖼️ 🎬 📁 Media / Fayl (Rasm, Video yoki Hujjat, ixtiyoriy)</label>
+          <div id="bc-photo-area" onclick="document.getElementById('bc-photo-file').click()" style="cursor:pointer; border:2px dashed rgba(139,92,246,0.4); border-radius:14px; padding:20px; text-align:center; background:rgba(139,92,246,0.06); transition:all 0.2s; min-height:90px; display:flex; align-items:center; justify-content:center; gap:12px; flex-direction:column;">
+            <img id="bc-photo-preview" src="" alt="" style="display:none; max-height:160px; max-width:100%; border-radius:10px; object-fit:cover;">
+            <video id="bc-video-preview" controls style="display:none; max-height:180px; max-width:100%; border-radius:10px;"></video>
+            <div id="bc-file-name-preview" style="display:none; font-size:13px; font-weight:600; color:var(--accent-purple); word-break:break-all;"></div>
+            
             <div id="bc-photo-placeholder" style="display:flex; flex-direction:column; align-items:center; gap:6px; pointer-events:none;">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(139,92,246,0.7)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              <span style="font-size:13px; color:rgba(139,92,246,0.8); font-weight:600;">Galleriyadan rasm tanlash</span>
-              <span style="font-size:11px; color:var(--text-muted);">JPG, PNG, WEBP (max 10MB)</span>
+              <span style="font-size:13px; color:rgba(139,92,246,0.8); font-weight:600;">Rasm, Video yoki Hujjat tanlash</span>
+              <span style="font-size:11px; color:var(--text-muted);">JPG, PNG, MP4, MOV, PDF, ZIP, DOCX (max 50MB)</span>
             </div>
           </div>
-          <input type="file" id="bc-photo-file" accept="image/*" style="display:none;" onchange="previewBroadcastPhoto(this)">
-          <button id="bc-photo-clear" onclick="clearBroadcastPhoto()" style="display:none; margin-top:8px; width:100%; padding:8px; border-radius:10px; background:rgba(244,63,94,0.12); border:1px solid rgba(244,63,94,0.3); color:#f87171; font-size:12px; font-weight:600; cursor:pointer;">❌ Rasmni olib tashlash</button>
+          <input type="file" id="bc-photo-file" accept="image/*,video/*,.pdf,.zip,.rar,.doc,.docx,.txt" style="display:none;" onchange="previewBroadcastPhoto(this)">
+          <button id="bc-photo-clear" onclick="clearBroadcastPhoto()" style="display:none; margin-top:8px; width:100%; padding:8px; border-radius:10px; background:rgba(244,63,94,0.12); border:1px solid rgba(244,63,94,0.3); color:#f87171; font-size:12px; font-weight:600; cursor:pointer;">❌ Faylni olib tashlash</button>
           <input type="hidden" id="bc-photo" value="">
         </div>
 
@@ -633,14 +651,13 @@ body::before {
           </div>
         </div>
 
-        <button class="action-btn btn-primary" id="btn-send-bc" style="padding:14px 28px; width:100%; justify-content:center;" onclick="sendBroadcast()">🚀 Barcha Userlarga Yuborish</button>
+        <button class="action-btn btn-primary" id="btn-send-bc" style="padding:14px 28px; width:100%; justify-content:center;" onclick="sendBroadcast()">🚀 Yuborish</button>
       </div>
     </div>
   </div>
 
 </div>
 
-<!-- FLOATING DRAGGABLE DROPLET NAV BAR -->
 <!-- FLOATING DRAGGABLE DROPLET NAV BAR -->
 <nav class="floating-nav" id="main-admin-nav">
   <div class="nav-droplet" id="nav-droplet"></div>
@@ -661,6 +678,10 @@ body::before {
   <button class="nav-item" data-tab="listings" onclick="switchTab('listings', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     E'lonlar
+  </button>
+  <button class="nav-item" data-tab="broadcast" onclick="switchTab('broadcast', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+    Xabarnoma
   </button>
   <button class="nav-item" data-tab="settings" onclick="switchTab('settings', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -1177,10 +1198,11 @@ function renderUsers() {
       </div>
       <div class="user-right">
         <div class="user-bal">${(u.balance||0).toLocaleString()} so'm</div>
-        <div style="display:flex; gap:6px;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
           <a href="${profileUrl}" target="_blank" class="action-btn btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Telegramda profilga o'tish">
             💬 Profil
           </a>
+          <button class="action-btn btn-emerald" onclick="openDirectMessage('${u.username || u.telegram_id}')">📩 Xabar</button>
           <button class="action-btn btn-secondary" onclick="openBalanceModal(${u.telegram_id}, ${u.balance||0})">✏️ Balans</button>
           <button class="action-btn ${u.is_stealth ? 'btn-rose' : 'btn-emerald'}" onclick="toggleStealth(${u.telegram_id})">
             ${u.is_stealth ? '🔓 Off' : '🕵️ On'}
@@ -1413,28 +1435,109 @@ async function saveSettings() {
   } catch(e) { showToast("Xatolik", "error"); }
 }
 
+let broadcastTargetType = 'all';
+
+function setBroadcastTarget(type) {
+  broadcastTargetType = type;
+  const btnAll = document.getElementById('bc-target-btn-all');
+  const btnSingle = document.getElementById('bc-target-btn-single');
+  const wrapSingle = document.getElementById('bc-single-user-wrap');
+  const sendBtn = document.getElementById('btn-send-bc');
+
+  if (type === 'single') {
+    if (btnAll) btnAll.classList.remove('active');
+    if (btnSingle) btnSingle.classList.add('active');
+    if (wrapSingle) wrapSingle.style.display = 'block';
+    if (sendBtn) sendBtn.innerText = '🚀 Foydalanuvchiga Yuborish';
+  } else {
+    if (btnSingle) btnSingle.classList.remove('active');
+    if (btnAll) btnAll.classList.add('active');
+    if (wrapSingle) wrapSingle.style.display = 'none';
+    if (sendBtn) sendBtn.innerText = '🚀 Barcha Userlarga Yuborish';
+  }
+}
+
+function openDirectMessage(targetIdOrUser) {
+  const bcTabBtn = document.querySelector('.nav-item[data-tab="broadcast"]');
+  if (typeof switchTab === 'function') {
+    switchTab('broadcast', bcTabBtn);
+  }
+  setBroadcastTarget('single');
+  const userInp = document.getElementById('bc-target-user');
+  if (userInp) userInp.value = targetIdOrUser;
+  const msgInp = document.getElementById('bc-message');
+  if (msgInp) msgInp.focus();
+}
+
 function previewBroadcastPhoto(input) {
   if (!input.files || !input.files[0]) return;
   const file = input.files[0];
-  if (file.size > 10 * 1024 * 1024) { showToast("Rasm hajmi 10MB dan oshmasin!", "error"); input.value = ''; return; }
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    document.getElementById('bc-photo-preview').src = e.target.result;
-    document.getElementById('bc-photo-preview').style.display = 'block';
-    document.getElementById('bc-photo-placeholder').style.display = 'none';
-    document.getElementById('bc-photo-clear').style.display = 'block';
-    document.getElementById('bc-photo-area').style.border = '2px solid rgba(139,92,246,0.6)';
-  };
-  reader.readAsDataURL(file);
+  if (file.size > 50 * 1024 * 1024) { showToast("Fayl hajmi 50MB dan oshmasin!", "error"); input.value = ''; return; }
+
+  const imgPreview = document.getElementById('bc-photo-preview');
+  const videoPreview = document.getElementById('bc-video-preview');
+  const fileNamePreview = document.getElementById('bc-file-name-preview');
+  const placeholder = document.getElementById('bc-photo-placeholder');
+  const clearBtn = document.getElementById('bc-photo-clear');
+  const area = document.getElementById('bc-photo-area');
+
+  if (imgPreview) imgPreview.style.display = 'none';
+  if (videoPreview) videoPreview.style.display = 'none';
+  if (fileNamePreview) fileNamePreview.style.display = 'none';
+
+  if (file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      if (imgPreview) {
+        imgPreview.src = e.target.result;
+        imgPreview.style.display = 'block';
+      }
+      if (placeholder) placeholder.style.display = 'none';
+      if (clearBtn) clearBtn.style.display = 'block';
+      if (area) area.style.border = '2px solid rgba(139,92,246,0.6)';
+    };
+    reader.readAsDataURL(file);
+  } else if (file.type.startsWith('video/')) {
+    const url = URL.createObjectURL(file);
+    if (videoPreview) {
+      videoPreview.src = url;
+      videoPreview.style.display = 'block';
+    }
+    if (placeholder) placeholder.style.display = 'none';
+    if (clearBtn) clearBtn.style.display = 'block';
+    if (area) area.style.border = '2px solid rgba(139,92,246,0.6)';
+  } else {
+    if (fileNamePreview) {
+      fileNamePreview.innerText = `📄 ${file.name} (${(file.size / (1024*1024)).toFixed(2)} MB)`;
+      fileNamePreview.style.display = 'block';
+    }
+    if (placeholder) placeholder.style.display = 'none';
+    if (clearBtn) clearBtn.style.display = 'block';
+    if (area) area.style.border = '2px solid rgba(139,92,246,0.6)';
+  }
 }
 
 function clearBroadcastPhoto() {
-  document.getElementById('bc-photo-file').value = '';
-  document.getElementById('bc-photo-preview').src = '';
-  document.getElementById('bc-photo-preview').style.display = 'none';
-  document.getElementById('bc-photo-placeholder').style.display = 'flex';
-  document.getElementById('bc-photo-clear').style.display = 'none';
-  document.getElementById('bc-photo-area').style.border = '2px dashed rgba(139,92,246,0.4)';
+  const fileInp = document.getElementById('bc-photo-file');
+  if (fileInp) fileInp.value = '';
+  
+  const imgPreview = document.getElementById('bc-photo-preview');
+  if (imgPreview) { imgPreview.src = ''; imgPreview.style.display = 'none'; }
+
+  const videoPreview = document.getElementById('bc-video-preview');
+  if (videoPreview) { videoPreview.src = ''; videoPreview.style.display = 'none'; }
+
+  const fileNamePreview = document.getElementById('bc-file-name-preview');
+  if (fileNamePreview) { fileNamePreview.innerText = ''; fileNamePreview.style.display = 'none'; }
+
+  const placeholder = document.getElementById('bc-photo-placeholder');
+  if (placeholder) placeholder.style.display = 'flex';
+
+  const clearBtn = document.getElementById('bc-photo-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+
+  const area = document.getElementById('bc-photo-area');
+  if (area) area.style.border = '2px dashed rgba(139,92,246,0.4)';
 }
 
 async function sendBroadcast() {
@@ -1442,56 +1545,57 @@ async function sendBroadcast() {
   const button_text = document.getElementById('bc-btn-text').value.trim();
   const button_url = document.getElementById('bc-btn-url').value.trim();
   const fileInput = document.getElementById('bc-photo-file');
-  
-  if (!message) { showToast("Xabar matnini kiriting!", "error"); return; }
-  if (!confirm("Barcha foydalanuvchilarga ushbu xabarni yuborishni tasdiqlaysizmi?")) return;
-  
+  const target_user = document.getElementById('bc-target-user') ? document.getElementById('bc-target-user').value.trim() : '';
+
+  if (broadcastTargetType === 'single' && !target_user) {
+    showToast("Foydalanuvchi Telegram ID yoki username kiriting!", "error");
+    return;
+  }
+  if (!message && (!fileInput.files || !fileInput.files[0])) {
+    showToast("Xabar matnini yoki fayl kiriting!", "error");
+    return;
+  }
+
+  const confirmMsg = broadcastTargetType === 'single'
+    ? `'${target_user}' foydalanuvchisiga ushbu xabarni yuborishni tasdiqlaysizmi?`
+    : "BARCHA foydalanuvchilarga ushbu xabarni yuborishni tasdiqlaysizmi?";
+
+  if (!confirm(confirmMsg)) return;
+
   const btn = document.getElementById('btn-send-bc');
   btn.disabled = true;
   btn.innerText = "⏳ Yuborilmoqda... Kuting...";
-  
+
   try {
-    let photo_url = '';
-    
-    // Agar rasm tanlangan bo'lsa, FormData orqali yuklaymiz
+    const formData = new FormData();
+    formData.append('target_type', broadcastTargetType);
+    formData.append('target_user', target_user);
+    formData.append('message', message);
+    formData.append('button_text', button_text);
+    formData.append('button_url', button_url);
     if (fileInput.files && fileInput.files[0]) {
-      const formData = new FormData();
       formData.append('file', fileInput.files[0]);
-      formData.append('message', message);
-      formData.append('button_text', button_text);
-      formData.append('button_url', button_url);
-      
-      const res = await fetch('/api/admin/broadcast', {
-        method: 'POST',
-        headers: headers(),
-        body: formData
-      });
-      const d = await res.json();
-      if (d.ok) {
-        showToast(`✅ Yuborildi: ${d.sent} ta user, Xato: ${d.failed} ta`, "success");
-        document.getElementById('bc-message').value = '';
-        clearBroadcastPhoto();
-      } else {
-        showToast(d.error || "Xatolik", "error");
-      }
-    } else {
-      // Rasmsiz yuborish
-      const res = await fetch('/api/admin/broadcast', {
-        method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, photo_url, button_text, button_url })
-      });
-      const d = await res.json();
-      if (d.ok) {
-        showToast(`✅ Yuborildi: ${d.sent} ta user, Xato: ${d.failed} ta`, "success");
-        document.getElementById('bc-message').value = '';
-      } else {
-        showToast(d.error || "Xatolik", "error");
-      }
     }
-  } catch(e) { showToast("Xatolik yuz berdi", "error"); }
-  
-  btn.disabled = false;
-  btn.innerText = "🚀 Barcha Userlarga Yuborish";
+
+    const res = await fetch('/api/admin/broadcast', {
+      method: 'POST',
+      headers: headers(),
+      body: formData
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`✅ Yuborildi: ${d.sent} ta, Xato: ${d.failed} ta`, "success");
+      document.getElementById('bc-message').value = '';
+      clearBroadcastPhoto();
+    } else {
+      showToast(d.error || "Xatolik yuz berdi", "error");
+    }
+  } catch(e) {
+    showToast("Xatolik yuz berdi", "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerText = broadcastTargetType === 'single' ? "🚀 Foydalanuvchiga Yuborish" : "🚀 Barcha Userlarga Yuborish";
+  }
 }
 
 async function loadCards() {

@@ -4145,7 +4145,7 @@ async def api_admin_channels_delete(request: Request, x_admin_token: str = Heade
     return {"ok": True}
 
 
-# ── ADMIN MASS BROADCAST (OMMAVIY XABARNOMA) ────
+# ── ADMIN BROADCAST & DIRECT MESSAGING ────
 @app.post("/api/admin/broadcast")
 async def api_admin_broadcast(request: Request, x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
@@ -4153,18 +4153,23 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
     else: raise HTTPException(403)
     
     content_type = request.headers.get("content-type", "")
-    photo_bytes = None
-    photo_filename = "photo.jpg"
+    file_bytes = None
+    filename = ""
+    file_mime = ""
     
     if "multipart/form-data" in content_type:
         form = await request.form()
         message_text = (form.get("message") or "").strip()
         button_text = (form.get("button_text") or "").strip()
         button_url = (form.get("button_url") or "").strip()
+        target_type = (form.get("target_type") or "all").strip()
+        target_user = (form.get("target_user") or "").strip()
+        
         file_field = form.get("file")
         if file_field and hasattr(file_field, "read"):
-            photo_bytes = await file_field.read()
-            photo_filename = file_field.filename or "photo.jpg"
+            file_bytes = await file_field.read()
+            filename = getattr(file_field, "filename", "") or "file"
+            file_mime = getattr(file_field, "content_type", "") or ""
         photo_url = ""
     else:
         data = await request.json()
@@ -4172,41 +4177,83 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
         photo_url = data.get("photo_url", "").strip()
         button_text = data.get("button_text", "").strip()
         button_url = data.get("button_url", "").strip()
+        target_type = data.get("target_type", "all").strip()
+        target_user = data.get("target_user", "").strip()
     
-    if not message_text:
-        return {"ok": False, "error": "Xabar matni kiritilmadi"}
-        
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT telegram_id FROM users") as c:
-            users = [r[0] for r in await c.fetchall()]
+    if not message_text and not file_bytes and not photo_url:
+        return {"ok": False, "error": "Xabar matni yoki media kiritilmadi"}
+
+    target_users = []
+    
+    if target_type == "single":
+        if not target_user:
+            return {"ok": False, "error": "Foydalanuvchi Telegram ID yoki Username kiritilmadi"}
             
+        clean_user = target_user.lstrip("@").strip()
+        
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            if clean_user.isdigit():
+                async with db.execute("SELECT telegram_id FROM users WHERE telegram_id=? OR username=?", (int(clean_user), clean_user)) as c:
+                    rows = await c.fetchall()
+            else:
+                async with db.execute("SELECT telegram_id FROM users WHERE LOWER(username)=?", (clean_user.lower(),)) as c:
+                    rows = await c.fetchall()
+                    
+        if rows:
+            target_users = [r["telegram_id"] for r in rows]
+        else:
+            if clean_user.isdigit():
+                target_users = [int(clean_user)]
+            else:
+                return {"ok": False, "error": f"'{target_user}' foydalanuvchisi bazadan topilmadi"}
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT telegram_id FROM users") as c:
+                target_users = [r[0] for r in await c.fetchall()]
+
+    if not target_users:
+        return {"ok": False, "error": "Xabar yuborish uchun foydalanuvchilar topilmadi"}
+
     bot_inst = Bot(token=BOT_TOKEN)
     sent_count = 0
     fail_count = 0
-    
+
     markup = None
     if button_text and button_url:
         markup = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=button_text, url=button_url)]
         ])
-        
-    for tid in users:
+
+    ext = os.path.splitext(filename)[1].lower() if filename else ""
+    is_video = ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm'] or 'video/' in file_mime
+    is_photo = ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif'] or 'image/' in file_mime
+
+    from aiogram.types import BufferedInputFile
+
+    for tid in target_users:
         try:
-            if photo_bytes:
-                from aiogram.types import BufferedInputFile
-                photo_file = BufferedInputFile(photo_bytes, filename=photo_filename)
-                await bot_inst.send_photo(tid, photo=photo_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
+            if file_bytes:
+                input_file = BufferedInputFile(file_bytes, filename=filename or ("video.mp4" if is_video else ("photo.jpg" if is_photo else "document.bin")))
+                if is_video:
+                    await bot_inst.send_video(tid, video=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
+                elif is_photo:
+                    await bot_inst.send_photo(tid, photo=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
+                else:
+                    await bot_inst.send_document(tid, document=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
             elif photo_url:
                 await bot_inst.send_photo(tid, photo=photo_url, caption=message_text, reply_markup=markup, parse_mode="HTML")
             else:
                 await bot_inst.send_message(tid, message_text, reply_markup=markup, parse_mode="HTML")
             sent_count += 1
-            await asyncio.sleep(0.04) # Telegram flood limits
-        except Exception:
+            if len(target_users) > 1:
+                await asyncio.sleep(0.04)
+        except Exception as e:
+            logger.error(f"Broadcast error sending to {tid}: {e}")
             fail_count += 1
-            
+
     await bot_inst.session.close()
-    return {"ok": True, "sent": sent_count, "failed": fail_count, "total": len(users)}
+    return {"ok": True, "sent": sent_count, "failed": fail_count, "total": len(target_users)}
 
 
 # ── ADMIN CARDS (Multi-Card Management) ────────
