@@ -2040,57 +2040,67 @@ async def monitoring_loop(bot):
         claiming_now.add(uname)
         logger.info(f"🎯 [CLAIM START] @{uname} bo'sh joy sarlavhasi aniqlandi! Jarayon boshlanmoqda...")
         try:
-            # 2-tekshiruv: HTTP orqali hali ham band ekanligini aniqlaymiz
+            # 2-tekshiruv: HTTP orqali hali ham band ekanligini qayta tekshiramiz
+            taken_markers = (
+                'tgme_page_title', 'tgme_page_extra', 'tgme_page_photo',
+                'tgme_page_action', 'tgme_action_button_new', 'tgme_page_icon',
+                'fragment.com', 'tgme_page_description'
+            )
             try:
                 async with http_session.get(
                     f"https://t.me/{uname}", allow_redirects=True,
-                    timeout=aiohttp.ClientTimeout(total=2.0)
+                    timeout=aiohttp.ClientTimeout(total=2.0),
+                    headers={'User-Agent': headers_list[hdr_idx]}
                 ) as resp2:
                     text2 = await resp2.text()
-                    # faqat aniq profil/kanal sarlavhasi bo'lsa band deb hisoblaymiz
-                    if 'tgme_page_title' in text2 or 'tgme_page_extra' in text2:
+                    if any(k in text2 for k in taken_markers):
                         logger.info(f"⚠️ [CLAIM CANCEL] @{uname} 2-tekshiruvda (HTTP) band.")
                         taken_usernames_cache[uname.lower()] = time.time() + 43200  # 12 soat
                         return
             except Exception as e2:
-                logger.debug(f"2-tekshiruv xatosi (davom etamiz): {e2}")
+                logger.debug(f"2-tekshiruv xatosi: {e2}")
 
-            # 3-tekshiruv: Telethon CheckUsernameRequest orqali API darajasida tasdiqlash
-            # Bu kanal yaratmasdan username mavjudligini aniq tekshiradi
+            # 3-tekshiruv: Telethon CheckUsernameRequest orqali API darajasida QAT'IY tasdiqlash
             _check_client = None
+            api_confirmed_free = False
             try:
                 from telethon.tl.functions.account import CheckUsernameRequest
                 from telethon.errors import UsernamePurchaseAvailableError, UsernameInvalidError
-                _first_task = next((t for t in task_group if t["session_string"]), None)
+                _first_task = next((t for t in task_group if t.get("session_string")), None)
                 if _first_task:
                     _check_client = await _get_fast_client(_first_task["session_string"])
                     _api_result = await asyncio.wait_for(
                         _check_client(CheckUsernameRequest(uname)),
                         timeout=5.0
                     )
-                    if not _api_result:
-                        logger.info(f"⚠️ [CLAIM CANCEL] @{uname} Telethon API da band (muzlatilgan yoki band).")
-                        taken_usernames_cache[uname.lower()] = time.time() + 43200  # 12 soat
+                    if _api_result is True:
+                        api_confirmed_free = True
+                        logger.info(f"✅ [API CONFIRM] @{uname} Telethon API bo'shligini tasdiqladi — kanal ochilmoqda...")
+                    else:
+                        logger.info(f"⚠️ [CLAIM CANCEL] @{uname} Telethon API bo'sh emas (False).")
+                        taken_usernames_cache[uname.lower()] = time.time() + 43200
                         return
-                    logger.info(f"✅ [API CONFIRM] @{uname} Telethon API bo'sh tasdiqladi — kanal ochilmoqda...")
             except (UsernamePurchaseAvailableError,):
-                logger.info(f"💰 [CLAIM CANCEL] @{uname} Fragment auksionida — claim mumkin emas.")
+                logger.info(f"💰 [CLAIM CANCEL] @{uname} Fragment auksionida.")
                 taken_usernames_cache[uname.lower()] = time.time() + 43200
                 return
             except (UsernameInvalidError,):
                 logger.info(f"⛔ [CLAIM CANCEL] @{uname} yaroqsiz username.")
                 taken_usernames_cache[uname.lower()] = time.time() + 43200
                 return
-            except asyncio.TimeoutError:
-                logger.debug(f"CheckUsernameRequest timeout — davom etamiz")
             except Exception as ce:
-                logger.debug(f"CheckUsernameRequest xato — davom etamiz: {ce}")
+                logger.debug(f"CheckUsernameRequest failed for @{uname}: {ce}")
+                taken_usernames_cache[uname.lower()] = time.time() + 3600
+                return
             finally:
                 if _check_client:
                     try:
                         await _check_client.disconnect()
                     except Exception: pass
                     _telethon_cache.pop(_first_task["session_string"] if _first_task else None, None)
+
+            if not api_confirmed_free:
+                return
 
             username_is_taken = False
             valid_sessions_count = 0
@@ -2224,18 +2234,14 @@ async def monitoring_loop(bot):
                         except Exception: pass
                         continue
 
+                    elif "unsuccessful" in err_str or "rpccallfail" in err_str or "connection" in err_str or "timeout" in err_str:
+                        logger.warning(f"⚠️ Telethon tarmoq xatosi (@{uname}): {ue}")
+                        taken_usernames_cache[uname.lower()] = time.time() + 300  # 5 daqiqa kesh
+                        continue
+
                     else:
                         logger.warning(f"Claim xato (@{uname}): {ue}")
-                        try:
-                            await bot.send_message(
-                                task["telegram_id"],
-                                f"⚠️ <b>@{uname} claim xatosi</b>\n\n"
-                                f"Username bo'shagan edi, lekin band qilishda xato:\n"
-                                f"<code>{str(ue)[:200]}</code>\n\n"
-                                f"<i>Bot qayta urinib ko'radi.</i>",
-                                parse_mode="HTML"
-                            )
-                        except Exception: pass
+                        taken_usernames_cache[uname.lower()] = time.time() + 3600  # 1 soat kesh
                         continue
 
                 finally:
@@ -2352,10 +2358,14 @@ async def monitoring_loop(bot):
                             if global_429_count > 0:
                                 global_429_count = max(0, global_429_count - 1)
 
-                            text = await resp.text()
-                            # Aniq band profil, kanal yoki guruh bo'lsa — keshlaymiz
-                            if 'tgme_page_title' in text or 'tgme_page_extra' in text:
-                                taken_usernames_cache[uname_lower] = time.time() + 600  # 10 minut keshlashtirish
+                            # Aniq band profil, kanal, guruh, bot yoki fragment auksioni bo'lsa — keshlaymiz (12 soat TTL)
+                            taken_markers = (
+                                'tgme_page_title', 'tgme_page_extra', 'tgme_page_photo',
+                                'tgme_page_action', 'tgme_action_button_new', 'tgme_page_icon',
+                                'fragment.com', 'tgme_page_description'
+                            )
+                            if any(k in text for k in taken_markers):
+                                taken_usernames_cache[uname_lower] = time.time() + 43200  # 12 soat kesh
                                 return  # Hali band
 
                     except Exception:
