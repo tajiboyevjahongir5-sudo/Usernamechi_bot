@@ -967,15 +967,49 @@ async def transfer_username(bot, seller_id, buyer_id, username):
     except Exception as e:
         logger.error(f"Transfer error for @{username}: {type(e).__name__} - {e}")
         err_str = str(e).lower()
+        # ── REFUND: xaridor puliga qaytaramiz ──────────────────────────
+        try:
+            async with aiosqlite.connect(DB_PATH) as _db:
+                # Xarid narxini listing dan aniqlaymiz
+                _db.row_factory = aiosqlite.Row
+                async with _db.execute(
+                    "SELECT price FROM listings WHERE username=? ORDER BY id DESC LIMIT 1",
+                    (username,)
+                ) as _c:
+                    _lr = await _c.fetchone()
+                refund_price = int(_lr['price']) if _lr else 0
+
+                if refund_price > 0:
+                    # Xaridorga pulni qaytaramiz
+                    await _db.execute(
+                        "UPDATE users SET balance = balance + ? WHERE telegram_id = ?",
+                        (refund_price, buyer_id)
+                    )
+                    # Sotuvchidan seller_balance ni olib qo'yamiz (agar qo'shilgan bo'lsa)
+                    await _db.execute(
+                        "UPDATE users SET seller_balance = MAX(0, seller_balance - ?) WHERE telegram_id = ?",
+                        (refund_price, seller_id)
+                    )
+                    await _db.commit()
+                    logger.info(f"REFUND: {refund_price} so'm xaridorga ({buyer_id}) qaytarildi (@{username} transfer xato)")
+        except Exception as re:
+            logger.error(f"Refund xato @{username}: {re}")
+        # ────────────────────────────────────────────────────────────────
+
         if isinstance(e, (AuthKeyUnregisteredError, UserDeactivatedError)) or "unregistered" in err_str or "deactivated" in err_str:
             await save_session(seller_id, None)
             try:
                 await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik: Telegram akkauntingiz sessiyasi uzilgan!")
-                await bot.send_message(buyer_id, f"❌ @{username} sotib olish bekor qilindi (Sotuvchi akkaunti uzilgan). Pulingiz balansingizga qaytarilmoqda.")
+                await bot.send_message(buyer_id,
+                    f"❌ @{username} o'tkazilmadi (Sotuvchi sessiyasi uzilgan).\n"
+                    f"Pulingiz to'liq balansingizga qaytarildi. ✅")
             except Exception: pass
         else:
             try:
-                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik yuz berdi: {e}")
+                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik yuz berdi: {type(e).__name__}")
+                await bot.send_message(buyer_id,
+                    f"❌ @{username} o'tkazishda texnik xatolik yuz berdi.\n"
+                    f"Pulingiz to'liq balansingizga qaytarildi. ✅")
             except Exception: pass
     finally:
         try: await seller_client.disconnect()
@@ -2639,86 +2673,8 @@ async def admin_panel():
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
         })
 
-@app.get("/debug_db")
-async def debug_db(tid: int = None, test_init_data: str = None):
-    try:
-        import os
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT count(*) FROM users") as c:
-                row = await c.fetchone()
-                users_count = row[0]
-            async with db.execute("SELECT count(*) FROM orders") as c:
-                row = await c.fetchone()
-                orders_count = row[0]
-            
-            user_info = None
-            if tid:
-                db.row_factory = aiosqlite.Row
-                async with db.execute("SELECT * FROM users WHERE telegram_id=?", (tid,)) as c:
-                    u_row = await c.fetchone()
-                    if u_row: user_info = dict(u_row)
-                    
-            init_data_result = None
-            if test_init_data:
-                init_data_result = verify_init_data(test_init_data)
-
-        return {
-            "DB_PATH": DB_PATH,
-            "is_file_exists": os.path.exists(DB_PATH),
-            "users_count": users_count,
-            "orders_count": orders_count,
-            "user_info": user_info,
-            "bot_token_prefix": BOT_TOKEN[:15] if BOT_TOKEN else None,
-            "init_data_valid": init_data_result is not None,
-            "init_data_parsed": init_data_result
-        }
-    except Exception as e:
-        return {"error": str(e), "DB_PATH": DB_PATH}
-
-@app.get("/logs")
-async def get_logs(request: Request):
-    import os
-    logs = "No file logs found."
-    
-    # Turli joylarda qidirish
-    for path in ["app_debug.log", "/app/data/app_debug.log", "/tmp/app_debug.log"]:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                logs = f"Path: {path}\n\n" + f.read()
-            break
-    
-    headers_str = "\n".join(f"{k}: {v}" for k, v in request.headers.items())
-    files_str = "\n".join(os.listdir("."))
-    
-    html = f"<h3>File Logs:</h3><pre>{logs}</pre><h3>Working Dir Files:</h3><pre>{files_str}</pre><h3>Request Headers:</h3><pre>{headers_str}</pre>"
-    return HTMLResponse(html)
-
-@app.get("/test_token")
-async def test_token(init_data: str = ""):
-    """Token va initData ni tekshirish uchun"""
-    from urllib.parse import parse_qsl
-    import os
-    
-    result = {
-        "BOT_TOKEN_prefix": BOT_TOKEN[:20] if BOT_TOKEN else None,
-        "BOT_TOKEN_length": len(BOT_TOKEN) if BOT_TOKEN else 0,
-    }
-    
-    if init_data:
-        try:
-            params = dict(parse_qsl(init_data, keep_blank_values=True))
-            received_hash = params.pop('hash', '')
-            data_check = '\n'.join(f'{k}={v}' for k, v in sorted(params.items()))
-            secret = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
-            calc_hash = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
-            result["received_hash"] = received_hash[:20]
-            result["calc_hash"] = calc_hash[:20]
-            result["match"] = calc_hash == received_hash
-            result["user"] = params.get("user", "NOT FOUND")
-        except Exception as e:
-            result["error"] = str(e)
-    
-    return result
+# ── Debug endpointlar o'chirildi (xavfsizlik) ──────────────────────────────
+# /debug_db, /logs, /test_token — production da yopiq
 
 
 # ── Mini App API ───────────────────────────────
@@ -2726,10 +2682,6 @@ async def test_token(init_data: str = ""):
 @app.get("/api/check_subscription")
 async def api_check_subscription(request: Request):
     init_data = request.headers.get("X-Telegram-Init-Data", "")
-    try:
-        with open("app_debug.log", "a", encoding="utf-8") as f:
-            f.write(f"\n[CHECK_SUB] INIT_DATA length: {len(init_data)}\n")
-    except: pass
     if not init_data: raise HTTPException(403)
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
@@ -3435,6 +3387,10 @@ async def api_auction_bid(request: Request):
         if listing['seller_id'] == tid:
             return {"ok": False, "error": "O'z auksioningizga stavka bera olmaysiz"}
             
+        # Auksion muddati tugaganmi tekshirish
+        if listing['auction_ends_at'] and time.time() > listing['auction_ends_at']:
+            return {"ok": False, "error": "Auksion vaqti tugagan"}
+            
         min_bid = max(listing['price'], (listing['current_bid'] or listing['price']) + 1000)
         if bid_amount < min_bid:
             return {"ok": False, "error": f"Minimal stavka: {min_bid:,} so'm"}
@@ -3447,9 +3403,133 @@ async def api_auction_bid(request: Request):
         
         if prev_bidder and prev_bidder != tid:
             try:
-                bot_inst = Bot(token=BOT_TOKEN)
-                await bot_inst.send_message(prev_bidder, f"⚡ <b>Stavka oshirildi!</b>\n\n@{listing['username']} auksionida sizning stavkangizdan yuqori (<b>{bid_amount:,} so'm</b>) stavka berildi.")
+                await bot.send_message(
+                    prev_bidder,
+                    f"⚡ <b>Stavka oshirildi!</b>\n\n"
+                    f"@{listing['username']} auksionida sizning stavkangizdan yuqori "
+                    f"(<b>{bid_amount:,} so'm</b>) stavka berildi.\n"
+                    f"Qaytadan stavka bering!",
+                    parse_mode="HTML"
+                )
             except Exception: pass
+        
+    return {"ok": True, "message": f"Stavka qabul qilindi: {bid_amount:,} so'm"}
+
+
+# ── AUCTION AUTO-CLOSE BACKGROUND LOOP ────────
+async def auction_close_loop(bot_instance):
+    """Har 2 daqiqada muddati o'tgan auksionlarni yopadi"""
+    while True:
+        try:
+            await asyncio.sleep(120)  # 2 daqiqa
+            now = time.time()
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                # Muddati o'tgan va hali active bo'lgan auksionlarni olish
+                async with db.execute("""
+                    SELECT * FROM listings
+                    WHERE is_auction=1 AND status='active'
+                      AND auction_ends_at > 0 AND auction_ends_at <= ?
+                """, (now,)) as c:
+                    expired = await c.fetchall()
+            
+            for listing in expired:
+                lid        = listing['id']
+                username   = listing['username']
+                seller_id  = listing['seller_id']
+                winner_id  = listing['highest_bidder_id']
+                final_bid  = listing['current_bid'] or 0
+                
+                if winner_id and final_bid > 0:
+                    # G'olib bor — sotuvni yakunlaymiz
+                    winner = await get_user(winner_id)
+                    if not winner or (winner.get('balance') or 0) < final_bid:
+                        # G'olibda pul yetmaydi — e'lonni bekor qilamiz
+                        async with aiosqlite.connect(DB_PATH) as db:
+                            await db.execute("UPDATE listings SET status='cancelled' WHERE id=?", (lid,))
+                            await db.commit()
+                        try:
+                            await bot_instance.send_message(
+                                winner_id,
+                                f"❌ <b>Auksion bekor qilindi</b>\n\n"
+                                f"@{username} auksionini yutdingiz, lekin balansingiz yetarli emas!",
+                                parse_mode="HTML"
+                            )
+                        except Exception: pass
+                        continue
+                    
+                    # Komissiya hisoblash
+                    seller_user = await get_user(seller_id)
+                    is_premium  = seller_user.get('is_premium', 0) if seller_user else 0
+                    fee_pct     = 0.05 if is_premium else 0.10
+                    seller_net  = int(final_bid * (1 - fee_pct))
+                    
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        # Xaridordan pul yechish
+                        await db.execute("UPDATE users SET balance=balance-? WHERE telegram_id=?", (final_bid, winner_id))
+                        # Sotuvchiga seller_balance
+                        await db.execute("UPDATE users SET seller_balance=seller_balance+? WHERE telegram_id=?", (seller_net, seller_id))
+                        # E'lonni yopish
+                        await db.execute("UPDATE listings SET status='sold' WHERE id=?", (lid,))
+                        # Savdo tarixi
+                        await db.execute(
+                            "INSERT INTO listing_orders (listing_id, buyer_id, expected_amount, status) VALUES (?,?,?,'completed')",
+                            (lid, winner_id, final_bid)
+                        )
+                        await db.commit()
+                    
+                    # Username transfer
+                    asyncio.create_task(transfer_username(bot_instance, seller_id, winner_id, username))
+                    asyncio.create_task(update_channel_listing_post(lid, 'sold'))
+                    
+                    commission = final_bid - seller_net
+                    # Sotuvchiga xabar
+                    try:
+                        await bot_instance.send_message(
+                            seller_id,
+                            f"🏆 <b>Auksion yakunlandi!</b>\n\n"
+                            f"🔤 Username: <b>@{username}</b>\n"
+                            f"💰 Final narx: <b>{final_bid:,} so'm</b>\n"
+                            f"Komissiya ({int(fee_pct*100)}%): -{commission:,} so'm\n"
+                            f"<b>Savdo hisobingizga: +{seller_net:,} so'm</b> ✅",
+                            parse_mode="HTML"
+                        )
+                    except Exception: pass
+                    # G'olibga xabar
+                    try:
+                        await bot_instance.send_message(
+                            winner_id,
+                            f"🏆 <b>Auksionni yutdingiz!</b>\n\n"
+                            f"@{username} username siz egasiz!\n"
+                            f"To'langan: <b>{final_bid:,} so'm</b>\n\n"
+                            f"Username akkauntingizga o'tkazilmoqda...",
+                            parse_mode="HTML"
+                        )
+                    except Exception: pass
+                    logger.info(f"🏆 Auksion yakunlandi: @{username} → {winner_id} ({final_bid:,} so'm)")
+                    
+                else:
+                    # Hech kim stavka bermagan — e'lonni bekor qilamiz
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        await db.execute("UPDATE listings SET status='cancelled' WHERE id=?", (lid,))
+                        await db.commit()
+                    asyncio.create_task(update_channel_listing_post(lid, 'cancelled'))
+                    try:
+                        await bot_instance.send_message(
+                            seller_id,
+                            f"💭 <b>Auksion yakunlandi</b>\n\n"
+                            f"@{username} auksioniga hech kim stavka bermadi.\n"
+                            f"E'lon bekor qilindi. Qayta joylashingiz mumkin.",
+                            parse_mode="HTML"
+                        )
+                    except Exception: pass
+                    logger.info(f"💭 Auksion bekor: @{username} (stavka yo'q)")
+                    
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"auction_close_loop xato: {e}")
+
             
 @app.post("/api/check_username")
 async def api_check_username(request: Request):
@@ -5308,13 +5388,16 @@ async def main():
     # Seanslar yaroqliligini tekshiruvchi fondagi loop
     session_check_task = asyncio.create_task(session_checker_loop())
 
+    # Muddati tugagan auksionlarni avtomatik yopuvchi loop
+    auction_task = asyncio.create_task(auction_close_loop(bot))
+
     # Aiogram bot va FastAPI parallel ishlatish
     config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)), log_level="warning")
     server = uvicorn.Server(config)
 
     # Graceful shutdown: SIGTERM va SIGINT uchun
     loop = asyncio.get_event_loop()
-    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task]
+    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task]
 
     async def _shutdown():
         logger.info("⏹ Graceful shutdown boshlandi...")
