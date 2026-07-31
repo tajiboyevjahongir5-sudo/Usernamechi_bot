@@ -2103,11 +2103,11 @@ async def monitoring_loop(bot):
                 taken_usernames_cache[uname.lower()] = time.time() + 3600
                 return
             finally:
-                if _check_client:
+                if _check_client and _first_task:
                     try:
                         await _check_client.disconnect()
                     except Exception: pass
-                    _telethon_cache.pop(_first_task["session_string"] if _first_task else None, None)
+                    _telethon_cache.pop(_first_task.get("session_string"), None)
 
             if not api_confirmed_free:
                 return
@@ -2355,8 +2355,6 @@ async def monitoring_loop(bot):
                 del taken_usernames_cache[k]
 
             # last_checked_ts: monitoring_tasks da bo'lmagan nomlarni tozalash (xotira tejash)
-            active_lower = set()
-            # (active_lower keyinroq tasks dan to'ldiriladi — tozalash keyingi iteratsiyada)
             stale_keys = [k for k in last_checked_ts if k not in taken_usernames_cache and now_ts - last_checked_ts[k] > 300]
             for k in stale_keys:
                 del last_checked_ts[k]
@@ -2390,7 +2388,7 @@ async def monitoring_loop(bot):
                     continue
                 if u_lower not in uname_map:
                     uname_map[u_lower] = []
-                uname_map[u_lower].append(t)
+                uname_map[u_lower].append(dict(t))
 
             hdr_idx = (hdr_idx + 1) % len(headers_list)
 
@@ -2414,11 +2412,19 @@ async def monitoring_loop(bot):
                     target_list_str += f" va yana {total_uniq - 5} ta"
                 logger.info(f"📡 [MONITORING] {total_uniq} ta faol nishon poylanmoqda ({target_list_str})")
                 last_monitor_log_ts = nonlocal_now
+            
+            if total_uniq == 0:
+                await asyncio.sleep(2.0)
+                continue
 
             async def check_uname_group(uname_lower, task_group):
                 nonlocal global_429_count, taken_usernames_cache, last_channel_created, last_checked_ts
                 # Kesh ichida bo'lsa — o'tkazib yuboramiz
                 if taken_usernames_cache.get(uname_lower, 0) > time.time():
+                    return
+
+                # task_group bo'sh bo'lmasligi kerak
+                if not task_group:
                     return
 
                 # Rate limit: har bir username kamida CHECK_INTERVAL soniyada bir tekshiriladi
@@ -2466,7 +2472,11 @@ async def monitoring_loop(bot):
                                 taken_usernames_cache[uname_lower] = time.time() + 43200  # 12 soat kesh
                                 return  # Hali band
 
-                    except Exception:
+                    except asyncio.TimeoutError:
+                        logger.debug(f"HTTP timeout @{uname} — keyingi tsiklda qayta tekshiriladi")
+                        return
+                    except Exception as http_err:
+                        logger.debug(f"HTTP xato @{uname}: {type(http_err).__name__}: {http_err}")
                         return
 
                     # Username bo'shagan ko'rinadi — alohida task sifatida darhol band qilamiz
