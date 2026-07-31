@@ -67,105 +67,9 @@ instant_check_queue: asyncio.Queue = None  # monitoring_loop ichida lazily init
 
 
 
-# ─── MA'LUMOTLAR BAZASI DUAL ENGINE (POSTGRESQL & SQLITE) ───
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-pg_pool = None
-
-def prepare_pg_sql(sql: str) -> str:
-    sql = sql.replace("strftime('%s','now')", "EXTRACT(EPOCH FROM NOW())")
-    sql = sql.replace("strftime('%s', 'now')", "EXTRACT(EPOCH FROM NOW())")
-    sql = sql.replace("strftime('%s','now') -", "EXTRACT(EPOCH FROM NOW()) -")
-    sql = sql.replace("datetime('now', '+30 days')", "TO_CHAR(NOW() + INTERVAL '30 days', 'YYYY-MM-DD HH24:MI:SS')")
-    sql = sql.replace("AUTOINCREMENT", "")
-    sql = sql.replace("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
-                      "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING")
-    
-    param_count = 0
-    def replacer(match):
-        nonlocal param_count
-        param_count += 1
-        return f"${param_count}"
-    
-    return re.sub(r'\?', replacer, sql)
-
-class AsyncPGCursor:
-    def __init__(self, records):
-        self.records = records or []
-        self._idx = 0
-
-    async def fetchone(self):
-        if self._idx < len(self.records):
-            r = self.records[self._idx]
-            self._idx += 1
-            return r
-        return None
-
-    async def fetchall(self):
-        return self.records
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-class AsyncPGAdapter:
-    def __init__(self, conn):
-        self.conn = conn
-        self.row_factory = None
-
-    async def execute(self, sql, params=()):
-        pg_sql = prepare_pg_sql(sql)
-        if params is None:
-            params = ()
-        elif not isinstance(params, (tuple, list)):
-            params = (params,)
-            
-        sql_upper = pg_sql.strip().upper()
-        if sql_upper.startswith("SELECT") or "RETURNING" in sql_upper:
-            records = await self.conn.fetch(pg_sql, *params)
-            return AsyncPGCursor(records)
-        else:
-            await self.conn.execute(pg_sql, *params)
-            return AsyncPGCursor([])
-
-    async def commit(self):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-class PGConnContextManager:
-    def __init__(self, pool):
-        self.pool = pool
-        self.conn = None
-        self.adapter = None
-
-    async def __aenter__(self):
-        self.conn = await self.pool.acquire()
-        self.adapter = AsyncPGAdapter(self.conn)
-        return self.adapter
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.conn and self.pool:
-            await self.pool.release(self.conn)
-
-_original_aiosqlite_connect = aiosqlite.connect
-
-def db_connect(database=None, **kwargs):
-    if DATABASE_URL and pg_pool is not None:
-        return PGConnContextManager(pg_pool)
-    else:
-        return _original_aiosqlite_connect(database or DB_PATH, **kwargs)
-
-# Patch aiosqlite.connect globally
-aiosqlite.connect = db_connect
-
-
+# ─── MA'LUMOTLAR BAZASI ───────────────────────
 async def init_db():
+
 
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
@@ -5559,25 +5463,12 @@ async def cleanup_short_monitoring_tasks(bot_inst: Bot):
 async def main():
     import signal
 
-    global bot, pg_pool
-
-    # PostgreSQL Connection Pool va Volume auto-migrator
-    if DATABASE_URL:
-        try:
-            import asyncpg
-            pg_url = DATABASE_URL.replace("postgres://", "postgresql://")
-            pg_pool = await asyncpg.create_pool(pg_url, min_size=2, max_size=25)
-            logger.info("🐘 PostgreSQL Connection Pool muvaffaqiyatli ochildi!")
-            
-            import migrate_to_pg
-            await migrate_to_pg.run_migration()
-        except Exception as pge:
-            logger.error(f"PostgreSQL initialization/migration xatosi: {pge}")
-
+    global bot
     await init_db()
 
     bot = Bot(token=BOT_TOKEN)
     dp  = Dispatcher()
+
 
 
     dp.include_router(router)
