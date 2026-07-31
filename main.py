@@ -156,10 +156,25 @@ def prepare_pg_sql(sql: str) -> str:
     return sql
 
 
-class AsyncPGCursor:
+class ExecutionResult:
+    """execute() natijasi — ham await ham async with orqali ishlaydi"""
     def __init__(self, records):
         self.records = records or []
         self._idx = 0
+
+    # --- await qo'llab-quvvatlash: `c = await db.execute(...)` ---
+    def __await__(self):
+        return self._noop().__await__()
+
+    async def _noop(self):
+        return self
+
+    # --- async with qo'llab-quvvatlash: `async with db.execute(...) as c:` ---
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
 
     async def fetchone(self):
         if self._idx < len(self.records):
@@ -171,21 +186,23 @@ class AsyncPGCursor:
     async def fetchall(self):
         return self.records
 
-    async def __aenter__(self):
-        return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
+# AsyncPGCursor alias for backward compat
+AsyncPGCursor = ExecutionResult
 
 class AsyncPGAdapter:
     def __init__(self, conn):
         self.conn = conn
         self.row_factory = None
 
-    async def execute(self, sql, params=()):
+    def execute(self, sql, params=()):
+        """Synchronous wrapper that returns an awaitable ExecutionResult"""
+        return self._execute_inner(sql, params)
+
+    async def _execute_inner(self, sql, params=()):
         pg_sql = prepare_pg_sql(sql)
         if not pg_sql or not pg_sql.strip():
-            return AsyncPGCursor([])  # PRAGMA yoki bo'sh so'rov
+            return ExecutionResult([])  # PRAGMA yoki bo'sh so'rov
 
         if params is None:
             params = ()
@@ -194,23 +211,22 @@ class AsyncPGAdapter:
 
         try:
             sql_upper = pg_sql.strip().upper()
-            if sql_upper.startswith("SELECT") or "RETURNING" in sql_upper:
+            if sql_upper.startswith("SELECT") or sql_upper.startswith("WITH") or "RETURNING" in sql_upper:
                 records = await self.conn.fetch(pg_sql, *params)
-                return AsyncPGCursor(records)
+                return ExecutionResult(records)
             else:
                 await self.conn.execute(pg_sql, *params)
-                return AsyncPGCursor([])
+                return ExecutionResult([])
         except Exception as e:
             err = str(e)
             # ALTER TABLE ustun allaqachon mavjud — normala
             if "already exists" in err or "duplicate column" in err.lower():
-                return AsyncPGCursor([])
+                return ExecutionResult([])
             logger.error(f"[PG] SQL XATO: {e}\nSQL: {pg_sql[:300]}\nParams: {params}")
             raise
 
-
     async def commit(self):
-        pass
+        pass  # asyncpg autocommit
 
     async def __aenter__(self):
         return self
@@ -286,8 +302,9 @@ async def init_db():
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN created_at INTEGER DEFAULT 0")
         except Exception: pass
-        # Eski foydalanuvchilarda created_at=0 bo'lsa, hozirgi vaqtni qo'yamiz
-        try: await db.execute("UPDATE users SET created_at=CAST(strftime('%s','now') AS INTEGER) WHERE created_at=0 OR created_at IS NULL")
+        # Eski foydalanuvchilarda created_at NULL bo'lsa, hozirgi vaqtni qo'yamiz
+        # PostgreSQL TIMESTAMP tipida created_at=0 bilan solishtirish mumkin emas
+        try: await db.execute("UPDATE users SET created_at=NOW() WHERE created_at IS NULL")
         except Exception: pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS keyword_subscriptions (
