@@ -1180,52 +1180,100 @@
   </div>
 
   <!-- PREMIUM SECTION -->
-  <div class="card" id="premium-wrap" style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05)); border-color:rgba(245,158,11,0.3);">
+  <div class="card" id="premium-wrap" style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05)); border-color:rgba(245,158,11,0.3); margin-bottom:18px;">
     <div style="font-weight:700; font-size:16px; margin-bottom:8px; color:#fbbf24; display:flex; align-items:center; gap:6px;"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Crown/3D/crown_3d.png" class="icon-3d-img" style="width:20px!important;height:20px!important;"> Premium Akkaunt</div>
-    <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">Sotuv komissiyasini 5% gacha kamaytiring va e'lonlaringizni ajratib ko'rsating. (Narxi: <span id="lbl-premium-price">20,000</span> so me / 30 kun)</div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">Sotuv komissiyasini 5% gacha kamaytiring va e'lonlaringizni ajratib ko'rsating. (Narxi: <span id="lbl-premium-price">20,000</span> so'm / 30 kun)</div>
     <button class="btn btn-primary" id="btn-buy-premium" onclick="buyPremium()" style="background:linear-gradient(135deg, #f59e0b, #d97706); margin:0;">Sotib olish</button>
   </div>
 
-  <!-- Sotuvchi Balansi & Pul yechish -->
-  <div class="card" id="seller-balance-wrap" style="display:none; background:linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,182,212,0.1)); border-color:rgba(16,185,129,0.3);">
-    <div class="label" style="color:var(--muted);font-size:13px;margin-bottom:8px;">Sotuvchi balansi (Savdodan tushgan)</div>
-    <div class="amount" id="seller-balance-amount" style="font-size:32px;font-weight:800;color:var(--success);margin-bottom:16px;">0 so'm</div>
+  <!-- SAVDO HISOBI — Seller Balance Card -->
+  <div id="seller-balance-wrap" style="display:none; margin-bottom:18px;">
 
-    <!-- Kartaga yechish formasi -->
-    <div id="withdraw-form" style="display:none;margin-top:4px;border-top:1px solid rgba(255,255,255,0.1);padding-top:16px;">
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px;">💳 Kartaga yechish</div>
-      <div class="form-group">
-        <label>SUMMA (so'm)</label>
-        <input type="number" id="withdraw-amount" placeholder="Min 10,000" min="10000">
+    <!-- Balans kartasi -->
+    <div style="background:linear-gradient(135deg,rgba(16,185,129,0.18),rgba(6,182,212,0.12)); border:1px solid rgba(16,185,129,0.35); border-radius:24px; padding:22px; box-shadow:0 12px 32px rgba(16,185,129,0.12); position:relative; overflow:hidden;">
+      <!-- Glow orqa fon -->
+      <div style="position:absolute;top:-40%;left:-20%;width:140%;height:140%;background:radial-gradient(ellipse at 60% 40%,rgba(16,185,129,0.1) 0%,transparent 60%);pointer-events:none;"></div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;position:relative;">
+        <div style="width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,rgba(16,185,129,0.3),rgba(6,182,212,0.2));border:1px solid rgba(16,185,129,0.4);display:flex;align-items:center;justify-content:center;font-size:20px;">💹</div>
+        <div>
+          <div style="font-weight:800;font-size:15px;color:#fff;">Savdo Hisobi</div>
+          <div style="font-size:11px;color:var(--muted);font-weight:500;">Faqat username sotilganda to'ldiriladi</div>
+        </div>
       </div>
-      <div class="form-group">
-        <label>KARTA RAQAMI</label>
-        <input type="text" id="withdraw-card" placeholder="8600 1234 5678 9012">
+
+      <div style="position:relative;">
+        <div style="font-size:11px;color:rgba(255,255,255,0.5);font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Joriy savdo balansi</div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:20px;">
+          <div id="seller-balance-amount" style="font-size:42px;font-weight:900;background:linear-gradient(135deg,#34d399,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-2px;line-height:1;">0</div>
+          <div style="font-size:16px;font-weight:700;color:#34d399;">so'm</div>
+        </div>
+
+        <!-- Tugmalar -->
+        <div id="seller-action-btns" style="display:flex;gap:10px;">
+          <button class="btn" style="margin:0;flex:1;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:13px;font-weight:700;padding:13px 10px;border-radius:14px;border:none;box-shadow:0 4px 16px rgba(16,185,129,0.35);"
+            onclick="showSellerForm('withdraw')">
+            💳 Kartaga yechish
+          </button>
+          <button class="btn" style="margin:0;flex:1;background:linear-gradient(135deg,#7c3aed,#6366f1);color:#fff;font-size:13px;font-weight:700;padding:13px 10px;border-radius:14px;border:none;box-shadow:0 4px 16px rgba(124,58,237,0.35);"
+            onclick="showSellerForm('transfer')">
+            🔄 Asosiy balansga
+          </button>
+        </div>
+
+        <!-- Kartaga yechish formasi -->
+        <div id="withdraw-form" style="display:none;margin-top:16px;border-top:1px solid rgba(255,255,255,0.08);padding-top:16px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px;">💳 Kartaga yechish</div>
+          <div class="form-group">
+            <label>SUMMA (so'm)</label>
+            <input type="number" id="withdraw-amount" placeholder="Min 10,000 so'm" min="10000">
+          </div>
+          <div class="form-group">
+            <label>KARTA RAQAMI</label>
+            <input type="text" id="withdraw-card" placeholder="8600 1234 5678 9012" maxlength="19"
+              oninput="this.value=this.value.replace(/\D/g,'').replace(/(\d{4})(?=\d)/g,'$1 ').trim()">
+          </div>
+          <div class="form-group">
+            <label>KARTA EGASI (Ism Familiya)</label>
+            <input type="text" id="withdraw-name" placeholder="Ali Valiyev">
+          </div>
+          <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);border-radius:12px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#fbbf24;">
+            ⏱ So'rov admin tomonidan 24 soat ichida ko'rib chiqiladi.
+          </div>
+          <button class="btn btn-primary" onclick="submitWithdraw()">✅ So'rov yuborish</button>
+          <button class="btn btn-outline" onclick="hideSellerForms()">❌ Bekor qilish</button>
+        </div>
+
+        <!-- Asosiy balansga o'tkazish formasi -->
+        <div id="transfer-form" style="display:none;margin-top:16px;border-top:1px solid rgba(255,255,255,0.08);padding-top:16px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px;">🔄 Asosiy balansga o'tkazish</div>
+          <div class="form-group">
+            <label>SUMMA (so'm)</label>
+            <input type="number" id="transfer-amount" placeholder="Min 1,000 so'm" min="1000">
+          </div>
+          <div style="background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.25);border-radius:12px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#a5b4fc;">
+            ⚡ Darhol amalga oshiriladi. Asosiy balansdan username band qilish va premium sotib olish mumkin.
+          </div>
+          <button class="btn" style="background:linear-gradient(135deg,#7c3aed,#06b6d4);color:#fff;font-weight:700;" onclick="submitTransferToMain()">✅ O'tkazish</button>
+          <button class="btn btn-outline" onclick="hideSellerForms()">❌ Bekor qilish</button>
+        </div>
       </div>
-      <div class="form-group">
-        <label>KARTA EGASI (Ism Familiya)</label>
-        <input type="text" id="withdraw-name" placeholder="Ali Valiyev">
-      </div>
-      <button class="btn btn-primary" onclick="submitWithdraw()">✅ Tasdiqlash</button>
-      <button class="btn btn-outline" onclick="document.getElementById('withdraw-form').style.display='none'; document.getElementById('transfer-form').style.display='none';">❌ Bekor qilish</button>
     </div>
 
-    <!-- Asosiy balansga o'tkazish formasi -->
-    <div id="transfer-form" style="display:none;margin-top:4px;border-top:1px solid rgba(255,255,255,0.1);padding-top:16px;">
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px;">🔄 Asosiy balansga o'tkazish</div>
-      <div class="form-group">
-        <label>SUMMA (so'm)</label>
-        <input type="number" id="transfer-amount" placeholder="Min 1,000" min="1000">
+    <!-- Sotilgan usernamelar tarixi -->
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;margin-top:12px;overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;">
+        <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;">
+          📋 <span>Sotuv tarixi</span>
+        </div>
+        <div id="sales-count-badge" style="font-size:11px;color:var(--muted);background:rgba(255,255,255,0.05);border:1px solid var(--border);padding:3px 10px;border-radius:20px;"></div>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">💡 Sotuvchi balansingizdan asosiy balansingizga o'tkaziladi (darhol)</div>
-      <button class="btn btn-primary" style="background:linear-gradient(135deg,#7c3aed,#06b6d4);" onclick="submitTransferToMain()">✅ O'tkazish</button>
-      <button class="btn btn-outline" onclick="document.getElementById('withdraw-form').style.display='none'; document.getElementById('transfer-form').style.display='none';">❌ Bekor qilish</button>
-    </div>
-
-    <!-- Ikki tugma -->
-    <div id="seller-action-btns" style="display:flex; gap:10px;">
-      <button class="btn btn-primary" style="margin:0; flex:1; background:linear-gradient(135deg,#10b981,#06b6d4); font-size:13px;" onclick="document.getElementById('withdraw-form').style.display='block'; document.getElementById('transfer-form').style.display='none'; document.getElementById('seller-action-btns').style.display='none';">💳 Kartaga yechish</button>
-      <button class="btn btn-primary" style="margin:0; flex:1; background:linear-gradient(135deg,#7c3aed,#a78bfa); font-size:13px;" onclick="document.getElementById('transfer-form').style.display='block'; document.getElementById('withdraw-form').style.display='none'; document.getElementById('seller-action-btns').style.display='none';">🔄 Asosiy balansga</button>
+      <div id="sales-history-list">
+        <div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">
+          <div class="spinner" style="margin:0 auto 10px;"></div>
+          Yuklanmoqda...
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1478,24 +1526,24 @@ async function loadUserData() {
       document.getElementById('no-session-warn').style.display = 'none';
       
       document.getElementById('seller-balance-wrap').style.display = 'block';
-      document.getElementById('seller-balance-amount').textContent = (userData.seller_balance || 0).toLocaleString() + ' so\'m';
+      document.getElementById('seller-balance-amount').textContent = (userData.seller_balance || 0).toLocaleString();
       document.getElementById('seller-action-btns').style.display = 'flex';
       
       document.getElementById('subscriptions-wrap').style.display = 'block';
       loadSubscriptions();
     } else {
       document.getElementById('no-session-warn').style.display = 'block';
-      // Savdo hisobini akkaunt ulanmagan bo'lsa ham ko'rsatamiz (agar balans >0 bo'lsa)
-      const sellerBal = userData.seller_balance || 0;
+      // Savdo hisobini har doim ko'rsatamiz
       document.getElementById('seller-balance-wrap').style.display = 'block';
-      document.getElementById('seller-balance-amount').textContent = sellerBal.toLocaleString() + ' so\'m';
-      // Yechish tugmalari faqat akkaunt ulangan bo'lsa ishlaydi
-      if (sellerBal <= 0) {
-        document.getElementById('seller-action-btns').style.display = 'none';
-      }
+      document.getElementById('seller-balance-amount').textContent = (userData.seller_balance || 0).toLocaleString();
+      // Yechish tugmalari — balans bo'lsa ko'rsatamiz
+      document.getElementById('seller-action-btns').style.display =
+        (userData.seller_balance || 0) > 0 ? 'flex' : 'none';
       document.getElementById('subscriptions-wrap').style.display = 'none';
     }
 
+    // Har doim sotuv tarixini yuklash
+    loadSalesHistory();
     // Akkaunt ulangan-ullanmaganidan qat'i nazar - HAR DOIM Usernamelar ro'yxatini yuklaymiz!
     loadMyUsernames();
   } catch(e) { console.error(e); }
@@ -1575,16 +1623,70 @@ async function setUsernameToProfile(username, channelId, btn) {
   }
 }
 
+// ── SAVDO HISOBI HELPER FUNKSIYALAR ─────────────
+function showSellerForm(type) {
+  document.getElementById('withdraw-form').style.display   = (type === 'withdraw') ? 'block' : 'none';
+  document.getElementById('transfer-form').style.display   = (type === 'transfer') ? 'block' : 'none';
+  document.getElementById('seller-action-btns').style.display = 'none';
+}
+function hideSellerForms() {
+  document.getElementById('withdraw-form').style.display   = 'none';
+  document.getElementById('transfer-form').style.display   = 'none';
+  document.getElementById('seller-action-btns').style.display = 'flex';
+}
+
+async function loadSalesHistory() {
+  const listEl = document.getElementById('sales-history-list');
+  const badgeEl = document.getElementById('sales-count-badge');
+  if (!listEl) return;
+  try {
+    const res = await fetch(`${API}/api/my/sales?init_data=${encodeURIComponent(tg.initData)}`);
+    const d = await res.json();
+    if (!d.ok || !d.sales || d.sales.length === 0) {
+      listEl.innerHTML = `
+        <div style="text-align:center;padding:28px 16px;color:var(--muted);">
+          <div style="font-size:32px;margin-bottom:10px;">📭</div>
+          <div style="font-size:13px;">Hali hech narsa sotilmagan</div>
+          <div style="font-size:11px;margin-top:6px;opacity:0.6;">Username sotilganda bu yerda ko'rinadi</div>
+        </div>`;
+      if (badgeEl) badgeEl.textContent = '0 ta sotuv';
+      return;
+    }
+    if (badgeEl) badgeEl.textContent = `${d.sales.length} ta sotuv`;
+    listEl.innerHTML = d.sales.map((s, i) => `
+      <div style="padding:14px 18px;${i < d.sales.length-1 ? 'border-bottom:1px solid rgba(255,255,255,0.06);' : ''}display:flex;align-items:center;gap:12px;">
+        <div style="width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,rgba(16,185,129,0.25),rgba(6,182,212,0.15));border:1px solid rgba(16,185,129,0.3);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">✅</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
+            <div style="font-weight:800;font-size:14px;color:#a5b4fc;">@${s.username}</div>
+            <div style="font-weight:800;font-size:14px;color:#34d399;white-space:nowrap;">+${s.net.toLocaleString()} so'm</div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div style="font-size:11px;color:var(--muted);">👤 ${s.buyer}</div>
+            <div style="font-size:11px;color:var(--muted);white-space:nowrap;">${s.date}</div>
+          </div>
+          <div style="margin-top:4px;font-size:10px;color:rgba(255,255,255,0.3);">
+            Narx: ${s.price.toLocaleString()} so'm · Komissiya ${s.fee_pct}%: -${s.commission.toLocaleString()} so'm
+          </div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px;">⚠️ Yuklashda xato</div>`;
+  }
+}
+
 async function submitWithdraw() {
   const amount = parseInt(document.getElementById('withdraw-amount').value);
-  const card_number = document.getElementById('withdraw-card').value;
-  const card_owner = document.getElementById('withdraw-name').value;
+  const card_number = document.getElementById('withdraw-card').value.trim();
+  const card_owner = document.getElementById('withdraw-name').value.trim();
   
-  if (!amount || !card_number || !card_owner) { showToast("Barcha maydonlarni to'ldiring", "error"); return; }
+  if (!amount || amount < 10000) { showToast("Minimal yechib olish: 10,000 so'm", "error"); return; }
+  if (!card_number || card_number.length < 16) { showToast("To'g'ri karta raqami kiriting", "error"); return; }
+  if (!card_owner) { showToast("Karta egasini kiriting", "error"); return; }
   
   const btn = event.target;
-  btn.disabled = true;
-  btn.innerText = "Yuborilmoqda...";
+  btn.disabled = true; btn.innerText = "Yuborilmoqda...";
   try {
     const res = await fetch(`${API}/api/seller/withdraw`, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -1592,16 +1694,17 @@ async function submitWithdraw() {
     });
     const d = await res.json();
     if(d.ok) {
-      showToast(d.message || "So'rov yuborildi!", "success");
-      document.getElementById('withdraw-form').style.display = 'none';
-      document.getElementById('seller-action-btns').style.display = 'flex';
+      showToast("✅ " + (d.message || "So'rov yuborildi!"), "success");
+      document.getElementById('withdraw-amount').value = '';
+      document.getElementById('withdraw-card').value = '';
+      document.getElementById('withdraw-name').value = '';
+      hideSellerForms();
       loadUserData();
     } else {
       showToast(d.error, "error");
     }
-  } catch(e) { showToast("Xato", "error"); }
-  btn.disabled = false;
-  btn.innerText = "✅ Tasdiqlash";
+  } catch(e) { showToast("Xato yuz berdi", "error"); }
+  btn.disabled = false; btn.innerText = "✅ So'rov yuborish";
 }
 
 async function submitTransferToMain() {
@@ -1609,8 +1712,7 @@ async function submitTransferToMain() {
   if (!amount || amount < 1000) { showToast("Minimal summa: 1,000 so'm", "error"); return; }
   
   const btn = event.target;
-  btn.disabled = true;
-  btn.innerText = "O'tkazilmoqda...";
+  btn.disabled = true; btn.innerText = "O'tkazilmoqda...";
   try {
     const res = await fetch(`${API}/api/seller/transfer`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1619,16 +1721,14 @@ async function submitTransferToMain() {
     const d = await res.json();
     if(d.ok) {
       showToast(`✅ ${amount.toLocaleString()} so'm asosiy balansga o'tkazildi!`, "success");
-      document.getElementById('transfer-form').style.display = 'none';
-      document.getElementById('seller-action-btns').style.display = 'flex';
       document.getElementById('transfer-amount').value = '';
+      hideSellerForms();
       loadUserData();
     } else {
       showToast(d.error, "error");
     }
-  } catch(e) { showToast("Xato", "error"); }
-  btn.disabled = false;
-  btn.innerText = "✅ O'tkazish";
+  } catch(e) { showToast("Xato yuz berdi", "error"); }
+  btn.disabled = false; btn.innerText = "✅ O'tkazish";
 }
 
 function copyRefLink() {

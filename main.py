@@ -3500,6 +3500,64 @@ async def api_seller_balance(init_data: str = ""):
     row = await get_user(user['id'])
     return {"seller_balance": row.get('seller_balance', 0) if row else 0}
 
+@app.get("/api/my/sales")
+async def api_my_sales(init_data: str = ""):
+    """Foydalanuvchining sotilgan username'lari tarixi"""
+    user = verify_init_data(init_data)
+    if not user: raise HTTPException(403)
+    tid = user['id']
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # listing_orders + listings + buyers table
+        async with db.execute("""
+            SELECT 
+                l.username,
+                l.price,
+                lo.created_at,
+                lo.buyer_id,
+                u.first_name AS buyer_name,
+                u.username AS buyer_username
+            FROM listing_orders lo
+            JOIN listings l ON lo.listing_id = l.id
+            LEFT JOIN users u ON lo.buyer_id = u.telegram_id
+            WHERE l.seller_id = ?
+              AND lo.status = 'completed'
+            ORDER BY lo.created_at DESC
+            LIMIT 50
+        """, (tid,)) as c:
+            rows = await c.fetchall()
+    
+    seller_user = await get_user(tid)
+    is_premium = seller_user.get('is_premium', 0) if seller_user else 0
+    fee_pct = 0.05 if is_premium else 0.10
+
+    sales = []
+    for r in rows:
+        price = int(r['price'])
+        net = int(price * (1 - fee_pct))
+        commission = price - net
+        buyer_name = r['buyer_name'] or ''
+        buyer_uname = r['buyer_username'] or ''
+        buyer_label = f"@{buyer_uname}" if buyer_uname else (buyer_name or f"ID:{r['buyer_id']}")
+        # Format date
+        try:
+            import datetime
+            ts = float(r['created_at'])
+            dt = datetime.datetime.fromtimestamp(ts)
+            date_str = dt.strftime("%d.%m.%Y %H:%M")
+        except Exception:
+            date_str = "—"
+        sales.append({
+            "username": r['username'],
+            "price": price,
+            "net": net,
+            "commission": commission,
+            "fee_pct": int(fee_pct * 100),
+            "buyer": buyer_label,
+            "date": date_str,
+        })
+    return {"ok": True, "sales": sales}
+
 @app.post("/api/seller/withdraw")
 async def api_seller_withdraw(request: Request):
     data = await request.json()
