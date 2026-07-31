@@ -1295,21 +1295,25 @@ async def save_session(telegram_id, session_string, phone=None, tg_password=None
             await db.execute("UPDATE users SET session_string=NULL, is_stealth=0 WHERE telegram_id=?", (telegram_id,))
             await db.commit()
         
-        # E'lonlarni alohida DB ulanishida o'chiramiz (row_factory muammosidan qochish uchun)
+        # E'lonlarni alohida DB ulanishida ko'rib chiqamiz (row_factory muammosidan qochish uchun)
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT id, username, channel_id, telegram_message_id FROM listings WHERE seller_id=? AND status='active'", (telegram_id,)) as c:
                 active_listings = await c.fetchall()
             
             if active_listings:
-                await db.execute("DELETE FROM listings WHERE seller_id=? AND status='active'", (telegram_id,))
-                await db.commit()
-                logger.info(f"🗑 Seans uzildi → {telegram_id} ning {len(active_listings)} ta e'loni o'chirildi")
-                
-                # Kanaldagi e'lon postlarini ham to'liq o'chiramiz
+                # 1. AVVAL kanaldagi postlarni o'chiramiz (DB o'chirilishidan oldin ID bo'lishi kerak)
                 for row in active_listings:
                     if row['channel_id'] and row['telegram_message_id']:
-                        asyncio.create_task(update_channel_listing_post(row['id'], 'cancelled'))
+                        try:
+                            await update_channel_listing_post(row['id'], 'cancelled')
+                        except Exception as pe:
+                            logger.warning(f"Seans uzilganda post o'chirish xatosi ({row['id']}): {pe}")
+
+                # 2. KEYIN DB dan e'lonlarni to'liq o'chiramiz
+                await db.execute("DELETE FROM listings WHERE seller_id=? AND (status='active' OR status='cancelled')", (telegram_id,))
+                await db.commit()
+                logger.info(f"🗑 Seans uzildi → {telegram_id} ning {len(active_listings)} ta e'loni bot va kanaldan o'chirildi")
                 
                 # Foydalanuvchiga xabar yuboramiz
                 try:
@@ -3838,10 +3842,10 @@ async def admin_listings_get(x_admin_token: str = Header(default=""), search: st
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
     
-    query = "SELECT * FROM listings WHERE 1=1"
+    query = "SELECT * FROM listings WHERE status != 'cancelled'"
     params = []
     if status:
-        query += " AND status=?"
+        query = "SELECT * FROM listings WHERE status=?"
         params.append(status)
     if search:
         query += " AND (username LIKE ? OR seller_id LIKE ?)"
