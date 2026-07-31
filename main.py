@@ -532,17 +532,17 @@ async def init_db():
             )
         """)
         # Eski payment_card sozlamasidan birinchi karta sifatida ko'chirish
-        _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
-        _cnt = (await _c.fetchone())[0]
+        async def init_db():
+    # Barcha await-lar funksiyaning ichida (4 ta probel surilgan) bo'lishi kerak:
+    _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
+    _cnt = (await _c.fetchone())[0]
 
-if _cnt == 0:
-    if _old_card and _old_card[0]:
-        await db.execute(
-            "INSERT INTO payment_cards (card_number, card_holder, is_active) VALUES (%s, %s, TRUE)",
-            (_old_card[0], 'Karta egasi')  # <- SHU QATORNING BOSHIDAGI ORTIQCHA PROBELLARNI O'CHIRING
-        )
-        await db.commit()
-
+    if _cnt == 0:
+        if _old_card and _old_card[0]:
+            await db.execute(
+                "INSERT INTO payment_cards (card_number, card_holder, is_active) VALUES (%s, %s, TRUE)",
+                (_old_card[0], 'Karta egasi')
+            )
         # Migration: mavjud jadvallarni yangi ustunlar bilan yangilash
         try:
             await db.execute("ALTER TABLE users ADD COLUMN referred_by INTEGER DEFAULT 0")
