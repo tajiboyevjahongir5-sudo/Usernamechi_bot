@@ -386,6 +386,13 @@ async def init_db():
         except Exception:
             pass
 
+        # paid_amount migration (monitoring_tasks jadvaliga) — yarim refund uchun
+        try:
+            await db.execute("ALTER TABLE monitoring_tasks ADD COLUMN paid_amount INTEGER DEFAULT 0")
+            await db.commit()
+        except Exception:
+            pass
+
     logger.info("✅ Baza tayyor")
 
 async def get_setting(key, default=None):
@@ -3638,6 +3645,80 @@ async def api_my_sales(init_data: str = ""):
         })
     return {"ok": True, "sales": sales}
 
+@app.get("/api/my/stats")
+async def api_my_stats(init_data: str = ""):
+    """Foydalanuvchining to'liq statistikasi sahifasi ma'lumotlari"""
+    user = verify_init_data(init_data)
+    if not user: raise HTTPException(403)
+    tid = user['id']
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        
+        # 1. User row
+        async with db.execute("SELECT * FROM users WHERE telegram_id=?", (tid,)) as c:
+            u_row = await c.fetchone()
+        u_dict = dict(u_row) if u_row else {}
+        
+        # 2. Claimed usernames count (registered_usernames / orders)
+        async with db.execute(
+            "SELECT COUNT(*) FROM registered_usernames ru JOIN orders o ON ru.order_id=o.id WHERE o.telegram_id=?",
+            (tid,)
+        ) as c:
+            total_claimed = (await c.fetchone())[0]
+            
+        # 3. Active monitoring count
+        async with db.execute(
+            "SELECT COUNT(*) FROM monitoring_tasks WHERE telegram_id=? AND status='monitoring'",
+            (tid,)
+        ) as c:
+            active_monitoring = (await c.fetchone())[0]
+            
+        # 4. Total sales and total earned net amount
+        async with db.execute("""
+            SELECT COUNT(*), COALESCE(SUM(l.price), 0)
+            FROM listing_orders lo
+            JOIN listings l ON lo.listing_id = l.id
+            WHERE l.seller_id = ? AND lo.status = 'completed'
+        """, (tid,)) as c:
+            s_row = await c.fetchone()
+            total_sales_count = s_row[0]
+            total_sales_gross = s_row[1]
+            
+        # Net earnings (taking commission into account)
+        is_premium = u_dict.get('is_premium', 0)
+        fee_pct = 0.05 if is_premium else 0.10
+        total_earned_net = int(total_sales_gross * (1 - fee_pct))
+        
+        # 5. Listings stats (active & total)
+        async with db.execute("SELECT COUNT(*) FROM listings WHERE seller_id=?", (tid,)) as c:
+            total_listings = (await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM listings WHERE seller_id=? AND status='active'", (tid,)) as c:
+            active_listings = (await c.fetchone())[0]
+            
+        # 6. Referral stats
+        async with db.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (tid,)) as c:
+            referrals_count = (await c.fetchone())[0]
+        referral_earnings = referrals_count * 1000
+
+    return {
+        "ok": True,
+        "balance": u_dict.get('balance', 0),
+        "seller_balance": u_dict.get('seller_balance', 0),
+        "is_premium": bool(u_dict.get('is_premium', 0)),
+        "premium_until": u_dict.get('premium_until', ''),
+        "total_claimed": total_claimed,
+        "active_monitoring": active_monitoring,
+        "total_sales_count": total_sales_count,
+        "total_sales_gross": total_sales_gross,
+        "total_earned_net": total_earned_net,
+        "total_listings": total_listings,
+        "active_listings": active_listings,
+        "referrals_count": referrals_count,
+        "referral_earnings": referral_earnings
+    }
+
+
 @app.post("/api/seller/withdraw")
 async def api_seller_withdraw(request: Request):
     data = await request.json()
@@ -3955,9 +4036,12 @@ async def api_monitor_start(request: Request):
         # Deduct balance
         await db.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (total_price, tid))
         
-        # Insert all new targets
+        # Insert all new targets (paid_amount saqlaymiz — keyin refund uchun)
         for u in new_targets:
-            await db.execute("INSERT INTO monitoring_tasks (telegram_id, username) VALUES (?,?)", (tid, u))
+            await db.execute(
+                "INSERT INTO monitoring_tasks (telegram_id, username, paid_amount) VALUES (?,?,?)",
+                (tid, u, price_per_item)
+            )
         await db.commit()
 
     # Yangi qo'shilgan usernamelarni darhol tekshirish navbatiga yuboramiz
@@ -4002,11 +4086,39 @@ async def api_monitor_delete(request: Request):
     task_id = data.get('task_id')
     if not task_id:
         return {"ok": False, "error": "Task ID kiritilmadi"}
-        
+    
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM monitoring_tasks WHERE id=? AND telegram_id=?", (task_id, tid))
+        db.row_factory = aiosqlite.Row
+        # Nishonni topamiz
+        async with db.execute(
+            "SELECT paid_amount FROM monitoring_tasks WHERE id=? AND telegram_id=?",
+            (task_id, tid)
+        ) as c:
+            task_row = await c.fetchone()
+        
+        if not task_row:
+            return {"ok": False, "error": "Nishon topilmadi"}
+        
+        paid = int(task_row['paid_amount'] or 0)
+        refund = paid // 2  # 50% qaytarish
+        
+        # Nishonni o'chirish
+        await db.execute(
+            "DELETE FROM monitoring_tasks WHERE id=? AND telegram_id=?",
+            (task_id, tid)
+        )
+        # 50% refund
+        if refund > 0:
+            await db.execute(
+                "UPDATE users SET balance = balance + ? WHERE telegram_id = ?",
+                (refund, tid)
+            )
         await db.commit()
-    return {"ok": True}
+    
+    msg = f"Nishon o'chirildi."
+    if refund > 0:
+        msg = f"Nishon o'chirildi. Balansingizga {refund:,} so'm (50%) qaytarildi."
+    return {"ok": True, "refund": refund, "message": msg}
 
 @app.get("/api/admin/listings")
 async def admin_listings_get(x_admin_token: str = Header(default=""), search: str = "", status: str = ""):

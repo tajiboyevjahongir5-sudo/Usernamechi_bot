@@ -1277,7 +1277,34 @@
     </div>
   </div>
 
+  <!-- FOYDALANUVCHI STATISTIKASI CARD -->
+  <div class="card" style="background:linear-gradient(135deg, rgba(30,41,59,0.7) 0%, rgba(15,23,42,0.8) 100%); border:1px solid rgba(255,255,255,0.1); box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+    <div class="section-title" style="margin-bottom:14px;">
+      <span class="icon-badge badge-purple icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bar%20chart/3D/bar_chart_3d.png" class="icon-3d-img"></span>
+      <span>Mening Statistikam</span>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:12px; text-align:center;">
+        <div style="font-size:20px; font-weight:800; color:#a78bfa;" id="stat-user-claimed">0</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:2px;">Egallangan nomlar</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:12px; text-align:center;">
+        <div style="font-size:20px; font-weight:800; color:#38bdf8;" id="stat-user-monitoring">0</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:2px;">Aktiv nishonlar</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:12px; text-align:center;">
+        <div style="font-size:20px; font-weight:800; color:#34d399;" id="stat-user-sales">0 ta</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:2px;">Sotilgan e'lonlar</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:12px; text-align:center;">
+        <div style="font-size:20px; font-weight:800; color:#fbbf24;" id="stat-user-earned">0 so'm</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:2px;">Jami daromad</div>
+      </div>
+    </div>
+  </div>
+
   <!-- REFERRAL SYSTEM CARD -->
+
   <div class="card" style="background:linear-gradient(135deg, rgba(139,92,246,0.22) 0%, rgba(6,182,212,0.14) 100%); border:1px solid rgba(167,139,250,0.4); box-shadow:0 12px 32px rgba(139,92,246,0.18);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
       <div class="section-title" style="margin:0;"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Wrapped%20gift/3D/wrapped_gift_3d.png" class="icon-3d-img"></span> <span>Taklif & Bonus</span></div>
@@ -1542,11 +1569,25 @@ async function loadUserData() {
       document.getElementById('subscriptions-wrap').style.display = 'none';
     }
 
-    // Har doim sotuv tarixini yuklash
+    // Har doim sotuv tarixini va statistikani yuklash
     loadSalesHistory();
+    loadUserStats();
     // Akkaunt ulangan-ullanmaganidan qat'i nazar - HAR DOIM Usernamelar ro'yxatini yuklaymiz!
     loadMyUsernames();
   } catch(e) { console.error(e); }
+}
+
+async function loadUserStats() {
+  try {
+    const res = await fetch(`${API}/api/my/stats?init_data=${encodeURIComponent(tg.initData)}`);
+    const d = await res.json();
+    if (d.ok) {
+      if(document.getElementById('stat-user-claimed')) document.getElementById('stat-user-claimed').textContent = d.total_claimed || 0;
+      if(document.getElementById('stat-user-monitoring')) document.getElementById('stat-user-monitoring').textContent = d.active_monitoring || 0;
+      if(document.getElementById('stat-user-sales')) document.getElementById('stat-user-sales').textContent = (d.total_sales_count || 0) + ' ta';
+      if(document.getElementById('stat-user-earned')) document.getElementById('stat-user-earned').textContent = (d.total_earned_net || 0).toLocaleString() + ' so\'m';
+    }
+  } catch(e) {}
 }
 
 async function loadMyUsernames() {
