@@ -1670,41 +1670,39 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
 
         async def check_via_telethon(uname: str) -> bool:
             if not telethon_client or not telethon_client.is_connected():
-                return True
+                return False
             try:
                 res = await asyncio.wait_for(
                     telethon_client(CheckUsernameRequest(uname)),
                     timeout=4.0
                 )
-                return True
-            except (UsernamePurchaseAvailableError, UsernameInvalidError):
-                return False
-            except asyncio.TimeoutError:
-                logger.warning(f"Telethon check timeout for @{uname}")
-                return True
+                return bool(res is True)
             except Exception as e:
-                logger.debug(f"Telethon check error for @{uname}: {e}")
-                return True
+                logger.debug(f"Telethon check error/occupied for @{uname}: {e}")
+                return False
 
         async def check_via_http(http_session, uname: str) -> str:
             try:
                 async with http_session.get(
                     f"https://t.me/{uname}",
                     allow_redirects=True,
-                    timeout=aiohttp.ClientTimeout(total=2.5)
+                    timeout=aiohttp.ClientTimeout(total=2.5),
+                    headers={'User-Agent': random.choice(headers_list)}
                 ) as resp:
                     if resp.status == 429:
                         await asyncio.sleep(0.5)
                         return 'unknown'
-                    if resp.status == 404:
-                        return 'maybe_free'
                     text = await resp.text()
-                    # Aniq band bo'lgan sahifalar
-                    if 'fragment.com' in text.lower() or 'auction' in text.lower():
+                    # Aniq band bo'lgan sahifalar (profil, kanal, guruh, bot, fragment auksioni)
+                    taken_markers = (
+                        'tgme_page_title', 'tgme_page_extra', 'tgme_page_photo',
+                        'tgme_page_action', 'tgme_action_button_new', 'tgme_page_icon',
+                        'fragment.com', 'tgme_page_description', 'tgme_header_title',
+                        'tgme_body_wrap', 'tgme_channel_info', 'auction'
+                    )
+                    if any(k in text for k in taken_markers):
                         return 'taken'
-                    if 'tgme_page_title' not in text and 'tgme_page_extra' not in text:
-                        return 'maybe_free'
-                    return 'taken'
+                    return 'maybe_free'
             except asyncio.TimeoutError:
                 return 'unknown'
             except Exception:
@@ -1720,34 +1718,34 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     return
 
             try:
+                # 1. HTTP dastlabki süzgich: Aniq band bo'lsa darhol rad etish
                 http_result = await check_via_http(http_session, uname)
                 if http_result == 'taken':
                     return
 
-                if http_result in ('maybe_free', 'unknown'):
-                    if telethon_client and telethon_client.is_connected():
-                        is_free = await check_via_telethon(uname)
-                    else:
-                        is_free = True
+                # 2. Telethon API QAT'IY tasdig'i: Faqat API 'True' (bo'sh) deb bersagina muvaffaqiyatli deb olamiz
+                is_free = False
+                if telethon_client and telethon_client.is_connected():
+                    is_free = await check_via_telethon(uname)
 
-                    if is_free:
-                        async with found_lock:
-                            if found_count >= max(25, paid_qty * 5):
-                                return
-                            if uname in found_usernames_set:
-                                return
-                            found_usernames_set.add(uname)
-                            found_count += 1
+                if is_free:
+                    async with found_lock:
+                        if found_count >= max(25, paid_qty * 5):
+                            return
+                        if uname in found_usernames_set:
+                            return
+                        found_usernames_set.add(uname)
+                        found_count += 1
 
-                        try:
-                            async with aiosqlite.connect(DB_PATH) as db:
-                                await db.execute(
-                                    "INSERT OR IGNORE INTO search_results (search_id, username) VALUES (?,?)",
-                                    (search_id, uname)
-                                )
-                                await db.commit()
-                        except Exception as db_err:
-                            logger.error(f"DB insert error for {uname}: {db_err}")
+                    try:
+                        async with aiosqlite.connect(DB_PATH) as db:
+                            await db.execute(
+                                "INSERT OR IGNORE INTO search_results (search_id, username) VALUES (?,?)",
+                                (search_id, uname)
+                            )
+                            await db.commit()
+                    except Exception as db_err:
+                        logger.error(f"DB insert error for {uname}: {db_err}")
             except Exception as e:
                 logger.debug(f"verify_target error for {uname}: {e}")
 
