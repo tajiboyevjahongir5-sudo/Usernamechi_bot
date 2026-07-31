@@ -1479,12 +1479,20 @@ async function loadUserData() {
       
       document.getElementById('seller-balance-wrap').style.display = 'block';
       document.getElementById('seller-balance-amount').textContent = (userData.seller_balance || 0).toLocaleString() + ' so\'m';
+      document.getElementById('seller-action-btns').style.display = 'flex';
       
       document.getElementById('subscriptions-wrap').style.display = 'block';
       loadSubscriptions();
     } else {
       document.getElementById('no-session-warn').style.display = 'block';
-      document.getElementById('seller-balance-wrap').style.display = 'none';
+      // Savdo hisobini akkaunt ulanmagan bo'lsa ham ko'rsatamiz (agar balans >0 bo'lsa)
+      const sellerBal = userData.seller_balance || 0;
+      document.getElementById('seller-balance-wrap').style.display = 'block';
+      document.getElementById('seller-balance-amount').textContent = sellerBal.toLocaleString() + ' so\'m';
+      // Yechish tugmalari faqat akkaunt ulangan bo'lsa ishlaydi
+      if (sellerBal <= 0) {
+        document.getElementById('seller-action-btns').style.display = 'none';
+      }
       document.getElementById('subscriptions-wrap').style.display = 'none';
     }
 

@@ -888,6 +888,15 @@ async def transfer_username(bot, seller_id, buyer_id, username):
     if not seller or not seller.get('session_string'): return
     if not buyer or not buyer.get('session_string'): return
     
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from telethon.tl.functions.channels import (
+        GetAdminedPublicChannelsRequest, CreateChannelRequest,
+        UpdateUsernameRequest, DeleteChannelRequest
+    )
+    from telethon.tl.functions.account import UpdateUsernameRequest as AccountUpdateUsernameRequest
+    from telethon.errors import AuthKeyUnregisteredError, UserDeactivatedError
+
     seller_client = TelegramClient(StringSession(seller['session_string']), API_ID, API_HASH)
     buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
     
@@ -895,37 +904,47 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         await seller_client.connect()
         await buyer_client.connect()
         
-        # 1. Find the channel in seller's account
-        req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
-        res = await seller_client(req)
+        # 1. Sotuvchi hisobidan username o'rganiladi va bo'shatiladi
         target_channel = None
-        for ch in res.chats:
-            if getattr(ch, 'username', '').lower() == username.lower():
-                target_channel = ch
-                break
-        
-        if not target_channel:
-            # Maybe it's on their profile?
+        try:
+            req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
+            res = await seller_client(req)
+            for ch in res.chats:
+                if getattr(ch, 'username', '').lower() == username.lower():
+                    target_channel = ch
+                    break
+        except Exception as fe:
+            logger.warning(f"Sotuvchi kanallarini olishda xato ({seller_id}): {fe}")
+
+        if target_channel:
+            # Kanaldan username ni bo'shatish yoki kanalni o'chirish
+            try:
+                await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=""))
+            except Exception:
+                try:
+                    await seller_client(DeleteChannelRequest(channel=target_channel.id))
+                except Exception as de:
+                    logger.error(f"Sotuvchi kanalini o'chirishda xato: {de}")
+        else:
+            # Shaxsiy profildan bo'shatish
             me = await seller_client.get_me()
-            if me.username and me.username.lower() == username.lower():
+            if me and me.username and me.username.lower() == username.lower():
                 await seller_client(AccountUpdateUsernameRequest(username=""))
             else:
-                logger.error(f"Sotuvchi ({seller_id}) da @{username} topilmadi!")
-                return
-        else:
-            await seller_client(DeleteChannelRequest(channel=target_channel.id))
-        
-        # 2. Claim it on buyer's account immediately
-        # We create a temporary channel
+                logger.warning(f"Sotuvchi profilida yoki kanalida @{username} topilmadi — o'tkazish baribir davom etadi")
+
+        await asyncio.sleep(1.0)  # Telegram serverlarida username bo'shashi uchun 1 soniya kutish
+
+        # 2. Xaridor hisobida kanal yaratilib, username biriktiriladi
         created = await buyer_client(CreateChannelRequest(
             title=f"Usernamechi: @{username}",
-            about="Bu kanal Usernamechi orqali olingan username'ni saqlash uchun.",
+            about="Bu kanal Usernamechi orqali sotib olingan username saqlanishi uchun.",
             megagroup=False
         ))
         new_channel_id = created.chats[0].id
         await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
         
-        # 3. Notify parties
+        # 3. Xabarnoma yuborish
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         markup = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="👤 Profilga qo'yish", callback_data=f"setprofile_{username}_{new_channel_id}")]
@@ -933,37 +952,36 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         try:
             await bot.send_message(
                 buyer_id, 
-                f"🎉 <b>Tabriklaymiz!</b>\n\n@{username} sizning akkauntingizga o'tkazildi!\n"
+                f"🎉 <b>Tabriklaymiz!</b>\n\n<b>@{username}</b> sizning akkauntingizga o'tkazildi!\n"
                 f"Hozirda u avtomatik yaratilgan maxsus kanalda saqlanmoqda.\n\n"
-                f"Uni o'z profilingizga qo'yishni xohlaysizmi?",
+                f"Uni o'z profilingizga o'rnatmoqchimisiz?",
                 reply_markup=markup, parse_mode="HTML"
             )
             await bot.send_message(
                 seller_id,
-                f"💰 <b>Username sotildi!</b>\n\n@{username} muvaffaqiyatli o'tkazib berildi va pul balansingizga qo'shildi.",
+                f"💰 <b>Username muvaffaqiyatli sotildi!</b>\n\n<b>@{username}</b> xaridorga o'tkazib berildi va sotuv balansingizga qo'shildi. ✅",
                 parse_mode="HTML"
             )
-        except: pass
+        except Exception: pass
         
     except Exception as e:
-        logger.error(f"Transfer error for @{username}: {e}")
-        from telethon.errors import AuthKeyUnregisteredError
-        if isinstance(e, AuthKeyUnregisteredError) or "unregistered" in str(e).lower():
-            # E'lonni qayta faol qilish yoki bekor qilish mumkin, lekin hozircha sotuvchi sessiyasi kuygan
+        logger.error(f"Transfer error for @{username}: {type(e).__name__} - {e}")
+        err_str = str(e).lower()
+        if isinstance(e, (AuthKeyUnregisteredError, UserDeactivatedError)) or "unregistered" in err_str or "deactivated" in err_str:
             await save_session(seller_id, None)
-            await save_session(buyer_id, None)
             try:
-                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik: Telegram akkauntingiz sessiyasi uzilgan! Iltimos, qaytadan ulang.")
-                await bot.send_message(buyer_id, f"❌ @{username} sotib olish bekor qilindi, chunki kimdir profilidan chiqib ketgan. Pulingiz tez orada qaytariladi.")
-                # TODO: Pullarni qaytarish logikasini ulash kerak (bu avtomatik qaytishi kerak yoki admin manual qaytarishi kerak)
-            except: pass
+                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik: Telegram akkauntingiz sessiyasi uzilgan!")
+                await bot.send_message(buyer_id, f"❌ @{username} sotib olish bekor qilindi (Sotuvchi akkaunti uzilgan). Pulingiz balansingizga qaytarilmoqda.")
+            except Exception: pass
         else:
             try:
-                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik yuz berdi. Iltimos, u profilingiz yoki kanalingizda ekanligini va akkaunt bog'langanini tekshiring.")
-            except: pass
+                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik yuz berdi: {e}")
+            except Exception: pass
     finally:
-        await seller_client.disconnect()
-        await buyer_client.disconnect()
+        try: await seller_client.disconnect()
+        except Exception: pass
+        try: await buyer_client.disconnect()
+        except Exception: pass
 
 @router.channel_post()
 async def auto_payment_handler(message: Message):
@@ -3317,10 +3335,19 @@ async def api_marketplace_buy(request: Request):
         
         username = listing['username']
         seller_id = listing['seller_id']
-        
-        # Atomik tranzaksiya: balansdan yechish + e'lonni sotilgan deb belgilash
+
+        # Komissiya hisoblash (Premium: 5%, Oddiy: 10%)
+        seller_user = await get_user(seller_id)
+        is_premium_seller = seller_user.get('is_premium', 0) if seller_user else 0
+        fee_percent = 0.05 if is_premium_seller else 0.10
+        seller_net = int(price * (1 - fee_percent))
+
+        # Atomik tranzaksiya:
+        # - Xaridor balansi kamayadi (to'liq narx)
+        # - Sotuvchi seller_balance ga net summa qo'shiladi (komissiya chegirib)
+        # - E'lon 'sold' qilinadi
         await db.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (price, tid))
-        await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, seller_id))
+        await db.execute("UPDATE users SET seller_balance = seller_balance + ? WHERE telegram_id = ?", (seller_net, seller_id))
         await db.execute("UPDATE listings SET status='sold' WHERE id=?", (listing_id,))
         
         # Xarid tarixini saqlash
@@ -3334,12 +3361,16 @@ async def api_marketplace_buy(request: Request):
     asyncio.create_task(transfer_username(bot, seller_id, tid, username))
     
     # Sotuvchiga xabar
+    commission_amount = price - seller_net
     try:
         await bot.send_message(
             seller_id,
             f"💰 <b>E'loningiz sotildi!</b>\n\n"
             f"@{username} username'i sotib olindi.\n"
-            f"<b>{price:,} so'm</b> balansingizga qo'shildi. ✅",
+            f"Sotuv narxi: <b>{price:,} so'm</b>\n"
+            f"Komissiya ({int(fee_percent*100)}%): -{commission_amount:,} so'm\n"
+            f"<b>Savdo hisobingizga: +{seller_net:,} so'm</b> ✅\n\n"
+            f"💡 Savdo hisobingizni 'Akkaunt' bo'limidan yechib olishingiz mumkin.",
             parse_mode="HTML"
         )
     except: pass
