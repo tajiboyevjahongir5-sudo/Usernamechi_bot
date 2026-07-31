@@ -532,14 +532,12 @@ async def init_db():
             )
         """)
         # Eski payment_card sozlamasidan birinchi karta sifatida ko'chirish
-        _c = await db.execute("SELECT value FROM settings WHERE key='payment_card'")
-        _old_card = await _c.fetchone()
-        if _old_card and _old_card[0]:
-               _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
-               _cnt = (await _c.fetchone())[0]
-            if _cnt == 0:
-                await db.execute(
-                    "INSERT INTO payment_cards (card_number, card_owner, daily_limit, sort_order) VALUES (?, ?, 40, 0)",
+        _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
+        _cnt = (await _c.fetchone())[0]
+
+if _cnt == 0:
+    if _old_card and _old_card[0]:
+        await db.execute("INSERT INTO payment_cards (card_number, is_active) VALUES (%s, TRUE)", (_old_card[0],))
                     (_old_card[0], 'Karta egasi')
                 )
         await db.commit()
