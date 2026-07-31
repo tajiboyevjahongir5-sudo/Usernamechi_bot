@@ -190,14 +190,37 @@ class ExecutionResult:
 # AsyncPGCursor alias for backward compat
 AsyncPGCursor = ExecutionResult
 
+
+class ExecutableQuery:
+    """
+    db.execute() dan qaytariladigan wrapper.
+    Ham `await db.execute(...)` ham `async with db.execute(...) as c:` bilan ishlaydi.
+    """
+
+    def __init__(self, coro):
+        self._coro = coro
+
+    # await db.execute(...) => ExecutionResult
+    def __await__(self):
+        return self._coro.__await__()
+
+    # async with db.execute(...) as c: => c is ExecutionResult
+    async def __aenter__(self):
+        self._result = await self._coro
+        return self._result
+
+    async def __aexit__(self, *args):
+        pass
+
+
 class AsyncPGAdapter:
     def __init__(self, conn):
         self.conn = conn
         self.row_factory = None
 
     def execute(self, sql, params=()):
-        """Synchronous wrapper that returns an awaitable ExecutionResult"""
-        return self._execute_inner(sql, params)
+        """ExecutableQuery qaytaradi — await va async with ikkalasini ham qo'llab-quvvatlaydi"""
+        return ExecutableQuery(self._execute_inner(sql, params))
 
     async def _execute_inner(self, sql, params=()):
         pg_sql = prepare_pg_sql(sql)
@@ -233,6 +256,7 @@ class AsyncPGAdapter:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
+
 
 class PGConnContextManager:
     def __init__(self, pool):
