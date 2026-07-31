@@ -3362,14 +3362,19 @@ async def api_marketplace_buy(request: Request):
     
     # Sotuvchiga xabar
     commission_amount = price - seller_net
+    buyer_name = buyer.get('first_name', '') or ''
+    buyer_uname = buyer.get('username', '') or ''
+    buyer_mention = f"@{buyer_uname}" if buyer_uname else buyer_name or f"ID:{tid}"
     try:
         await bot.send_message(
             seller_id,
             f"💰 <b>E'loningiz sotildi!</b>\n\n"
-            f"@{username} username'i sotib olindi.\n"
+            f"🔤 Username: <b>@{username}</b>\n"
+            f"👤 Xaridor: <b>{buyer_mention}</b>\n"
+            f"─────────────────\n"
             f"Sotuv narxi: <b>{price:,} so'm</b>\n"
-            f"Komissiya ({int(fee_percent*100)}%): -{commission_amount:,} so'm\n"
-            f"<b>Savdo hisobingizga: +{seller_net:,} so'm</b> ✅\n\n"
+            f"Komissiya ({int(fee_percent*100)}%): <b>-{commission_amount:,} so'm</b>\n"
+            f"Savdo hisobingizga: <b>+{seller_net:,} so'm</b> ✅\n\n"
             f"💡 Savdo hisobingizni 'Akkaunt' bo'limidan yechib olishingiz mumkin.",
             parse_mode="HTML"
         )
