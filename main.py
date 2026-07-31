@@ -326,9 +326,9 @@ async def init_db():
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN created_at INTEGER DEFAULT 0")
         except Exception: pass
-        # Eski foydalanuvchilarda created_at NULL bo'lsa, hozirgi vaqtni qo'yamiz
-        # PostgreSQL TIMESTAMP tipida created_at=0 bilan solishtirish mumkin emas
-        try: await db.execute("UPDATE users SET created_at=NOW() WHERE created_at IS NULL")
+        # Eski foydalanuvchilarda created_at NULL bo'lsa, unix epoch qo'yamiz
+        # PostgreSQL: EXTRACT(EPOCH FROM NOW()) → INTEGER/REAL ga mos
+        try: await db.execute("UPDATE users SET created_at=CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT) WHERE created_at IS NULL")
         except Exception: pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS keyword_subscriptions (
@@ -352,7 +352,7 @@ async def init_db():
         """)
         try: await db.execute("ALTER TABLE orders ADD COLUMN created_at REAL DEFAULT (strftime('%s','now'))")
         except Exception: pass
-        try: await db.execute("UPDATE orders SET created_at=strftime('%s','now') WHERE created_at IS NULL OR created_at=0")
+        try: await db.execute("UPDATE orders SET created_at=CAST(strftime('%s','now') AS REAL) WHERE created_at IS NULL")
         except Exception: pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS registered_usernames (
@@ -1417,6 +1417,16 @@ async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: 
 
 @router.message(CommandStart())
 async def start_cmd(message: Message):
+    try:
+        await _start_cmd_inner(message)
+    except Exception as e:
+        logger.error(f"[start_cmd] Xato: {e}", exc_info=True)
+        try:
+            await message.answer("⚠️ Xizmatda muammo yuz berdi. Iltimos, qayta urinib ko'ring.")
+        except Exception:
+            pass
+
+async def _start_cmd_inner(message: Message):
     await create_user(message.from_user.id, message.from_user.first_name, message.from_user.last_name, message.from_user.username)
     
     # Referral taklifini qayd etish (lekin hali pul bermaymiz)
