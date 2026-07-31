@@ -2472,6 +2472,14 @@ async function startSearch() {
       selectedUsernames.clear();
       updateSelectionUI();
 
+      // Bo'sh usernamelar bo'limiga avtomatik scroll
+      setTimeout(() => {
+        const resultsCard = document.getElementById('search-results-card');
+        if (resultsCard) {
+          resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 300);
+
       if(searchPollInterval) clearInterval(searchPollInterval);
       searchPollCount = 0;
       searchPollInterval = setInterval(pollSearchResults, 2000);
