@@ -5463,8 +5463,18 @@ async def main():
 
     global bot
     await init_db()
+
+    # PostgreSQL auto-migrator (Railway PostgreSQL ulansa volume SQLite ma'lumotlarini o'tkazadi)
+    if os.getenv("DATABASE_URL"):
+        try:
+            import migrate_to_pg
+            await migrate_to_pg.run_migration()
+        except Exception as pge:
+            logger.warning(f"PostgreSQL auto-migration skipped/error: {pge}")
+
     bot = Bot(token=BOT_TOKEN)
     dp  = Dispatcher()
+
     dp.include_router(router)
 
     # Anti-Spam va Auto SaveUser middlewarelarini ro'yxatdan o'tkazamiz
