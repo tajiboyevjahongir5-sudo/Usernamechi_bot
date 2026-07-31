@@ -4504,6 +4504,10 @@ async def api_admin_analytics(x_admin_token: str = Header(default="")):
             connected_users = (await c.fetchone())[0]
         async with db.execute("SELECT COUNT(*) FROM users WHERE is_premium=1") as c:
             total_premiums = (await c.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM listings WHERE status='sold'") as c:
+            total_sold = (await c.fetchone())[0]
+        async with db.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='approved'") as c:
+            total_topups = (await c.fetchone())[0]
             
         labels = []
         sales_data = []
