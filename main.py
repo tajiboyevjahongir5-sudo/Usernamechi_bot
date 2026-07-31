@@ -534,8 +534,8 @@ async def init_db():
         # Eski payment_card sozlamasidan birinchi karta sifatida ko'chirish
         async def init_db():
     # Barcha await-lar funksiyaning ichida (4 ta probel surilgan) bo'lishi kerak:
-    _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
-    _cnt = (await _c.fetchone())[0]
+            _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
+            _cnt = (await _c.fetchone())[0]
 
     if _cnt == 0:
         if _old_card and _old_card[0]:
