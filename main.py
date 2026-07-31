@@ -541,16 +541,21 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         else:
             all_words = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN + nouns + adjectives))
 
+        # Eng qisqa va chiroyli so'zlar (5-8 belgi, faqat harflar)
         words = [str(w).lower() for w in all_words if str(w).isalpha() and 5 <= len(str(w)) <= 8]
         random.shuffle(words)
 
-        short_sfx = ['1', '7', '99', '777', '_uz', '_me', 'x', 'ai', '_go']
-        var_pool = []
-        for w in words[:1000]:
-            for s in short_sfx:
-                var_pool.append(f"{w}{s}")
+        var_pool = list(words[:4000])  # sof so'zlar eng oldin
+
+        # Faqat oz sonli, yoqimli qo'shimchalar
+        short_sfx = ['x', '7', '0', '1', 'ai', 'go', 'me']
+        short_pfx = ['the', 'hey', 'iam', 'its', 'mr', 'dr']
+        for w in words[:600]:
+            var_pool.append(f'{w}{random.choice(short_sfx)}')
+            var_pool.append(f'{random.choice(short_pfx)}{w}')
+
         random.shuffle(var_pool)
-        pool = words + var_pool
+        pool = var_pool
 
     elif cat in ('brend', 'biznes', 'business'):
         b_words = ['store', 'shop', 'market', 'trade', 'brand', 'group', 'company', 'corp', 'studio', 'agency', 'media', 'express', 'center', 'global', 'service', 'hub', 'lab']
@@ -604,27 +609,88 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         pool = var_pool
 
     else:
+        from bot.words import _is_pronounceable
         if lang == 'uz':
+            # Asosiy sifatli so'zlar (curated)
             curated = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES + UZ_WORDS_CLEAN))
-            dict_pool = [w for w in uz_dict if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+            # Lug'atdan faqat talaffuz qilinadigan, keng tarqalgan so'zlar
+            dict_pool = [w for w in uz_dict
+                         if str(w).isalpha() and 5 <= len(str(w)) <= 9
+                         and _is_pronounceable(str(w))]
         else:
+            # Asosiy sifatli so'zlar (curated) — bular eng yaxshi
             curated = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN))
-            dict_pool = [w for w in (nouns + adjectives) if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+            # Lug'atdan faqat oddiy, taniqli so'zlar (4000 eng yaxshisi)
+            dict_pool = [w for w in (nouns + adjectives)
+                         if str(w).isalpha() and 5 <= len(str(w)) <= 8
+                         and _is_pronounceable(str(w))][:4000]
 
         random.shuffle(curated)
         random.shuffle(dict_pool)
 
-        csuf = ['_uz', '_uzb', '_pro', '_vip', '_top', '_official', '_bot', '_tv', '_real', '_me', '_1', '_7', '_99', '_777', '1', '2', '7', '99', '2025', '2026', '777', '_01', '_07']
-        cpfx = ['the_', 'real_', 'my_', 'mr_', 'pro_', 'top_', 'uzb_', 'neo_', 'best_', 'i_']
+        # Curated so'zlar birinchi — sifat ustuvoriyligi
+        base_words = [str(u).strip().lower() for u in curated if str(u).isalpha() and 5 <= len(str(u)) <= 10]
+        dict_words = [str(u).strip().lower() for u in dict_pool]
+        random.shuffle(base_words)
+        random.shuffle(dict_words)
 
         var_pool = []
-        for u in (curated + dict_pool)[:1500]:
-            u_str = str(u).strip().lower()
-            if len(u_str) >= 4:
-                for sfx in csuf[:10]:
-                    var_pool.append(f'{u_str}{sfx}')
-                for pfx in cpfx[:6]:
-                    var_pool.append(f'{pfx}{u_str}')
+
+        # 1. Sof curated so'zlar — eng tabiiy va ma'noli
+        var_pool.extend(base_words[:2000])
+
+        # 2. Ism + mavzu kombinatsiyasi (masalan: alexstorm, davefire)
+        themes = ['wolf','fox','hawk','storm','fire','blade','peak','forge',
+                  'river','cloud','stone','spark','flame','swift','echo',
+                  'nova','void','dawn','frost','shade','solar','lunar',
+                  'eagle','tiger','lion','bear','raven','arrow','crown',
+                  'byte','core','flow','code','mind','path','dark','star']
+        names_short = [w for w in base_words if 4 <= len(w) <= 7]
+        random.shuffle(names_short)
+        for name in names_short[:300]:
+            theme = random.choice(themes)
+            combo1 = f'{name}{theme}'
+            combo2 = f'{theme}{name}'
+            if 7 <= len(combo1) <= 13:
+                var_pool.append(combo1)
+            if 7 <= len(combo2) <= 13:
+                var_pool.append(combo2)
+
+        # 3. Curated ikki so'z kombinatsiyasi (faqat curated listdan)
+        shorts = [w for w in base_words if 4 <= len(w) <= 6]
+        random.shuffle(shorts)
+        for i, w1 in enumerate(shorts[:300]):
+            w2 = shorts[(i + len(shorts)//2) % len(shorts)]
+            if w1 != w2:
+                combo = f'{w1}{w2}'
+                if 7 <= len(combo) <= 12:
+                    var_pool.append(combo)
+
+        # 4. Ma'noli prefix + curated so'z
+        nice_prefixes = ['the', 'real', 'hey', 'iam', 'mr', 'dr', 'pro', 'its']
+        for w in base_words[:500]:
+            if 5 <= len(w) <= 9:
+                pfx = random.choice(nice_prefixes)
+                var_pool.append(f'{pfx}{w}')
+
+        # 5. Curated so'z + ma'noli suffix
+        nice_suffixes = ['official', 'real', 'live', 'pro', 'hub', 'zone',
+                         'world', 'life', 'works', 'craft', 'base', 'place']
+        for w in base_words[:400]:
+            if 4 <= len(w) <= 7:
+                sfx = random.choice(nice_suffixes)
+                combo = f'{w}{sfx}'
+                if len(combo) <= 14:
+                    var_pool.append(combo)
+
+        # 6. Eng yaxshi lug'at so'zlari (fallback)
+        var_pool.extend(dict_words[:1000])
+
+        # 7. Minimal raqam (faqat 1 ta raqam, faqat chiroyli)
+        for w in base_words[:200]:
+            if 6 <= len(w) <= 9:
+                var_pool.append(f'{w}{random.choice(["0","1","7","x"])}')
+
         random.shuffle(var_pool)
         pool = var_pool
 
