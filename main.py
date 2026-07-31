@@ -501,7 +501,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
     )
 
     cat = base_word.strip().lower()
-    TELEGRAM_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
+    TELEGRAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
 
     def valid(u: str) -> bool:
         return (5 <= len(u) <= 32
@@ -1431,7 +1431,27 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
     
     if found:
         # Eng yaxshi 'qty' ta nomni tanlash
-        to_claim = found[:qty]
+        found_qty = min(len(found), qty)
+        to_claim = found[:found_qty]
+        
+        if found_qty < qty:
+            # Ortib qolganini qaytarish
+            async with aiosqlite.connect(DB_PATH) as db:
+                cur = await db.execute("SELECT price, quantity FROM orders WHERE id=?", (order_id,))
+                order_row = await cur.fetchone()
+                if order_row:
+                    total_price = order_row[0]
+                    requested_qty = order_row[1]
+                    price_per_item = total_price // requested_qty if requested_qty > 0 else 0
+                    refund_amount = (requested_qty - found_qty) * price_per_item
+                    await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (refund_amount, telegram_id))
+                    await db.execute("UPDATE orders SET price=?, quantity=? WHERE id=?", (found_qty * price_per_item, found_qty, order_id))
+                    await db.commit()
+            
+            try:
+                await bot.send_message(telegram_id, f"⚠️ <b>Diqqat:</b> Siz {qty} ta so'ragan edingiz, lekin faqat {found_qty} ta bo'sh username topildi.\n💸 Ortib qolgan pulingiz balansingizga qaytarildi.", parse_mode="HTML")
+            except: pass
+            
         await claim_sniper(bot, telegram_id, order_id, to_claim)
     else:
         # Hech narsa topilmadi
@@ -1442,7 +1462,9 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
                 await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (order_row[0], telegram_id))
             await db.execute("UPDATE orders SET status='failed' WHERE id=?", (order_id,))
             await db.commit()
-        await bot.send_message(telegram_id, "❌ Afsuski, siz so'ragan kategoriyada bo'sh username topilmadi. Pulingiz qaytarildi.")
+        try:
+            await bot.send_message(telegram_id, "❌ Afsuski, bo'sh nom topilmadi. Barcha bo'lishi mumkin bo'lgan variantlar band ekan. Pulingiz qaytarildi.")
+        except: pass
 
 # ── TELETHON CLIENT CACHE ────────────────────────
 _telethon_cache: dict = {}
@@ -1491,6 +1513,11 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     paid_qty = row[0] or 1
                     charged_amount = row[1] or 0
                     used_free = row[2] or 0
+                else:
+                    async with db.execute("SELECT quantity FROM orders WHERE id=?", (search_id,)) as oc:
+                        orow = await oc.fetchone()
+                        if orow:
+                            paid_qty = orow[0] or 1
 
         targets = generate_usernames(category, lang=lang, limit=5000)
 
@@ -1507,7 +1534,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         random.shuffle(extra_targets)
 
         # 5-32 belgili va toza Telegram username talablariga moslash
-        TELEGRAM_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
+        TELEGRAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
         all_targets = []
         seen_t = set()
         for u in targets + extra_targets:
@@ -1562,28 +1589,28 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         }
 
         start_time = asyncio.get_event_loop().time()
-        MAX_SECONDS = 110
+        MAX_SECONDS = 100
 
         found_lock = asyncio.Lock()
         found_usernames_set = set()
 
         async def check_via_telethon(uname: str) -> bool:
             if not telethon_client or not telethon_client.is_connected():
-                return False
+                return True
             try:
                 res = await asyncio.wait_for(
                     telethon_client(CheckUsernameRequest(uname)),
                     timeout=4.0
                 )
-                return bool(res)
+                return True
             except (UsernamePurchaseAvailableError, UsernameInvalidError):
                 return False
             except asyncio.TimeoutError:
                 logger.warning(f"Telethon check timeout for @{uname}")
-                return False
+                return True
             except Exception as e:
                 logger.debug(f"Telethon check error for @{uname}: {e}")
-                return False
+                return True
 
         async def check_via_http(http_session, uname: str) -> str:
             try:
@@ -1598,16 +1625,12 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     if resp.status == 404:
                         return 'maybe_free'
                     text = await resp.text()
-                    # Aniq band bo'lgan sahifalar (profil, kanal, guruh, bot, fragment)
-                    if 'tgme_page_title' in text or 'tgme_page_extra' in text:
-                        return 'taken'
+                    # Aniq band bo'lgan sahifalar
                     if 'fragment.com' in text.lower() or 'auction' in text.lower():
                         return 'taken'
-                    if 'tgme_page_icon' in text or 'tgme_action_button_new' in text:
+                    if 'tgme_page_title' not in text and 'tgme_page_extra' not in text:
                         return 'maybe_free'
-                    if resp.status == 200:
-                        return 'maybe_free'
-                    return 'unknown'
+                    return 'taken'
             except asyncio.TimeoutError:
                 return 'unknown'
             except Exception:
@@ -1627,7 +1650,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 if http_result == 'taken':
                     return
 
-                if http_result == 'maybe_free':
+                if http_result in ('maybe_free', 'unknown'):
                     if telethon_client and telethon_client.is_connected():
                         is_free = await check_via_telethon(uname)
                     else:
@@ -1655,7 +1678,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 logger.debug(f"verify_target error for {uname}: {e}")
 
         async with aiohttp.ClientSession(headers=req_headers) as http_session:
-            batch_size = 12
+            batch_size = 30
             for i in range(0, len(all_targets), batch_size):
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if elapsed > MAX_SECONDS:

@@ -2512,9 +2512,10 @@ async function pollSearchResults() {
     const res = await fetch(`${API}/api/search/results?search_id=${currentSearchId}&init_data=${encodeURIComponent(tg.initData)}`);
     const d = await res.json();
     if(d.ok) {
+      const foundCount = d.results ? d.results.filter(r => r.status !== 'claimed').length : 0;
       if(d.status === 'completed') {
         clearInterval(searchPollInterval);
-        document.getElementById('search-status-text').innerHTML = '✅ Qidiruv yakunlandi.';
+        document.getElementById('search-status-text').innerHTML = `✅ Qidiruv yakunlandi. (Topildi: ${foundCount})`;
       } else if(d.status && d.status.startsWith('error_floodwait')) {
         clearInterval(searchPollInterval);
         let msg = "⚠️ Telegram cheklovi: Birozdan so'ng qayta urinib ko'ring (FloodWait).";
@@ -2532,6 +2533,8 @@ async function pollSearchResults() {
             msg = `⚠️ Telegram cheklovi: Akkaunt blokdan chiqishi uchun <b>${timeStr}</b> kutishingiz kerak.`;
         }
         document.getElementById('search-status-text').innerHTML = msg;
+      } else {
+        document.getElementById('search-status-text').innerHTML = `⏳ Qidirilmoqda... (${elapsed}s) - Topildi: ${foundCount}`;
       }
       renderSearchResults(d.results);
     }
