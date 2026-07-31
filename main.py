@@ -509,13 +509,13 @@ async def init_db():
         except: pass
         
         # Sozlamalarni kiritish
-        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payment_card', '8600123456789012')")
-        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('payment_channel_id', '0')")
-        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('marketplace_channel_id', '0')")
-        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('username_price', '5000')")
-        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('premium_price', '20000')")
-        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('monitor_price', '10000')")
-        await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('listing_price', '1000')")
+        await db.execute("INSERT INTO settings (key, value) VALUES ('payment_card', '8600123456789012') ON CONFLICT (key) DO NOTHING")
+        await db.execute("INSERT INTO settings (key, value) VALUES ('payment_channel_id', '0') ON CONFLICT (key) DO NOTHING")
+        await db.execute("INSERT INTO settings (key, value) VALUES ('marketplace_channel_id', '0') ON CONFLICT (key) DO NOTHING")
+        await db.execute("INSERT INTO settings (key, value) VALUES ('username_price', '5000') ON CONFLICT (key) DO NOTHING")
+        await db.execute("INSERT INTO settings (key, value) VALUES ('premium_price', '20000') ON CONFLICT (key) DO NOTHING")
+        await db.execute("INSERT INTO settings (key, value) VALUES ('monitor_price', '10000') ON CONFLICT (key) DO NOTHING")
+        await db.execute("INSERT INTO settings (key, value) VALUES ('listing_price', '1000') ON CONFLICT (key) DO NOTHING")
         await db.commit()
 
         # Payment cards table (multi-card with daily rotation)
@@ -532,11 +532,11 @@ async def init_db():
             )
         """)
         # Eski payment_card sozlamasidan birinchi karta sifatida ko'chirish
-        async with db.execute("SELECT value FROM settings WHERE key='payment_card'") as _c:
-            _old_card = await _c.fetchone()
+        _c = await db.execute("SELECT value FROM settings WHERE key='payment_card'")
+           _old_card = await _c.fetchone()
         if _old_card and _old_card[0]:
-            async with db.execute("SELECT COUNT(*) FROM payment_cards") as _c:
-                _cnt = (await _c.fetchone())[0]
+        _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
+               _cnt = (await _c.fetchone())[0]
             if _cnt == 0:
                 await db.execute(
                     "INSERT INTO payment_cards (card_number, card_owner, daily_limit, sort_order) VALUES (?, ?, 40, 0)",
