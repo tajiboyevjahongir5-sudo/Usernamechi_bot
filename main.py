@@ -537,9 +537,10 @@ async def init_db():
 
 if _cnt == 0:
     if _old_card and _old_card[0]:
-        await db.execute("INSERT INTO payment_cards (card_number, is_active) VALUES (%s, TRUE)", (_old_card[0],))
-                    (_old_card[0], 'Karta egasi')
-                )
+        await db.execute(
+            "INSERT INTO payment_cards (card_number, card_holder, is_active) VALUES (%s, %s, TRUE)",
+            (_old_card[0], 'Karta egasi')  # <- SHU QATORNING BOSHIDAGI ORTIQCHA PROBELLARNI O'CHIRING
+        )
         await db.commit()
 
         # Migration: mavjud jadvallarni yangi ustunlar bilan yangilash
