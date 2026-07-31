@@ -145,6 +145,16 @@ def prepare_pg_sql(sql: str) -> str:
         sql, flags=re.IGNORECASE
     )
     
+    # 10.1 date(column, 'unixepoch') -> TO_CHAR(TO_TIMESTAMP(column), 'YYYY-MM-DD')
+    sql = re.sub(
+        r"date\(([^,]+),\s*'unixepoch'\)",
+        r"TO_CHAR(TO_TIMESTAMP(\1), 'YYYY-MM-DD')",
+        sql, flags=re.IGNORECASE
+    )
+    
+    # 10.2 IFNULL -> COALESCE
+    sql = re.sub(r"\bIFNULL\b", "COALESCE", sql, flags=re.IGNORECASE)
+    
     # 11. ? parametrlarini $1, $2, ... ga o'zgartiramiz
     param_count = 0
     def replacer(match):
@@ -158,9 +168,10 @@ def prepare_pg_sql(sql: str) -> str:
 
 class ExecutionResult:
     """execute() natijasi — ham await ham async with orqali ishlaydi"""
-    def __init__(self, records):
+    def __init__(self, records, lastrowid=None):
         self.records = records or []
         self._idx = 0
+        self.lastrowid = lastrowid
 
     # --- await qo'llab-quvvatlash: `c = await db.execute(...)` ---
     def __await__(self):
@@ -185,6 +196,15 @@ class ExecutionResult:
 
     async def fetchall(self):
         return self.records
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        r = await self.fetchone()
+        if r is None:
+            raise StopAsyncIteration
+        return r
 
 
 # AsyncPGCursor alias for backward compat
@@ -237,6 +257,21 @@ class AsyncPGAdapter:
             if sql_upper.startswith("SELECT") or sql_upper.startswith("WITH") or "RETURNING" in sql_upper:
                 records = await self.conn.fetch(pg_sql, *params)
                 return ExecutionResult(records)
+            elif sql_upper.startswith("INSERT") and "RETURNING" not in sql_upper:
+                try:
+                    # Explicit transaction so if RETURNING id fails, it doesn't break everything
+                    async with self.conn.transaction():
+                        try:
+                            record = await self.conn.fetchrow(pg_sql + " RETURNING id", *params)
+                            last_id = record['id'] if record and 'id' in record.keys() else None
+                            return ExecutionResult([], lastrowid=last_id)
+                        except Exception:
+                            # Table might not have 'id' column
+                            await self.conn.execute(pg_sql, *params)
+                            return ExecutionResult([])
+                except Exception:
+                    await self.conn.execute(pg_sql, *params)
+                    return ExecutionResult([])
             else:
                 await self.conn.execute(pg_sql, *params)
                 return ExecutionResult([])
@@ -556,17 +591,17 @@ async def init_db():
             )
         """)
         # Eski payment_card sozlamasidan birinchi karta sifatida ko'chirish
-        async def init_db():
-    # Barcha await-lar funksiyaning ichida (4 ta probel surilgan) bo'lishi kerak:
-            _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
-            _cnt = (await _c.fetchone())[0]
+        _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
+        _cnt = (await _c.fetchone())[0]
 
-            if _cnt == 0:
-                 if _old_card and _old_card[0]:
-                     await db.execute(
-                         "INSERT INTO payment_cards (card_number, card_holder, is_active) VALUES (%s, %s, TRUE)",
-                         (_old_card[0], 'Karta egasi')
-                     )
+        if _cnt == 0:
+             _old_card_cur = await db.execute("SELECT value FROM settings WHERE key='payment_card'")
+             _old_card = await _old_card_cur.fetchone()
+             if _old_card and _old_card[0]:
+                 await db.execute(
+                     "INSERT INTO payment_cards (card_number, card_owner, is_active) VALUES (?, ?, 1)",
+                     (_old_card[0], 'Karta egasi')
+                 )
         # Migration: mavjud jadvallarni yangi ustunlar bilan yangilash
         try:
             await db.execute("ALTER TABLE users ADD COLUMN referred_by INTEGER DEFAULT 0")
@@ -623,7 +658,7 @@ async def get_setting(key, default=None):
 
 async def set_setting(key, value):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=?", (key, str(value), str(value)))
+        await db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", (key, str(value)))
         await db.commit()
 
 async def get_active_card():
@@ -1440,7 +1475,7 @@ async def _start_cmd_inner(message: Message):
                         existing = await c.fetchone()
                     if existing and (existing[0] is None or existing[0] == 0):
                         await db.execute("UPDATE users SET referred_by=? WHERE telegram_id=?", (ref_id, message.from_user.id))
-                        await db.execute("INSERT OR REPLACE INTO pending_referrals (telegram_id, referrer_id) VALUES (?, ?)", (message.from_user.id, ref_id))
+                        await db.execute("INSERT INTO pending_referrals (telegram_id, referrer_id) VALUES (?, ?) ON CONFLICT (telegram_id) DO UPDATE SET referrer_id = EXCLUDED.referrer_id", (message.from_user.id, ref_id))
                         await db.commit()
         except Exception:
             pass
