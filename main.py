@@ -2292,20 +2292,21 @@ async def monitoring_loop(bot):
                 try:
                     queued_tid, queued_uname, queued_session = instant_check_queue.get_nowait()
                     u_lower = queued_uname.lower()
-                    if u_lower in claiming_now or taken_usernames_cache.get(u_lower, 0) > time.time():
+                    if u_lower in claiming_now:
+                        logger.debug(f"⚡ [INSTANT SKIP] @{queued_uname} allaqachon claim jarayonida")
                         continue
+                    # MUHIM: kesh tekshirilmaydi — monitoring uchun qo'shilgan nomlar doim tekshirilishi shart!
 
                     if http_session is None or http_session.closed:
                         http_session = aiohttp.ClientSession(
                             connector=aiohttp.TCPConnector(limit=10)
                         )
 
-                    # Darhol Telethon API tekshiruvi (HTTP kutmasdan)
-                    logger.info(f"⚡ [INSTANT CHECK] Yangi nishon qo'shildi: @{queued_uname} — darhol tekshirilmoqda...")
+                    # Darhol Telethon API tekshiruvi
+                    logger.info(f"⚡ [INSTANT CHECK] @{queued_uname} — Telethon API orqali darhol tekshirilmoqda...")
                     _check_client2 = None
                     try:
                         from telethon.tl.functions.account import CheckUsernameRequest as _CUR
-                        from telethon.errors import UsernamePurchaseAvailableError as _UPAE, UsernameInvalidError as _UIE
                         _check_client2 = await _get_fast_client(queued_session)
                         _res2 = await asyncio.wait_for(
                             _check_client2(_CUR(queued_uname)),
@@ -2313,8 +2314,7 @@ async def monitoring_loop(bot):
                         )
                         if _res2 is True:
                             # Bo'sh! Darhol claim qilish
-                            logger.info(f"⚡ [INSTANT FREE] @{queued_uname} bo'sh — darhol band qilinmoqda!")
-                            # task_group DB dan olamiz
+                            logger.info(f"⚡ [INSTANT FREE] @{queued_uname} BO'SH! Darhol band qilinmoqda...")
                             async with aiosqlite.connect(DB_PATH) as _db2:
                                 _db2.row_factory = aiosqlite.Row
                                 async with _db2.execute(
@@ -2325,12 +2325,16 @@ async def monitoring_loop(bot):
                                 ) as _c2:
                                     _tg = [dict(r) for r in await _c2.fetchall()]
                             if _tg:
+                                logger.info(f"⚡ [INSTANT CLAIM] @{queued_uname} uchun claim task yaratildi ({len(_tg)} sessiya)")
                                 asyncio.create_task(_claim_username(_tg, queued_uname, http_session))
+                            else:
+                                logger.warning(f"⚡ [INSTANT WARN] @{queued_uname} DB da monitoring_tasks topilmadi (status o'zgardi?)")
                         else:
-                            logger.info(f"⚡ [INSTANT TAKEN] @{queued_uname} band — keshga olindi.")
-                            taken_usernames_cache[u_lower] = time.time() + 43200
+                            # BAND — Lekin monitoring davom etishi uchun KESHGA OLMAYDI!
+                            # (12 soat kesh nishon usernamelarini to'xtatib qo'yadi)
+                            logger.info(f"⚡ [INSTANT TAKEN] @{queued_uname} hali band — monitoring davom etadi.")
                     except Exception as _qe:
-                        logger.debug(f"Instant check xato @{queued_uname}: {_qe}")
+                        logger.info(f"⚡ [INSTANT ERROR] @{queued_uname} tekshirishda xato: {type(_qe).__name__}: {_qe}")
                     finally:
                         if _check_client2:
                             try:
