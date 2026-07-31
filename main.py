@@ -72,24 +72,89 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 pg_pool = None
 
 def prepare_pg_sql(sql: str) -> str:
-    sql = sql.replace("strftime('%s','now')", "EXTRACT(EPOCH FROM NOW())")
-    sql = sql.replace("strftime('%s', 'now')", "EXTRACT(EPOCH FROM NOW())")
-    sql = sql.replace("strftime('%s','now') -", "EXTRACT(EPOCH FROM NOW()) -")
-    sql = sql.replace("datetime('now', '+30 days')", "TO_CHAR(NOW() + INTERVAL '30 days', 'YYYY-MM-DD HH24:MI:SS')")
-    sql = sql.replace("AUTOINCREMENT", "")
-    sql = sql.replace("INTEGER PRIMARY KEY", "BIGINT PRIMARY KEY")
-    sql = sql.replace("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", 
-                      "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING")
-    sql = sql.replace("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", 
-                      "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING")
+    """SQLite SQL so'rovini PostgreSQL ga moslashtiradi"""
     
+    # 1. PRAGMA — PostgreSQL da mavjud emas, o'tkazib yuboramiz
+    if "PRAGMA" in sql.upper():
+        return ""
+    
+    # 2. strftime('%s','now') → EXTRACT(EPOCH FROM NOW())
+    sql = re.sub(r"strftime\('%s',\s*'now'\)", "EXTRACT(EPOCH FROM NOW())", sql)
+    sql = re.sub(r"strftime\('%s', 'now'\)", "EXTRACT(EPOCH FROM NOW())", sql)
+    
+    # 3. strftime('%s','now', '-N days') → EXTRACT(EPOCH FROM NOW() - INTERVAL 'N days')
+    def strftime_interval(m):
+        n = m.group(1)
+        unit = m.group(2)
+        return f"EXTRACT(EPOCH FROM NOW() - INTERVAL '{n} {unit}')"
+    sql = re.sub(
+        r"strftime\('%s',\s*'now',\s*'-(\d+)\s+(day|days|hour|hours|minute|minutes)'\)",
+        strftime_interval, sql, flags=re.IGNORECASE
+    )
+    
+    # 4. CAST(strftime('%s','now') AS ...) → CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT)
+    sql = re.sub(
+        r"CAST\s*\(\s*strftime\('%s',\s*'now'[^)]*\)\s*AS\s+\w+\)",
+        "CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT)",
+        sql, flags=re.IGNORECASE
+    )
+    
+    # 5. datetime('now', '+30 days') → NOW() + INTERVAL '30 days'
+    sql = re.sub(
+        r"datetime\('now',\s*'[+](\d+)\s+days?'\)",
+        lambda m: f"TO_CHAR(NOW() + INTERVAL '{m.group(1)} days', 'YYYY-MM-DD HH24:MI:SS')",
+        sql, flags=re.IGNORECASE
+    )
+    
+    # 6. INSERT OR IGNORE INTO table (...) VALUES (...)
+    #    → INSERT INTO table (...) VALUES (...) ON CONFLICT DO NOTHING
+    def insert_or_ignore(m):
+        table = m.group(1)
+        rest = m.group(2)
+        return f"INSERT INTO {table} {rest} ON CONFLICT DO NOTHING"
+    sql = re.sub(
+        r"INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)\s+(.*?)(?=ON CONFLICT|$)",
+        insert_or_ignore, sql, flags=re.IGNORECASE | re.DOTALL
+    )
+    
+    # 7. INSERT OR REPLACE INTO → INSERT INTO ... ON CONFLICT DO UPDATE SET excluded
+    sql = re.sub(
+        r"INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)",
+        r"INSERT INTO \1",
+        sql, flags=re.IGNORECASE
+    )
+    
+    # 8. ON CONFLICT(key) DO UPDATE SET value=? → ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value
+    sql = re.sub(
+        r"ON\s+CONFLICT\s*\((\w+)\)\s+DO\s+UPDATE\s+SET\s+(\w+)\s*=\s*\?",
+        r"ON CONFLICT (\1) DO UPDATE SET \2 = EXCLUDED.\2",
+        sql, flags=re.IGNORECASE
+    )
+    
+    # 9. INTEGER PRIMARY KEY AUTOINCREMENT → SERIAL PRIMARY KEY
+    sql = re.sub(r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT", "SERIAL PRIMARY KEY", sql, flags=re.IGNORECASE)
+    # telegram_id INTEGER PRIMARY KEY → telegram_id BIGINT PRIMARY KEY
+    sql = re.sub(r"INTEGER\s+PRIMARY\s+KEY(?!\s+AUTOINCREMENT)", "BIGINT PRIMARY KEY", sql, flags=re.IGNORECASE)
+    # Standalone AUTOINCREMENT
+    sql = re.sub(r"\bAUTOINCREMENT\b", "", sql, flags=re.IGNORECASE)
+    
+    # 10. DEFAULT (strftime('%s','now')) → DEFAULT EXTRACT(EPOCH FROM NOW())
+    sql = re.sub(
+        r"DEFAULT\s+\(\s*strftime\('%s',\s*'now'\)\s*\)",
+        "DEFAULT EXTRACT(EPOCH FROM NOW())",
+        sql, flags=re.IGNORECASE
+    )
+    
+    # 11. ? parametrlarini $1, $2, ... ga o'zgartiramiz
     param_count = 0
     def replacer(match):
         nonlocal param_count
         param_count += 1
         return f"${param_count}"
+    sql = re.sub(r'\?', replacer, sql)
     
-    return re.sub(r'\?', replacer, sql)
+    return sql
+
 
 class AsyncPGCursor:
     def __init__(self, records):
@@ -118,22 +183,31 @@ class AsyncPGAdapter:
         self.row_factory = None
 
     async def execute(self, sql, params=()):
-        if "PRAGMA" in sql.upper():
-            return AsyncPGCursor([])  # Ignore SQLite PRAGMAs on PostgreSQL
-            
         pg_sql = prepare_pg_sql(sql)
+        if not pg_sql or not pg_sql.strip():
+            return AsyncPGCursor([])  # PRAGMA yoki bo'sh so'rov
+
         if params is None:
             params = ()
         elif not isinstance(params, (tuple, list)):
             params = (params,)
-            
-        sql_upper = pg_sql.strip().upper()
-        if sql_upper.startswith("SELECT") or "RETURNING" in sql_upper:
-            records = await self.conn.fetch(pg_sql, *params)
-            return AsyncPGCursor(records)
-        else:
-            await self.conn.execute(pg_sql, *params)
-            return AsyncPGCursor([])
+
+        try:
+            sql_upper = pg_sql.strip().upper()
+            if sql_upper.startswith("SELECT") or "RETURNING" in sql_upper:
+                records = await self.conn.fetch(pg_sql, *params)
+                return AsyncPGCursor(records)
+            else:
+                await self.conn.execute(pg_sql, *params)
+                return AsyncPGCursor([])
+        except Exception as e:
+            err = str(e)
+            # ALTER TABLE ustun allaqachon mavjud — normala
+            if "already exists" in err or "duplicate column" in err.lower():
+                return AsyncPGCursor([])
+            logger.error(f"[PG] SQL XATO: {e}\nSQL: {pg_sql[:300]}\nParams: {params}")
+            raise
+
 
     async def commit(self):
         pass
