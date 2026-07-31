@@ -135,6 +135,8 @@ def prepare_pg_sql(sql: str) -> str:
     sql = re.sub(r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT", "SERIAL PRIMARY KEY", sql, flags=re.IGNORECASE)
     # telegram_id INTEGER PRIMARY KEY → telegram_id BIGINT PRIMARY KEY
     sql = re.sub(r"INTEGER\s+PRIMARY\s+KEY(?!\s+AUTOINCREMENT)", "BIGINT PRIMARY KEY", sql, flags=re.IGNORECASE)
+    # Convert any ID or timestamp INTEGER columns to BIGINT for 64-bit Telegram IDs
+    sql = re.sub(r"\b(telegram_id|user_id|referrer_id|buyer_id|seller_id|channel_id|created_at|referred_by|highest_bidder_id|order_id|search_id)\s+INTEGER\b", r"\1 BIGINT", sql, flags=re.IGNORECASE)
     # Standalone AUTOINCREMENT
     sql = re.sub(r"\bAUTOINCREMENT\b", "", sql, flags=re.IGNORECASE)
     
@@ -359,10 +361,29 @@ async def init_db():
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN premium_until TEXT")
         except Exception: pass
-        try: await db.execute("ALTER TABLE users ADD COLUMN created_at INTEGER DEFAULT 0")
-        except Exception: pass
+        # PostgreSQL DA hamda SQLite da ID kolonlarini BIGINT ga o'tkazamiz
+        if DATABASE_URL and pg_pool is not None:
+            alter_queries = [
+                "ALTER TABLE users ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
+                "ALTER TABLE users ALTER COLUMN referred_by TYPE BIGINT USING referred_by::BIGINT",
+                "ALTER TABLE users ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT",
+                "ALTER TABLE orders ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
+                "ALTER TABLE payments ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
+                "ALTER TABLE topups ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
+                "ALTER TABLE search_tasks ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
+                "ALTER TABLE pending_referrals ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
+                "ALTER TABLE pending_referrals ALTER COLUMN referrer_id TYPE BIGINT USING referrer_id::BIGINT",
+                "ALTER TABLE monitoring_tasks ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
+                "ALTER TABLE mandatory_channels ALTER COLUMN channel_id TYPE BIGINT USING channel_id::BIGINT",
+                "ALTER TABLE listings ALTER COLUMN seller_id TYPE BIGINT USING seller_id::BIGINT",
+                "ALTER TABLE listings ALTER COLUMN buyer_id TYPE BIGINT USING buyer_id::BIGINT",
+                "ALTER TABLE keyword_subscriptions ALTER COLUMN user_id TYPE BIGINT USING user_id::BIGINT",
+            ]
+            for q in alter_queries:
+                try: await db.execute(q)
+                except Exception: pass
+
         # Eski foydalanuvchilarda created_at NULL bo'lsa, unix epoch qo'yamiz
-        # PostgreSQL: EXTRACT(EPOCH FROM NOW()) → INTEGER/REAL ga mos
         try: await db.execute("UPDATE users SET created_at=CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT) WHERE created_at IS NULL")
         except Exception: pass
         await db.execute("""
@@ -724,17 +745,21 @@ async def create_or_update_user(user_data: dict):
         await db.commit()
 
 async def create_user(telegram_id, first_name='', last_name='', username=''):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO users (telegram_id, balance, created_at) VALUES (?, 5000, CAST(strftime('%s','now') AS INTEGER))",
-            (telegram_id,)
-        )
-        if first_name or last_name or username:
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
-                "UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?",
-                (first_name or '', last_name or '', username or '', telegram_id)
+                "INSERT OR IGNORE INTO users (telegram_id, balance, created_at) VALUES (?, 5000, CAST(strftime('%s','now') AS INTEGER))",
+                (telegram_id,)
             )
-        await db.commit()
+            if first_name or last_name or username:
+                await db.execute(
+                    "UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?",
+                    (first_name or '', last_name or '', username or '', telegram_id)
+                )
+            await db.commit()
+    except Exception as e:
+        logger.error(f"[create_user] Error for telegram_id={telegram_id}: {e}", exc_info=True)
+        raise
 
 async def update_balance(telegram_id, amount):
     async with aiosqlite.connect(DB_PATH) as db:
