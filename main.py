@@ -61,6 +61,10 @@ WEB_URL       = os.getenv("WEB_HOST", "https://your-app.railway.app")
 # Global bot instance - API endpointlardan foydalanish uchun
 bot: Bot = None
 
+# Yangi nishon qo'shilganda darhol tekshirish uchun global navbat (asyncio.Queue)
+# (telegram_id, username, session_string) tuple
+instant_check_queue: asyncio.Queue = None  # monitoring_loop ichida lazily init
+
 
 
 # ─── MA'LUMOTLAR BAZASI ───────────────────────
@@ -2024,6 +2028,9 @@ async def monitoring_loop(bot):
         'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
     ]
 
+    global instant_check_queue
+    instant_check_queue = asyncio.Queue()
+
     hdr_idx = 0
     global_429_count = 0          # t.me dan 429 hisoblagich
     claiming_now: set = set()     # Hozir band qilinayotgan username'lar
@@ -2280,7 +2287,61 @@ async def monitoring_loop(bot):
     http_session = None
     while True:
         try:
-            # TTL: Xotiradan 10 minut o'tgan band nomlarni tozalash
+            # ── DARHOL TEKSHIRISH: Yangi qo'shilgan nishonlarni navbatdan olamiz
+            while not instant_check_queue.empty():
+                try:
+                    queued_tid, queued_uname, queued_session = instant_check_queue.get_nowait()
+                    u_lower = queued_uname.lower()
+                    if u_lower in claiming_now or taken_usernames_cache.get(u_lower, 0) > time.time():
+                        continue
+
+                    if http_session is None or http_session.closed:
+                        http_session = aiohttp.ClientSession(
+                            connector=aiohttp.TCPConnector(limit=10)
+                        )
+
+                    # Darhol Telethon API tekshiruvi (HTTP kutmasdan)
+                    logger.info(f"⚡ [INSTANT CHECK] Yangi nishon qo'shildi: @{queued_uname} — darhol tekshirilmoqda...")
+                    _check_client2 = None
+                    try:
+                        from telethon.tl.functions.account import CheckUsernameRequest as _CUR
+                        from telethon.errors import UsernamePurchaseAvailableError as _UPAE, UsernameInvalidError as _UIE
+                        _check_client2 = await _get_fast_client(queued_session)
+                        _res2 = await asyncio.wait_for(
+                            _check_client2(_CUR(queued_uname)),
+                            timeout=5.0
+                        )
+                        if _res2 is True:
+                            # Bo'sh! Darhol claim qilish
+                            logger.info(f"⚡ [INSTANT FREE] @{queued_uname} bo'sh — darhol band qilinmoqda!")
+                            # task_group DB dan olamiz
+                            async with aiosqlite.connect(DB_PATH) as _db2:
+                                _db2.row_factory = aiosqlite.Row
+                                async with _db2.execute(
+                                    "SELECT t.id, t.telegram_id, t.username, u.session_string "
+                                    "FROM monitoring_tasks t JOIN users u ON t.telegram_id=u.telegram_id "
+                                    "WHERE LOWER(t.username)=? AND t.status='monitoring'",
+                                    (u_lower,)
+                                ) as _c2:
+                                    _tg = [dict(r) for r in await _c2.fetchall()]
+                            if _tg:
+                                asyncio.create_task(_claim_username(_tg, queued_uname, http_session))
+                        else:
+                            logger.info(f"⚡ [INSTANT TAKEN] @{queued_uname} band — keshga olindi.")
+                            taken_usernames_cache[u_lower] = time.time() + 43200
+                    except Exception as _qe:
+                        logger.debug(f"Instant check xato @{queued_uname}: {_qe}")
+                    finally:
+                        if _check_client2:
+                            try:
+                                await _check_client2.disconnect()
+                            except Exception: pass
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as qe:
+                    logger.warning(f"Instant queue xato: {qe}")
+
+            # TTL: Xotiradan o'tgan band nomlarni tozalash
             now_ts = time.time()
             expired = [k for k, v in taken_usernames_cache.items() if v < now_ts]
             for k in expired:
@@ -3682,12 +3743,19 @@ async def api_monitor_start(request: Request):
         for u in new_targets:
             await db.execute("INSERT INTO monitoring_tasks (telegram_id, username) VALUES (?,?)", (tid, u))
         await db.commit()
-        
+
+    # Yangi qo'shilgan usernamelarni darhol tekshirish navbatiga yuboramiz
+    session_str = row.get('session_string', '') or ''
+    if instant_check_queue is not None and session_str:
+        for u in new_targets:
+            await instant_check_queue.put((tid, u, session_str))
+            logger.info(f"⚡ [QUEUED] @{u} darhol tekshirish navbatiga qo'shildi (user: {tid})")
+
     added_count = len(new_targets)
     msg = f"✅ {added_count} ta username nishonga olindi (-{total_price:,} so'm)!"
     if existing_targets:
         msg += f" (Qolgan {len(existing_targets)} tasi allaqachon qo'shilgan)"
-        
+
     return {"ok": True, "message": msg}
 
 @app.get("/api/monitor/list")
