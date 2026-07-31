@@ -535,7 +535,7 @@ async def init_db():
         _c = await db.execute("SELECT value FROM settings WHERE key='payment_card'")
         _old_card = await _c.fetchone()
         if _old_card and _old_card[0]:
-        _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
+               _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
                _cnt = (await _c.fetchone())[0]
             if _cnt == 0:
                 await db.execute(
