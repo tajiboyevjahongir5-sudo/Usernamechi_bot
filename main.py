@@ -962,13 +962,9 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     await seller_client(DeleteChannelRequest(channel=target_channel.id))
                 except Exception as de:
                     logger.error(f"Sotuvchi kanalini o'chirishda xato: {de}")
-        else:
-            # Shaxsiy profildan bo'shatish
-            me = await seller_client.get_me()
-            if me and me.username and me.username.lower() == username.lower():
-                await seller_client(AccountUpdateUsernameRequest(username=""))
             else:
-                logger.warning(f"Sotuvchi profilida yoki kanalida @{username} topilmadi — o'tkazish baribir davom etadi")
+                logger.error(f"Sotuvchi profilida yoki kanalida @{username} topilmadi!")
+                raise ValueError(f"Sotuvchi profilida yoki kanallarida @{username} topilmadi! (Sotuvchi username'ni almashtirgan bo'lishi mumkin)")
 
         await asyncio.sleep(1.0)  # Telegram serverlarida username bo'shashi uchun 1 soniya kutish
 
@@ -3131,6 +3127,33 @@ async def api_marketplace_list(request: Request):
         async with db.execute("SELECT id FROM listings WHERE username=? AND status='active'", (username,)) as c:
             if await c.fetchone():
                 return {"ok": False, "error": "Bu username allaqachon sotuvda"}
+
+    # Verification: Check if seller actually owns the username on their connected Telethon account
+    try:
+        from telethon import TelegramClient
+        from telethon.sessions import StringSession
+        from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
+        
+        tc = TelegramClient(StringSession(row['session_string']), API_ID, API_HASH)
+        await tc.connect()
+        try:
+            me = await tc.get_me()
+            has_uname = False
+            if me and me.username and me.username.lower() == username.lower():
+                has_uname = True
+            else:
+                req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
+                res = await tc(req)
+                for ch in res.chats:
+                    if getattr(ch, 'username', '').lower() == username.lower():
+                        has_uname = True
+                        break
+            if not has_uname:
+                return {"ok": False, "error": f"❌ @{username} sizning ulangan Telegram akkauntingizda yoki kanallaringizda topilmadi!"}
+        finally:
+            await tc.disconnect()
+    except Exception as verify_e:
+        logger.warning(f"Ownership verify error for @{username}: {verify_e}")
     
     is_auction = 1 if data.get('is_auction') else 0
     auction_ends_at = time.time() + 86400 if is_auction else 0
