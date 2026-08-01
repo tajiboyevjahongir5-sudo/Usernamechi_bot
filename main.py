@@ -67,259 +67,7 @@ instant_check_queue: asyncio.Queue = None  # monitoring_loop ichida lazily init
 
 
 
-# ─── MA'LUMOTLAR BAZASI DUAL ENGINE (POSTGRESQL & SQLITE) ───
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-pg_pool = None
 
-def prepare_pg_sql(sql: str) -> str:
-    """SQLite SQL so'rovini PostgreSQL ga moslashtiradi"""
-    
-    # 1. PRAGMA — PostgreSQL da mavjud emas, o'tkazib yuboramiz
-    if "PRAGMA" in sql.upper():
-        return ""
-    
-    # 2. strftime('%s','now') → EXTRACT(EPOCH FROM NOW())
-    sql = re.sub(r"strftime\('%s',\s*'now'\)", "EXTRACT(EPOCH FROM NOW())", sql)
-    sql = re.sub(r"strftime\('%s', 'now'\)", "EXTRACT(EPOCH FROM NOW())", sql)
-    
-    # 3. strftime('%s','now', '-N days') → EXTRACT(EPOCH FROM NOW() - INTERVAL 'N days')
-    def strftime_interval(m):
-        n = m.group(1)
-        unit = m.group(2)
-        return f"EXTRACT(EPOCH FROM NOW() - INTERVAL '{n} {unit}')"
-    sql = re.sub(
-        r"strftime\('%s',\s*'now',\s*'-(\d+)\s+(day|days|hour|hours|minute|minutes)'\)",
-        strftime_interval, sql, flags=re.IGNORECASE
-    )
-    
-    # 4. CAST(strftime('%s','now') AS ...) → CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT)
-    sql = re.sub(
-        r"CAST\s*\(\s*strftime\('%s',\s*'now'[^)]*\)\s*AS\s+\w+\)",
-        "CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT)",
-        sql, flags=re.IGNORECASE
-    )
-    
-    # 5. datetime('now', '+30 days') → NOW() + INTERVAL '30 days'
-    sql = re.sub(
-        r"datetime\('now',\s*'[+](\d+)\s+days?'\)",
-        lambda m: f"TO_CHAR(NOW() + INTERVAL '{m.group(1)} days', 'YYYY-MM-DD HH24:MI:SS')",
-        sql, flags=re.IGNORECASE
-    )
-    
-    # 6. INSERT OR IGNORE INTO table (...) VALUES (...)
-    #    → INSERT INTO table (...) VALUES (...) ON CONFLICT DO NOTHING
-    def insert_or_ignore(m):
-        table = m.group(1)
-        rest = m.group(2)
-        return f"INSERT INTO {table} {rest} ON CONFLICT DO NOTHING"
-    sql = re.sub(
-        r"INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)\s+(.*?)(?=ON CONFLICT|$)",
-        insert_or_ignore, sql, flags=re.IGNORECASE | re.DOTALL
-    )
-    
-    # 7. INSERT OR REPLACE INTO → INSERT INTO ... ON CONFLICT DO UPDATE SET excluded
-    sql = re.sub(
-        r"INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)",
-        r"INSERT INTO \1",
-        sql, flags=re.IGNORECASE
-    )
-    
-    # 8. ON CONFLICT(key) DO UPDATE SET value=? → ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value
-    sql = re.sub(
-        r"ON\s+CONFLICT\s*\((\w+)\)\s+DO\s+UPDATE\s+SET\s+(\w+)\s*=\s*\?",
-        r"ON CONFLICT (\1) DO UPDATE SET \2 = EXCLUDED.\2",
-        sql, flags=re.IGNORECASE
-    )
-    
-    # 9. INTEGER PRIMARY KEY AUTOINCREMENT → SERIAL PRIMARY KEY
-    sql = re.sub(r"INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT", "SERIAL PRIMARY KEY", sql, flags=re.IGNORECASE)
-    # telegram_id INTEGER PRIMARY KEY → telegram_id BIGINT PRIMARY KEY
-    sql = re.sub(r"INTEGER\s+PRIMARY\s+KEY(?!\s+AUTOINCREMENT)", "BIGINT PRIMARY KEY", sql, flags=re.IGNORECASE)
-    # Convert any ID or timestamp INTEGER columns to BIGINT for 64-bit Telegram IDs
-    sql = re.sub(r"\b(telegram_id|user_id|referrer_id|buyer_id|seller_id|channel_id|created_at|referred_by|highest_bidder_id|order_id|search_id)\s+INTEGER\b", r"\1 BIGINT", sql, flags=re.IGNORECASE)
-    # Standalone AUTOINCREMENT
-    sql = re.sub(r"\bAUTOINCREMENT\b", "", sql, flags=re.IGNORECASE)
-    
-    # 10. DEFAULT (strftime('%s','now')) → DEFAULT EXTRACT(EPOCH FROM NOW())
-    sql = re.sub(
-        r"DEFAULT\s+\(\s*strftime\('%s',\s*'now'\)\s*\)",
-        "DEFAULT EXTRACT(EPOCH FROM NOW())",
-        sql, flags=re.IGNORECASE
-    )
-    
-    # 10.1 date(column, 'unixepoch') -> TO_CHAR(TO_TIMESTAMP(column), 'YYYY-MM-DD')
-    sql = re.sub(
-        r"date\(([^,]+),\s*'unixepoch'\)",
-        r"TO_CHAR(TO_TIMESTAMP(\1), 'YYYY-MM-DD')",
-        sql, flags=re.IGNORECASE
-    )
-    
-    # 10.2 IFNULL -> COALESCE
-    sql = re.sub(r"\bIFNULL\b", "COALESCE", sql, flags=re.IGNORECASE)
-    
-    # 11. ? parametrlarini $1, $2, ... ga o'zgartiramiz
-    param_count = 0
-    def replacer(match):
-        nonlocal param_count
-        param_count += 1
-        return f"${param_count}"
-    sql = re.sub(r'\?', replacer, sql)
-    
-    return sql
-
-
-class ExecutionResult:
-    """execute() natijasi — ham await ham async with orqali ishlaydi"""
-    def __init__(self, records, lastrowid=None):
-        self.records = records or []
-        self._idx = 0
-        self.lastrowid = lastrowid
-
-    # --- await qo'llab-quvvatlash: `c = await db.execute(...)` ---
-    def __await__(self):
-        return self._noop().__await__()
-
-    async def _noop(self):
-        return self
-
-    # --- async with qo'llab-quvvatlash: `async with db.execute(...) as c:` ---
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        pass
-
-    async def fetchone(self):
-        if self._idx < len(self.records):
-            r = self.records[self._idx]
-            self._idx += 1
-            return r
-        return None
-
-    async def fetchall(self):
-        return self.records
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        r = await self.fetchone()
-        if r is None:
-            raise StopAsyncIteration
-        return r
-
-
-# AsyncPGCursor alias for backward compat
-AsyncPGCursor = ExecutionResult
-
-
-class ExecutableQuery:
-    """
-    db.execute() dan qaytariladigan wrapper.
-    Ham `await db.execute(...)` ham `async with db.execute(...) as c:` bilan ishlaydi.
-    """
-
-    def __init__(self, coro):
-        self._coro = coro
-
-    # await db.execute(...) => ExecutionResult
-    def __await__(self):
-        return self._coro.__await__()
-
-    # async with db.execute(...) as c: => c is ExecutionResult
-    async def __aenter__(self):
-        self._result = await self._coro
-        return self._result
-
-    async def __aexit__(self, *args):
-        pass
-
-
-class AsyncPGAdapter:
-    def __init__(self, conn):
-        self.conn = conn
-        self.row_factory = None
-
-    def execute(self, sql, params=()):
-        """ExecutableQuery qaytaradi — await va async with ikkalasini ham qo'llab-quvvatlaydi"""
-        return ExecutableQuery(self._execute_inner(sql, params))
-
-    async def _execute_inner(self, sql, params=()):
-        pg_sql = prepare_pg_sql(sql)
-        if not pg_sql or not pg_sql.strip():
-            return ExecutionResult([])  # PRAGMA yoki bo'sh so'rov
-
-        if params is None:
-            params = ()
-        elif not isinstance(params, (tuple, list)):
-            params = (params,)
-
-        try:
-            sql_upper = pg_sql.strip().upper()
-            if sql_upper.startswith("SELECT") or sql_upper.startswith("WITH") or "RETURNING" in sql_upper:
-                records = await self.conn.fetch(pg_sql, *params)
-                return ExecutionResult(records)
-            elif sql_upper.startswith("INSERT") and "RETURNING" not in sql_upper:
-                try:
-                    # Explicit transaction so if RETURNING id fails, it doesn't break everything
-                    async with self.conn.transaction():
-                        try:
-                            record = await self.conn.fetchrow(pg_sql + " RETURNING id", *params)
-                            last_id = record['id'] if record and 'id' in record.keys() else None
-                            return ExecutionResult([], lastrowid=last_id)
-                        except Exception:
-                            # Table might not have 'id' column
-                            await self.conn.execute(pg_sql, *params)
-                            return ExecutionResult([])
-                except Exception:
-                    await self.conn.execute(pg_sql, *params)
-                    return ExecutionResult([])
-            else:
-                await self.conn.execute(pg_sql, *params)
-                return ExecutionResult([])
-        except Exception as e:
-            err = str(e)
-            # ALTER TABLE ustun allaqachon mavjud — normala
-            if "already exists" in err or "duplicate column" in err.lower():
-                return ExecutionResult([])
-            logger.error(f"[PG] SQL XATO: {e}\nSQL: {pg_sql[:300]}\nParams: {params}")
-            raise
-
-    async def commit(self):
-        pass  # asyncpg autocommit
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-
-class PGConnContextManager:
-    def __init__(self, pool):
-        self.pool = pool
-        self.conn = None
-        self.adapter = None
-
-    async def __aenter__(self):
-        self.conn = await self.pool.acquire()
-        self.adapter = AsyncPGAdapter(self.conn)
-        return self.adapter
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.conn and self.pool:
-            await self.pool.release(self.conn)
-
-_original_aiosqlite_connect = aiosqlite.connect
-
-def db_connect(database=None, **kwargs):
-    if DATABASE_URL and pg_pool is not None:
-        return PGConnContextManager(pg_pool)
-    else:
-        return _original_aiosqlite_connect(database or DB_PATH, **kwargs)
-
-# Patch aiosqlite.connect globally
-aiosqlite.connect = db_connect
 
 
 async def init_db():
@@ -361,30 +109,9 @@ async def init_db():
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN premium_until TEXT")
         except Exception: pass
-        # PostgreSQL DA hamda SQLite da ID kolonlarini BIGINT ga o'tkazamiz
-        if DATABASE_URL and pg_pool is not None:
-            alter_queries = [
-                "ALTER TABLE users ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
-                "ALTER TABLE users ALTER COLUMN referred_by TYPE BIGINT USING referred_by::BIGINT",
-                "ALTER TABLE users ALTER COLUMN created_at TYPE BIGINT USING created_at::BIGINT",
-                "ALTER TABLE orders ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
-                "ALTER TABLE payments ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
-                "ALTER TABLE topups ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
-                "ALTER TABLE search_tasks ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
-                "ALTER TABLE pending_referrals ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
-                "ALTER TABLE pending_referrals ALTER COLUMN referrer_id TYPE BIGINT USING referrer_id::BIGINT",
-                "ALTER TABLE monitoring_tasks ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT",
-                "ALTER TABLE mandatory_channels ALTER COLUMN channel_id TYPE BIGINT USING channel_id::BIGINT",
-                "ALTER TABLE listings ALTER COLUMN seller_id TYPE BIGINT USING seller_id::BIGINT",
-                "ALTER TABLE listings ALTER COLUMN buyer_id TYPE BIGINT USING buyer_id::BIGINT",
-                "ALTER TABLE keyword_subscriptions ALTER COLUMN user_id TYPE BIGINT USING user_id::BIGINT",
-            ]
-            for q in alter_queries:
-                try: await db.execute(q)
-                except Exception: pass
 
         # Eski foydalanuvchilarda created_at NULL bo'lsa, unix epoch qo'yamiz
-        try: await db.execute("UPDATE users SET created_at=CAST(EXTRACT(EPOCH FROM NOW()) AS BIGINT) WHERE created_at IS NULL")
+        try: await db.execute("UPDATE users SET created_at=CAST(strftime('%s','now') AS INTEGER) WHERE created_at IS NULL OR created_at=0")
         except Exception: pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS keyword_subscriptions (
@@ -1500,7 +1227,7 @@ async def _start_cmd_inner(message: Message):
                         existing = await c.fetchone()
                     if existing and (existing[0] is None or existing[0] == 0):
                         await db.execute("UPDATE users SET referred_by=? WHERE telegram_id=?", (ref_id, message.from_user.id))
-                        await db.execute("INSERT INTO pending_referrals (telegram_id, referrer_id) VALUES (?, ?) ON CONFLICT (telegram_id) DO UPDATE SET referrer_id = EXCLUDED.referrer_id", (message.from_user.id, ref_id))
+                        await db.execute("INSERT OR REPLACE INTO pending_referrals (telegram_id, referrer_id) VALUES (?, ?)", (message.from_user.id, ref_id))
                         await db.commit()
         except Exception:
             pass
@@ -5751,34 +5478,10 @@ async def cleanup_short_monitoring_tasks(bot_inst: Bot):
 async def main():
     import signal
 
-    global bot, pg_pool
+    global bot
 
-    # 1. PostgreSQL Connection Pool (DATABASE_URL bo'lsa)
-    if DATABASE_URL:
-        try:
-            import asyncpg
-            pg_url = DATABASE_URL.replace("postgres://", "postgresql://")
-            pg_pool = await asyncpg.create_pool(
-                pg_url,
-                min_size=2,
-                max_size=25,
-                command_timeout=60,
-            )
-            logger.info("🐘 PostgreSQL Connection Pool muvaffaqiyatli ochildi!")
-        except Exception as pge:
-            logger.error(f"❌ PostgreSQL connection xatosi: {pge}")
-            pg_pool = None  # SQLite ga fallback
-
-    # 2. DB Schema yaratish (SQLite yoki PostgreSQL)
+    # DB Schema yaratish (SQLite Volume)
     await init_db()
-
-    # 3. Volume → PostgreSQL avtomatik migratsiya (bir marta bajariladi)
-    if DATABASE_URL and pg_pool is not None:
-        try:
-            import migrate_to_pg
-            await migrate_to_pg.run_migration()
-        except Exception as me:
-            logger.warning(f"Volume migratsiya skip: {me}")
 
     bot = Bot(token=BOT_TOKEN)
     dp  = Dispatcher()
