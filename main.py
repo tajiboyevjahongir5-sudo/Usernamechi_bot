@@ -932,17 +932,19 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         UpdateUsernameRequest, DeleteChannelRequest
     )
     from telethon.tl.functions.account import UpdateUsernameRequest as AccountUpdateUsernameRequest
-    from telethon.errors import AuthKeyUnregisteredError, UserDeactivatedError
+    from telethon.errors import AuthKeyUnregisteredError, UserDeactivatedError, UsernameOccupiedError
 
     seller_client = TelegramClient(StringSession(seller['session_string']), API_ID, API_HASH)
     buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
     
+    target_channel = None
+    released = False
+
     try:
         await seller_client.connect()
         await buyer_client.connect()
         
         # 1. Sotuvchi hisobidan username o'rganiladi va bo'shatiladi
-        target_channel = None
         try:
             req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
             res = await seller_client(req)
@@ -957,25 +959,57 @@ async def transfer_username(bot, seller_id, buyer_id, username):
             # Kanaldan username ni bo'shatish yoki kanalni o'chirish
             try:
                 await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=""))
+                released = True
             except Exception:
                 try:
                     await seller_client(DeleteChannelRequest(channel=target_channel.id))
+                    released = True
                 except Exception as de:
                     logger.error(f"Sotuvchi kanalini o'chirishda xato: {de}")
-            else:
-                logger.error(f"Sotuvchi profilida yoki kanalida @{username} topilmadi!")
-                raise ValueError(f"Sotuvchi profilida yoki kanallarida @{username} topilmadi! (Sotuvchi username'ni almashtirgan bo'lishi mumkin)")
+        else:
+            # Shaxsiy profildan bo'shatish
+            me = await seller_client.get_me()
+            if me and me.username and me.username.lower() == username.lower():
+                await seller_client(AccountUpdateUsernameRequest(username=""))
+                released = True
 
-        await asyncio.sleep(1.0)  # Telegram serverlarida username bo'shashi uchun 1 soniya kutish
+        if not released:
+            logger.error(f"Sotuvchi profilida yoki kanalida @{username} topilmadi!")
+            raise ValueError(f"Sotuvchi profilida yoki kanallarida @{username} topilmadi! (Sotuvchi username'ni almashtirgan bo'lishi mumkin)")
 
-        # 2. Xaridor hisobida kanal yaratilib, username biriktiriladi
+        await asyncio.sleep(2.0)  # Telegram serverlarida username bo'shashi va sinxronlanishi uchun 2 soniya kutish
+
+        # 2. Xaridor hisobida kanal yaratilib, username biriktiriladi (5 marta takrorlash bilan)
         created = await buyer_client(CreateChannelRequest(
             title=f"Usernamechi: @{username}",
             about="Bu kanal Usernamechi orqali sotib olingan username saqlanishi uchun.",
             megagroup=False
         ))
         new_channel_id = created.chats[0].id
-        await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
+
+        assigned = False
+        last_assign_err = None
+        for attempt in range(5):
+            try:
+                await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
+                assigned = True
+                break
+            except Exception as ae:
+                last_assign_err = ae
+                logger.warning(f"Assign attempt {attempt+1}/5 for @{username} failed: {ae}")
+                await asyncio.sleep(1.5)
+
+        if not assigned:
+            # Rollback: Xaridorga o'tmadimi, sotuvchiga qaytarishga urinamiz
+            try:
+                if target_channel:
+                    await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=username))
+                else:
+                    await seller_client(AccountUpdateUsernameRequest(username=username))
+                logger.info(f"Rollback: @{username} sotuvchiga qaytarildi ({seller_id})")
+            except Exception as re_err:
+                logger.error(f"Rollback failed for @{username}: {re_err}")
+            raise last_assign_err or UsernameOccupiedError(request=None)
         
         # 3. Xabarnoma yuborish
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -985,7 +1019,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         try:
             await bot.send_message(
                 buyer_id, 
-                f"🎉 <b>Tabriklaymiz!</b>\n\n<b>@{username}</b> sizning akkauntingizga o'tkazildi!\n"
+                f"🎉 <b>Tabriklaymiz!</b>\n\n<b>@{username}</b> sizning akkauntingizga muvaffaqiyatli o'tkazildi!\n"
                 f"Hozirda u avtomatik yaratilgan maxsus kanalda saqlanmoqda.\n\n"
                 f"Uni o'z profilingizga o'rnatmoqchimisiz?",
                 reply_markup=markup, parse_mode="HTML"
