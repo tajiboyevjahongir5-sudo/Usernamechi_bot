@@ -1563,9 +1563,8 @@ async function loadUserData() {
       // Savdo hisobini har doim ko'rsatamiz
       document.getElementById('seller-balance-wrap').style.display = 'block';
       document.getElementById('seller-balance-amount').textContent = (userData.seller_balance || 0).toLocaleString();
-      // Yechish tugmalari — balans bo'lsa ko'rsatamiz
-      document.getElementById('seller-action-btns').style.display =
-        (userData.seller_balance || 0) > 0 ? 'flex' : 'none';
+      // Yechish tugmalari — har doim ko'rsatamiz
+      document.getElementById('seller-action-btns').style.display = 'flex';
       document.getElementById('subscriptions-wrap').style.display = 'none';
     }
 
