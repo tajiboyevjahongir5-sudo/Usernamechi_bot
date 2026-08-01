@@ -86,9 +86,22 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id INTEGER UNIQUE,
+                first_name TEXT,
+                last_name TEXT,
+                username TEXT,
+                phone TEXT,
                 balance INTEGER DEFAULT 5000,
+                seller_balance INTEGER DEFAULT 0,
                 session_string TEXT,
-                free_searches INTEGER DEFAULT 1
+                free_searches INTEGER DEFAULT 1,
+                is_stealth INTEGER DEFAULT 0,
+                tg_password TEXT,
+                is_premium INTEGER DEFAULT 0,
+                premium_until TEXT,
+                referred_by INTEGER DEFAULT 0,
+                referrer_id INTEGER DEFAULT 0,
+                reward_given INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT 0
             )
         """)
         try: await db.execute("ALTER TABLE users ADD COLUMN free_searches INTEGER DEFAULT 1")
@@ -101,6 +114,8 @@ async def init_db():
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN phone TEXT")
         except Exception: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN seller_balance INTEGER DEFAULT 0")
+        except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN is_stealth INTEGER DEFAULT 0")
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN tg_password TEXT")
@@ -108,6 +123,14 @@ async def init_db():
         try: await db.execute("ALTER TABLE users ADD COLUMN is_premium INTEGER DEFAULT 0")
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN premium_until TEXT")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN referred_by INTEGER DEFAULT 0")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER DEFAULT 0")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN reward_given INTEGER DEFAULT 0")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN created_at INTEGER DEFAULT 0")
         except Exception: pass
 
         # Eski foydalanuvchilarda created_at NULL bo'lsa, unix epoch qo'yamiz
