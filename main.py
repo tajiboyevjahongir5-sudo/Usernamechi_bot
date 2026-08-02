@@ -3336,12 +3336,27 @@ async def api_marketplace_list(request: Request):
             if me and me.username and me.username.lower() == username.lower():
                 has_uname = True
             else:
-                req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
-                res = await tc(req)
-                for ch in res.chats:
-                    if getattr(ch, 'username', '').lower() == username.lower():
-                        has_uname = True
-                        break
+                # Birinchi: GetAdminedPublicChannelsRequest orqali tekshirish
+                try:
+                    req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
+                    res = await tc(req)
+                    for ch in res.chats:
+                        if getattr(ch, 'username', '').lower() == username.lower():
+                            has_uname = True
+                            break
+                except Exception:
+                    pass
+                # Fallback: Dialoglar orqali qidiramiz
+                if not has_uname:
+                    try:
+                        async for dialog in tc.iter_dialogs():
+                            if dialog.is_channel or dialog.is_group:
+                                entity = dialog.entity
+                                if getattr(entity, 'username', '').lower() == username.lower():
+                                    has_uname = True
+                                    break
+                    except Exception:
+                        pass
             if not has_uname:
                 return {"ok": False, "error": f"❌ @{username} sizning ulangan Telegram akkauntingizda yoki kanallaringizda topilmadi!"}
         finally:
@@ -3575,6 +3590,9 @@ async def api_marketplace_buy(request: Request):
     
     # Username transfer fonda boshlanadi
     asyncio.create_task(transfer_username(bot, seller_id, tid, username))
+
+    # Kanal postini "SOTILDI" holatiga o'tkazamiz
+    asyncio.create_task(update_channel_listing_post(listing_id, 'sold'))
     
     # Sotuvchiga xabar
     commission_amount = price - seller_net
