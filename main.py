@@ -6054,6 +6054,149 @@ async def cleanup_fragment_monitoring_tasks(bot_inst: Bot):
         logger.error(f"cleanup_fragment_monitoring_tasks xato: {e}")
 
 
+async def restore_deleted_monitoring_tasks(bot_inst: Bot):
+    """
+    Forensik SQLite tahlili orqali noto'g'ri o'chirilgan monitoring nishonlarini tiklaydi.
+    Bu tizim xatosi tufayli 'Fragment NFT' deb noto'g'ri o'chirib yuborilgan nishonlarni qaytaradi.
+    """
+    try:
+        # Faqat 1 marta bajarilishini ta'minlash uchun sozlamani tekshiramiz
+        already_run = await get_setting("targets_restored", "false")
+        if already_run == "true":
+            logger.info("✅ Noto'g'ri o'chirilgan nishonlarni tiklash allaqachon bajarilgan, o'tkazib yuboriladi.")
+            return
+
+        logger.info("🔍 Forensik tiklash: Noto'g'ri o'chirilgan nishonlarni qidirish boshlandi...")
+
+        # 1. Barcha telegram_id larni bazadan olamiz
+        valid_ids = []
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT telegram_id FROM users") as cur:
+                rows = await cur.fetchall()
+                valid_ids = [r['telegram_id'] for r in rows if r['telegram_id']]
+
+            # Hozirda faol monitoringdagi nishonlarni olamiz (qayta tiklamaslik uchun)
+            async with db.execute("SELECT telegram_id, username FROM monitoring_tasks WHERE status='monitoring'") as cur:
+                active_rows = await cur.fetchall()
+                active_pairs = {(r['telegram_id'], r['username'].lower()) for r in active_rows}
+
+        if not valid_ids:
+            logger.info("Forensik tiklash: foydalanuvchilar topilmadi, to'xtatildi.")
+            await set_setting("targets_restored", "true")
+            return
+
+        # 2. SQLite faylini raw formatda o'qiymiz
+        import os
+        if not os.path.exists(DB_PATH):
+            logger.warning(f"Forensik tiklash: {DB_PATH} fayli topilmadi.")
+            return
+
+        with open(DB_PATH, 'rb') as f:
+            data = f.read()
+
+        import struct
+        import re
+        import aiohttp
+
+        keyword = b'monitoring'
+        idx = 0
+        restored_count = 0
+        to_restore = [] # list of (telegram_id, username)
+
+        while True:
+            idx = data.find(keyword, idx)
+            if idx == -1:
+                break
+            
+            # Preceding 50 bytes
+            start = max(0, idx - 50)
+            chunk = data[start:idx]
+            
+            # Find username at the end of the chunk
+            match = re.search(b'[a-zA-Z0-9_]{4,32}$', chunk)
+            if match:
+                username = match.group(0).decode('utf-8').lower()
+                uname_start_in_chunk = chunk.index(match.group(0))
+                before_uname = chunk[:uname_start_in_chunk]
+                
+                # Match against valid Telegram IDs
+                matched_id = None
+                for tid in valid_ids:
+                    # 4-byte representation
+                    if struct.pack('>I', tid & 0xFFFFFFFF) in before_uname:
+                        if tid < 2147483648 and struct.pack('>I', tid) in before_uname:
+                            matched_id = tid
+                            break
+                    # 6-byte representation
+                    if struct.pack('>Q', tid)[2:] in before_uname:
+                        matched_id = tid
+                        break
+                    # 8-byte representation
+                    if struct.pack('>Q', tid) in before_uname:
+                        matched_id = tid
+                        break
+                
+                if matched_id:
+                    pair = (matched_id, username)
+                    if pair not in active_pairs and pair not in to_restore:
+                        to_restore.append(pair)
+            
+            idx += len(keyword)
+
+        logger.info(f"🔍 Forensik tahlil yakunlandi. {len(to_restore)} ta potentsial tiklanadigan nishon aniqlandi.")
+
+        if to_restore:
+            price_per_item = int(await get_setting("monitor_price", 10000))
+            restored_list = []
+
+            # 3. Fragment bo'lmaganlarini saralab olamiz
+            async with aiohttp.ClientSession() as session:
+                for tid, username in to_restore:
+                    # Haqiqatdan ham Fragment.com NFT emasligini tekshiramiz
+                    is_frag = await check_if_fragment_username(session, username)
+                    if not is_frag:
+                        restored_list.append((tid, username))
+                    await asyncio.sleep(0.3)  # limitga tushmaslik uchun
+
+            if restored_list:
+                async with aiosqlite.connect(DB_PATH) as db:
+                    for tid, username in restored_list:
+                        # 1. Monitoring nishonini qayta qo'shamiz
+                        await db.execute(
+                            "INSERT INTO monitoring_tasks (telegram_id, username, status, paid_amount) VALUES (?, ?, 'monitoring', ?)",
+                            (tid, username, price_per_item)
+                        )
+                        # 2. Qaytarilgan pulni foydalanuvchi balansidan ayiramiz (revert refund)
+                        await db.execute(
+                            "UPDATE users SET balance = MAX(0, balance - ?) WHERE telegram_id = ?",
+                            (price_per_item, tid)
+                        )
+                        logger.info(f"✅ Qayta tiklandi: @{username} (user: {tid})")
+                        restored_count += 1
+                    await db.commit()
+
+                # Foydalanuvchilarni xabardor qilish
+                for tid, username in restored_list:
+                    try:
+                        await bot_inst.send_message(
+                            tid,
+                            f"🎉 <b>Nishoningiz qayta tiklandi!</b>\n\n"
+                            f"Tizim xatoligi sababli o'chirib yuborilgan <b>@{username}</b> nishoningiz qayta tiklandi va monitoring faollashtirildi.\n\n"
+                            f"💰 Qaytarilgan to'lov (<b>-{price_per_item:,} so'm</b>) balansingizdan qayta yechib olindi. ✅",
+                            parse_mode="HTML"
+                        )
+                    except Exception as ne:
+                        logger.warning(f"Tiklash bildirishnomasi xatosi ({tid}): {ne}")
+
+        # Sozlamani saqlaymiz
+        await set_setting("targets_restored", "true")
+        logger.info(f"🎉 Noto'g'ri o'chirilgan nishonlarni tiklash yakunlandi. Jami tiklandi: {restored_count} ta.")
+
+    except Exception as e:
+        logger.error(f"restore_deleted_monitoring_tasks xato: {e}")
+
+
 async def bonus_notification_loop():
     """Kunlik bonus bildirishnomalar: har kuni 08:00-20:00 (Toshkent vaqti) orasida 1 marta yuboriladi"""
     logger.info("🎁 Bonus notification loop ishga tushdi")
@@ -6169,6 +6312,9 @@ async def main():
 
     # Fragment.com auksionida turgan nishonlarni tozalab pulini qaytarish
     asyncio.create_task(cleanup_fragment_monitoring_tasks(bot))
+
+    # Tizim xatoligi tufayli noto'g'ri o'chirilgan nishonlarni qayta tiklash
+    asyncio.create_task(restore_deleted_monitoring_tasks(bot))
 
     # Orqa fonda monitoring loop ni ishga tushiramiz
     monitoring_task = asyncio.create_task(monitoring_loop(bot))
