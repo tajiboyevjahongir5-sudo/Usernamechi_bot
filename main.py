@@ -982,163 +982,186 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         if not buyer_is_stealth:
             await buyer_client.connect()
 
-        # ── QADAM 1: Xaridor kanalini AVVALDAN yaratamiz ─────────────────
-        # Seller release qilishdan OLDIN kanal tayyor bo'lishi kerak —
-        # shunda release va assign orasidagi vaqt minimallashadi!
-        try:
-            created = await buyer_client(CreateChannelRequest(
-                title=f"Usernamechi: @{username}",
-                about="Bu kanal Usernamechi orqali sotib olingan username saqlanishi uchun.",
-                megagroup=False
-            ))
-            new_channel_id = created.chats[0].id
-            logger.info(f"✅ Xaridor kanali avvaldan yaratildi: {new_channel_id}")
-        except Exception as ce:
-            logger.warning(f"Xaridor kanali yaratishda xato (profil fallback ishlatiladi): {ce}")
-
-        # ── QADAM 2: Sotuvchi hisobidan username topib bo'shatamiz ───────
-        # Avval eng tezkor usul: resolve_entity yordamida obyektni to'g'ridan-to'g'ri olish.
-        # Bu iter_dialogs kabi og'ir so'rovlarni va cheklovlarni (FloodWait) chetlab o'tadi.
-        try:
-            entity = await seller_client.get_entity(username)
-            if hasattr(entity, 'broadcast') or hasattr(entity, 'megagroup'):
-                target_channel = entity
-                logger.info(f"🎯 Username get_entity orqali kanal sifatida aniqlandi: {entity.id}")
-            else:
-                me_user = await seller_client.get_me()
-                if entity.id == me_user.id:
-                    is_personal_profile = True
-                    logger.info("🎯 Username get_entity orqali shaxsiy profil sifatida aniqlandi")
-        except Exception as ee:
-            logger.warning(f"get_entity orqali tezkor qidirish xato: {ee}")
-
-        # Agarda tezkor resolve topilmasa, eski xavfsiz usullarga o'tamiz
-        if not target_channel and not is_personal_profile:
-            try:
-                req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
-                res = await seller_client(req)
-                for ch in res.chats:
-                    if getattr(ch, 'username', '').lower() == username.lower():
-                        target_channel = ch
-                        break
-            except Exception as fe:
-                logger.warning(f"GetAdminedPublicChannels xato: {fe}")
-
-        # So'nggi chora sifatida dialoglarni aylanib chiqish (faqat 50 ta dialog bilan cheklaymiz)
-        if not target_channel and not is_personal_profile:
-            try:
-                async for dialog in seller_client.iter_dialogs(limit=50):
-                    if dialog.is_channel or dialog.is_group:
-                        entity = dialog.entity
-                        if getattr(entity, 'username', '').lower() == username.lower():
-                            target_channel = entity
-                            break
-            except Exception as de:
-                logger.warning(f"iter_dialogs xato: {de}")
-
+        # ── QADAM 1: Kanal egaligini o'tkazishga urinib ko'ramiz (Agarda username kanalda bo'lsa) ──
+        # Bu xaridor uchun eng mukammal yechim: kanal barcha obunachilari va postlari bilan birga o'tadi!
+        ownership_transferred = False
         if target_channel:
             try:
-                await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=""))
-                released = True
-                logger.info(f"✅ @{username} kanaldan bo'shatildi")
-            except Exception:
+                logger.info(f"👑 Kanal egaligini o'tkazish sinab ko'rilmoqda... (Kanal: {target_channel.id})")
+                from telethon.tl.functions.channels import JoinChannelRequest, EditAdminRequest, EditCreatorRequest
+                from telethon.tl.types import ChatAdminRights
+                
+                # 1. Xaridorni kanalga qo'shamiz (JoinChannelRequest)
                 try:
-                    await seller_client(DeleteChannelRequest(channel=target_channel.id))
+                    await buyer_client(JoinChannelRequest(channel=target_channel))
+                    logger.info("✅ Xaridor kanalga qo'shildi")
+                except Exception as je:
+                    logger.warning(f"Xaridor kanalga qo'shila olmadi (ehtimol allaqachon a'zo): {je}")
+
+                # 2. Xaridorni kanalda to'liq huquqli admin qilamiz (majburiy qoida)
+                admin_rights = ChatAdminRights(
+                    post_messages=True,
+                    add_admins=True,
+                    change_info=True,
+                    invite_users=True,
+                    pin_messages=True,
+                    manage_call=True,
+                    other=True,
+                    delete_messages=True,
+                    ban_users=True,
+                    edit_messages=True
+                )
+                
+                buyer_peer = await seller_client.get_input_entity(buyer_id)
+                await seller_client(EditAdminRequest(
+                    channel=target_channel,
+                    user_id=buyer_peer,
+                    admin_rights=admin_rights,
+                    rank="Yangi egasi"
+                ))
+                logger.info("✅ Xaridor kanalda admin qilindi")
+
+                # 3. Sotuvchi 2FA parolini olamiz
+                password = seller.get('tg_password')
+                if password:
+                    from telethon.password import compute_check
+                    from telethon.tl.functions.account import GetPasswordRequest
+                    
+                    pass_info = await seller_client(GetPasswordRequest())
+                    input_srp = compute_check(pass_info, password)
+                    
+                    # 4. Egaligini o'tkazamiz
+                    await seller_client(EditCreatorRequest(
+                        channel=target_channel,
+                        user_id=buyer_peer,
+                        password=input_srp
+                    ))
+                    ownership_transferred = True
                     released = True
-                    logger.info(f"✅ @{username} bor kanal o'chirildi (username bo'shadi)")
-                except Exception as de:
-                    logger.error(f"Sotuvchi kanalini o'chirishda xato: {de}")
-        else:
-            if not is_personal_profile:
-                me = await seller_client.get_me()
-                if me and me.username and me.username.lower() == username.lower():
-                    is_personal_profile = True
+                    assigned = True
+                    new_channel_id = target_channel.id
+                    logger.info(f"🎉 KANAL EGALIGI TO'LIQ O'TKAZILDI! @{username} endi xaridorniki. (Kanal ID: {target_channel.id})")
+                else:
+                    logger.warning("Sotuvchining 2FA paroli bazada yo'q. Egalikni o'tkazib bo'lmadi.")
+            except Exception as ote:
+                logger.warning(f"Kanal egaligini o'tkazishda xatolik (Eski usul - bo'shatib o'tkazishga o'tiladi): {type(ote).__name__}: {ote}")
 
-            if is_personal_profile:
-                await seller_client(AccountUpdateUsernameRequest(username=""))
-                released = True
-                logger.info(f"✅ @{username} shaxsiy profildan bo'shatildi")
+        # ── QADAM 2: Agarda egalik o'tmagan bo'lsa, eski usulda (bo'shatib-biriktirib) o'tkazamiz ──
+        if not ownership_transferred:
+            # Xaridor kanalini tayyorlaymiz
+            try:
+                created = await buyer_client(CreateChannelRequest(
+                    title=f"Usernamechi: @{username}",
+                    about="Bu kanal Usernamechi orqali sotib olingan username saqlanishi uchun.",
+                    megagroup=False
+                ))
+                new_channel_id = created.chats[0].id
+                logger.info(f"✅ Xaridor kanali avvaldan yaratildi: {new_channel_id}")
+            except Exception as ce:
+                logger.warning(f"Xaridor kanali yaratishda xato (profil fallback ishlatiladi): {ce}")
 
-        if not released:
-            raise ValueError(
-                f"@{username} sotuvchi ({seller_id}) akkauntida topilmadi! "
-                f"Sotuvchi username'ni o'zgartirgan bo'lishi mumkin."
-            )
-
-        # ── QADAM 3: Darhol xaridorga bog'laymiz (minimal kutish!) ───────
-        # Telegram serverlar orasida propagatsiya uchun minimal 0.1s
-        await asyncio.sleep(0.1)
-
-        assigned = False
-        last_assign_err = None
-
-        if new_channel_id:
-            # 100 marta urinish (smart backoff orqali jami 60+ soniya kutish)
-            # Bu Telegram CDNLari sinxron bo'lishiga yetarli vaqt beradi va username o'g'irlanishini 100% oldini oladi.
-            for attempt in range(100):
+            # Sotuvchidan username ni bo'shatamiz
+            if target_channel:
                 try:
-                    await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
-                    assigned = True
-                    logger.info(f"✅ @{username} xaridor kanaliga biriktirildi (urinish #{attempt+1})")
-                    break
-                except UsernameNotModifiedError:
-                    assigned = True
-                    break
-                except FloodWaitError as fw:
-                    wait_time = min(fw.seconds, 5)
-                    logger.warning(f"FloodWait {fw.seconds}s (maks {wait_time}s kutilmoqda...)")
-                    await asyncio.sleep(wait_time)
-                except UsernameInvalidError as ui:
-                    logger.error(f"Username format noto'g'ri: {ui}")
-                    last_assign_err = ui
-                    break
-                except Exception as ae:
-                    last_assign_err = ae
-                    logger.warning(f"Kanal assign #{attempt+1}/100 xato: {type(ae).__name__}: {ae}")
-                    
-                    # Dinamik kechikish (smart backoff)
-                    if attempt < 5:
-                        delay = 0.05  # Dastlabki 5 ta tezkor urinish (0.25s)
-                    elif attempt < 15:
-                        delay = 0.1   # Keyingi 10 ta urinish (1.0s)
-                    elif attempt < 30:
-                        delay = 0.2   # Keyingi 15 ta urinish (3.0s)
-                    elif attempt < 50:
-                        delay = 0.5   # Keyingi 20 ta urinish (10.0s)
-                    else:
-                        delay = 1.0   # Qolgan 50 ta urinish (50.0s)
-                    await asyncio.sleep(delay)
+                    await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=""))
+                    released = True
+                    logger.info(f"✅ @{username} kanaldan bo'shatildi")
+                except Exception:
+                    try:
+                        await seller_client(DeleteChannelRequest(channel=target_channel.id))
+                        released = True
+                        logger.info(f"✅ @{username} bor kanal o'chirildi (username bo'shadi)")
+                    except Exception as de:
+                        logger.error(f"Sotuvchi kanalini o'chirishda xato: {de}")
+            else:
+                if not is_personal_profile:
+                    me = await seller_client.get_me()
+                    if me and me.username and me.username.lower() == username.lower():
+                        is_personal_profile = True
 
-        # Kanal orqali bo'lmadi — shaxsiy profilga urinamiz
-        if not assigned:
-            logger.info(f"Profil fallback: @{username} xaridor profiliga o'rnatilmoqda...")
-            for attempt in range(40):
-                try:
-                    await buyer_client(AccountUpdateUsernameRequest(username=username))
-                    assigned = True
-                    is_personal_profile = True
-                    new_channel_id = None
-                    logger.info(f"✅ @{username} xaridor profiliga biriktirildi (urinish #{attempt+1})")
-                    break
-                except UsernameNotModifiedError:
-                    assigned = True
-                    is_personal_profile = True
-                    new_channel_id = None
-                    break
-                except FloodWaitError as fw:
-                    await asyncio.sleep(min(fw.seconds, 5))
-                except Exception as ae:
-                    last_assign_err = ae
-                    logger.warning(f"Profil assign #{attempt+1}/40 xato: {type(ae).__name__}: {ae}")
-                    
-                    # Dinamik kechikish
-                    if attempt < 10:
-                        delay = 0.1
-                    elif attempt < 25:
-                        delay = 0.3
-                    else:
-                        delay = 0.8
-                    await asyncio.sleep(delay)
+                if is_personal_profile:
+                    await seller_client(AccountUpdateUsernameRequest(username=""))
+                    released = True
+                    logger.info(f"✅ @{username} shaxsiy profildan bo'shatildi")
+
+            if not released:
+                raise ValueError(
+                    f"@{username} sotuvchi ({seller_id}) akkauntida topilmadi! "
+                    f"Sotuvchi username'ni o'zgartirgan bo'lishi mumkin."
+                )
+
+            # Darhol xaridorga bog'laymiz (minimal kutish!)
+            await asyncio.sleep(0.1)
+
+            assigned = False
+            last_assign_err = None
+
+            if new_channel_id:
+                # 100 marta urinish (smart backoff orqali jami 60+ soniya kutish)
+                for attempt in range(100):
+                    try:
+                        await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
+                        assigned = True
+                        logger.info(f"✅ @{username} xaridor kanaliga biriktirildi (urinish #{attempt+1})")
+                        break
+                    except UsernameNotModifiedError:
+                        assigned = True
+                        break
+                    except FloodWaitError as fw:
+                        wait_time = min(fw.seconds, 5)
+                        logger.warning(f"FloodWait {fw.seconds}s (maks {wait_time}s kutilmoqda...)")
+                        await asyncio.sleep(wait_time)
+                    except UsernameInvalidError as ui:
+                        logger.error(f"Username format noto'g'ri: {ui}")
+                        last_assign_err = ui
+                        break
+                    except Exception as ae:
+                        last_assign_err = ae
+                        logger.warning(f"Kanal assign #{attempt+1}/100 xato: {type(ae).__name__}: {ae}")
+                        
+                        # Dinamik kechikish (smart backoff)
+                        if attempt < 5:
+                            delay = 0.05
+                        elif attempt < 15:
+                            delay = 0.1
+                        elif attempt < 30:
+                            delay = 0.2
+                        elif attempt < 50:
+                            delay = 0.5
+                        else:
+                            delay = 1.0
+                        await asyncio.sleep(delay)
+
+            # Kanal orqali bo'lmadi — shaxsiy profilga urinamiz
+            if not assigned:
+                logger.info(f"Profil fallback: @{username} xaridor profiliga o'rnatilmoqda...")
+                for attempt in range(40):
+                    try:
+                        await buyer_client(AccountUpdateUsernameRequest(username=username))
+                        assigned = True
+                        is_personal_profile = True
+                        new_channel_id = None
+                        logger.info(f"✅ @{username} xaridor profiliga biriktirildi (urinish #{attempt+1})")
+                        break
+                    except UsernameNotModifiedError:
+                        assigned = True
+                        is_personal_profile = True
+                        new_channel_id = None
+                        break
+                    except FloodWaitError as fw:
+                        await asyncio.sleep(min(fw.seconds, 5))
+                    except Exception as ae:
+                        last_assign_err = ae
+                        logger.warning(f"Profil assign #{attempt+1}/40 xato: {type(ae).__name__}: {ae}")
+                        
+                        # Dinamik kechikish
+                        if attempt < 10:
+                            delay = 0.1
+                        elif attempt < 25:
+                            delay = 0.3
+                        else:
+                            delay = 0.8
+                        await asyncio.sleep(delay)
 
         if not assigned:
             # ROLLBACK: username ni sotuvchiga qaytarishga urinamiz
