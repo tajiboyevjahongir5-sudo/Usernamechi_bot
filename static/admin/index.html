@@ -659,6 +659,7 @@ body::before {
 </div>
 
 <!-- FLOATING DRAGGABLE DROPLET NAV BAR -->
+<!-- FLOATING DRAGGABLE DROPLET NAV BAR -->
 <nav class="floating-nav" id="main-admin-nav">
   <div class="nav-droplet" id="nav-droplet"></div>
 
@@ -670,6 +671,10 @@ body::before {
     <div class="nav-badge" id="nav-badge-payments"></div>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
     To'lovlar
+  </button>
+  <button class="nav-item" data-tab="withdrawals" onclick="switchTab('withdrawals', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+    Yechishlar
   </button>
   <button class="nav-item" data-tab="users" onclick="switchTab('users', this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -698,8 +703,12 @@ body::before {
       <input type="number" id="edit-tid" class="form-input" readonly style="opacity:0.6;">
     </div>
     <div class="form-group">
-      <label class="form-label">Yangi Balans (so'm)</label>
+      <label class="form-label">Asosiy Balans (so'm)</label>
       <input type="number" id="edit-bal" class="form-input" placeholder="Summani kiriting">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Savdo Balansi (so'm)</label>
+      <input type="number" id="edit-seller-bal" class="form-input" placeholder="Savdo balansini kiriting">
     </div>
     <div style="display:flex; gap:10px; margin-top:20px;">
       <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="saveUserBalance()">Saqlash</button>
@@ -866,7 +875,6 @@ async function checkAuth() {
 
 function switchTab(tabId, btn) {
   let targetTab = tabId;
-  if (tabId === 'withdrawals') targetTab = 'payments';
   if (tabId === 'orders') targetTab = 'listings';
   if (tabId === 'broadcast') targetTab = 'settings';
 
@@ -1197,13 +1205,16 @@ function renderUsers() {
         </div>
       </div>
       <div class="user-right">
-        <div class="user-bal">${(u.balance||0).toLocaleString()} so'm</div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+        <div class="user-bal" style="text-align:right;">
+          <div style="font-size:15px; font-weight:800; color:var(--text-main);">${(u.balance||0).toLocaleString()} so'm</div>
+          <div style="font-size:11px; color:var(--accent-emerald); font-weight:600; margin-top:2px;">💼 Savdo: ${(u.seller_balance||0).toLocaleString()} so'm</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; margin-top:8px;">
           <a href="${profileUrl}" target="_blank" class="action-btn btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Telegramda profilga o'tish">
             💬 Profil
           </a>
           <button class="action-btn btn-emerald" onclick="openDirectMessage('${u.username || u.telegram_id}')">📩 Xabar</button>
-          <button class="action-btn btn-secondary" onclick="openBalanceModal(${u.telegram_id}, ${u.balance||0})">✏️ Balans</button>
+          <button class="action-btn btn-secondary" onclick="openBalanceModal(${u.telegram_id}, ${u.balance||0}, ${u.seller_balance||0})">✏️ Balans</button>
           <button class="action-btn ${u.is_stealth ? 'btn-rose' : 'btn-emerald'}" onclick="toggleStealth(${u.telegram_id})">
             ${u.is_stealth ? '🔓 Off' : '🕵️ On'}
           </button>
@@ -1229,9 +1240,10 @@ async function toggleStealth(tid) {
   } catch(e) { showToast("Xatolik", "error"); }
 }
 
-function openBalanceModal(tid, bal) {
+function openBalanceModal(tid, bal, seller_bal) {
   document.getElementById('edit-tid').value = tid;
   document.getElementById('edit-bal').value = bal;
+  document.getElementById('edit-seller-bal').value = seller_bal || 0;
   openModal('modal-balance');
 }
 function openModal(id) {
@@ -1246,10 +1258,15 @@ function closeModal(id) {
 async function saveUserBalance() {
   const tid = document.getElementById('edit-tid').value;
   const amt = document.getElementById('edit-bal').value;
+  const seller_amt = document.getElementById('edit-seller-bal').value;
   try {
     await fetch('/api/admin/user/balance', {
       method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ telegram_id: parseInt(tid), amount: parseInt(amt) })
+      body: JSON.stringify({ 
+        telegram_id: parseInt(tid), 
+        amount: parseInt(amt),
+        seller_balance: parseInt(seller_amt)
+      })
     });
     showToast("✅ Balans yangilandi", "success");
     closeModal('modal-balance');

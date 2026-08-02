@@ -932,13 +932,18 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         UpdateUsernameRequest, DeleteChannelRequest
     )
     from telethon.tl.functions.account import UpdateUsernameRequest as AccountUpdateUsernameRequest
-    from telethon.errors import AuthKeyUnregisteredError, UserDeactivatedError, UsernameOccupiedError
+    from telethon.errors import (
+        AuthKeyUnregisteredError, UserDeactivatedError, UsernameOccupiedError,
+        ChannelsAdminPublicTooMuchError, AdminRankInvalidError
+    )
+    import telethon.errors as telethon_errs
 
     seller_client = TelegramClient(StringSession(seller['session_string']), API_ID, API_HASH)
     buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
     
     target_channel = None
     released = False
+    is_personal_profile = False
 
     try:
         await seller_client.connect()
@@ -954,6 +959,18 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     break
         except Exception as fe:
             logger.warning(f"Sotuvchi kanallarini olishda xato ({seller_id}): {fe}")
+
+        # Fallback: Agar birinchi tekshiruvda topilmasa dialoglar orqali qidiramiz
+        if not target_channel:
+            try:
+                async for dialog in seller_client.iter_dialogs():
+                    if dialog.is_channel or dialog.is_group:
+                        entity = dialog.entity
+                        if getattr(entity, 'username', '').lower() == username.lower():
+                            target_channel = entity
+                            break
+            except Exception as de:
+                logger.warning(f"Sotuvchi dialoglarini aylanib chiqishda xato: {de}")
 
         if target_channel:
             # Kanaldan username ni bo'shatish yoki kanalni o'chirish
@@ -972,6 +989,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
             if me and me.username and me.username.lower() == username.lower():
                 await seller_client(AccountUpdateUsernameRequest(username=""))
                 released = True
+                is_personal_profile = True
 
         if not released:
             logger.error(f"Sotuvchi profilida yoki kanalida @{username} topilmadi!")
@@ -979,30 +997,53 @@ async def transfer_username(bot, seller_id, buyer_id, username):
 
         await asyncio.sleep(2.0)  # Telegram serverlarida username bo'shashi va sinxronlanishi uchun 2 soniya kutish
 
-        # 2. Xaridor hisobida kanal yaratilib, username biriktiriladi (5 marta takrorlash bilan)
-        created = await buyer_client(CreateChannelRequest(
-            title=f"Usernamechi: @{username}",
-            about="Bu kanal Usernamechi orqali sotib olingan username saqlanishi uchun.",
-            megagroup=False
-        ))
-        new_channel_id = created.chats[0].id
-
+        # 2. Xaridor hisobida kanal yaratishga yoki profili uchun sinash
         assigned = False
         last_assign_err = None
-        for attempt in range(5):
-            try:
-                await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
-                assigned = True
-                break
-            except Exception as ae:
-                last_assign_err = ae
-                logger.warning(f"Assign attempt {attempt+1}/5 for @{username} failed: {ae}")
-                await asyncio.sleep(1.5)
+        new_channel_id = None
+
+        # Avval kanal ochishga urinib ko'ramiz
+        try:
+            created = await buyer_client(CreateChannelRequest(
+                title=f"Usernamechi: @{username}",
+                about="Bu kanal Usernamechi orqali sotib olingan username saqlanishi uchun.",
+                megagroup=False
+            ))
+            new_channel_id = created.chats[0].id
+        except (ChannelsAdminPublicTooMuchError, AdminRankInvalidError) as ce:
+            logger.warning(f"Buyer has too many public channels, trying profile fallback: {ce}")
+            last_assign_err = ce
+
+        if new_channel_id:
+            # Kanallarga username bog'lash (5 marta harakat)
+            for attempt in range(5):
+                try:
+                    await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
+                    assigned = True
+                    break
+                except Exception as ae:
+                    last_assign_err = ae
+                    logger.warning(f"Assign to channel attempt {attempt+1}/5 failed: {ae}")
+                    await asyncio.sleep(1.5)
+
+        # Agar kanallarga bog'lay olmasak (limit to'lgan bo'lsa yoki xato bo'lsa), xaridor profiliga qo'yib ko'ramiz
+        if not assigned:
+            logger.info("Trying fallback: binding username directly to buyer's personal profile...")
+            for attempt in range(3):
+                try:
+                    await buyer_client(AccountUpdateUsernameRequest(username=username))
+                    assigned = True
+                    is_personal_profile = True
+                    break
+                except Exception as ae:
+                    last_assign_err = ae
+                    logger.warning(f"Assign to profile attempt {attempt+1}/3 failed: {ae}")
+                    await asyncio.sleep(1.5)
 
         if not assigned:
             # Rollback: Xaridorga o'tmadimi, sotuvchiga qaytarishga urinamiz
             try:
-                if target_channel:
+                if target_channel and not is_personal_profile:
                     await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=username))
                 else:
                     await seller_client(AccountUpdateUsernameRequest(username=username))
@@ -1013,17 +1054,23 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         
         # 3. Xabarnoma yuborish
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="👤 Profilga qo'yish", callback_data=f"setprofile_{username}_{new_channel_id}")]
-        ])
-        try:
-            await bot.send_message(
-                buyer_id, 
+        if new_channel_id and not is_personal_profile:
+            markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="👤 Profilga qo'yish", callback_data=f"setprofile_{username}_{new_channel_id}")]
+            ])
+            buyer_msg = (
                 f"🎉 <b>Tabriklaymiz!</b>\n\n<b>@{username}</b> sizning akkauntingizga muvaffaqiyatli o'tkazildi!\n"
                 f"Hozirda u avtomatik yaratilgan maxsus kanalda saqlanmoqda.\n\n"
-                f"Uni o'z profilingizga o'rnatmoqchimisiz?",
-                reply_markup=markup, parse_mode="HTML"
+                f"Uni o'z profilingizga o'rnatmoqchimisiz?"
             )
+        else:
+            markup = None
+            buyer_msg = (
+                f"🎉 <b>Tabriklaymiz!</b>\n\n<b>@{username}</b> to'g'ridan-to'g'ri profilingizga (username sifatida) muvaffaqiyatli o'tkazildi! 🚀"
+            )
+
+        try:
+            await bot.send_message(buyer_id, buyer_msg, reply_markup=markup, parse_mode="HTML")
             await bot.send_message(
                 seller_id,
                 f"💰 <b>Username muvaffaqiyatli sotildi!</b>\n\n<b>@{username}</b> xaridorga o'tkazib berildi va sotuv balansingizga qo'shildi. ✅",
@@ -2731,6 +2778,32 @@ def verify_init_data(init_data: str) -> dict | None:
         except: pass
         return None
 
+async def check_if_fragment_username(http_session, uname: str) -> bool:
+    """Tekshiradi: Username Fragment.com auksionida yoki NFT sifatida turibdimi"""
+    # 1. t.me sahifasini tekshirish
+    try:
+        url = f"https://t.me/{uname}"
+        async with http_session.get(url, timeout=3.0) as resp:
+            if resp.status == 200:
+                text = await resp.text()
+                if 'fragment.com' in text.lower() or 'auction' in text.lower() or 'buy on fragment' in text.lower():
+                    return True
+    except Exception:
+        pass
+
+    # 2. Fragment.com to'g'ridan-to'g'ri tekshirish
+    try:
+        url = f"https://fragment.com/username/{uname}"
+        async with http_session.get(url, timeout=3.0) as resp:
+            if resp.status == 200:
+                text = await resp.text()
+                if 'table-cell' in text or 'tm-section' in text or 'auction' in text.lower() or 'sold' in text.lower():
+                    return True
+    except Exception:
+        pass
+    return False
+
+
 def get_admin_token(telegram_id: int) -> str:
     secret = BOT_TOKEN + str(telegram_id)
     return hashlib.sha256(secret.encode()).hexdigest()[:32]
@@ -4120,6 +4193,25 @@ async def api_monitor_start(request: Request):
         if not new_targets:
             return {"ok": False, "error": "Kiritilgan barcha username'lar allaqachon nishonga qo'shilgan!"}
 
+        # Fragment checking
+        import aiohttp
+        fragment_targets = set()
+        async with aiohttp.ClientSession() as session:
+            for u in list(new_targets):
+                is_frag = await check_if_fragment_username(session, u)
+                if is_frag:
+                    fragment_targets.add(u)
+        
+        new_targets = new_targets - fragment_targets
+        
+        if fragment_targets:
+            frag_sample = ", ".join([f"@{x}" for x in list(fragment_targets)[:3]])
+            if not new_targets:
+                return {
+                    "ok": False,
+                    "error": f"❌ {frag_sample} Fragment.com auksionida/NFT formatida! Telegram qoidalariga ko'ra Fragmentdagi nomlarni oddiy usulda band qilib bo'lmaydi va nishonga olib bo'lmaydi."
+                }
+
         price_per_item = int(await get_setting("monitor_price", 10000)) # Kafolat puli (monitor qilish uchun)
         total_price = price_per_item * len(new_targets)
         
@@ -4152,6 +4244,8 @@ async def api_monitor_start(request: Request):
     msg = f"✅ {added_count} ta username nishonga olindi (-{total_price:,} so'm)!"
     if existing_targets:
         msg += f" (Qolgan {len(existing_targets)} tasi allaqachon qo'shilgan)"
+    if fragment_targets:
+        msg += f" (Qolgan {len(fragment_targets)} tasi Fragmentda bo'lgani uchun qo'shilmadi)"
 
     return {"ok": True, "message": msg}
 
@@ -5192,20 +5286,26 @@ async def admin_set_balance(request: Request, x_admin_token: str = Header(defaul
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
     data = await request.json()
-    amt = data['amount']
+    amt = data.get('amount')
+    seller_amt = data.get('seller_balance')
     tid = data['telegram_id']
+    
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET balance=? WHERE telegram_id=?", (amt, tid))
+        if amt is not None:
+            await db.execute("UPDATE users SET balance=? WHERE telegram_id=?", (int(amt), tid))
+        if seller_amt is not None:
+            await db.execute("UPDATE users SET seller_balance=? WHERE telegram_id=?", (int(seller_amt), tid))
         await db.commit()
     
     # Foydalanuvchiga xabar yuborish
     bot_instance = Bot(token=BOT_TOKEN)
     try:
-        await bot_instance.send_message(
-            tid, 
-            f"💰 Admin tomonidan balansingiz tahrirlandi!\nJoriy balans: <b>{amt:,} so'm</b>", 
-            parse_mode="HTML"
-        )
+        msg = "💰 Admin tomonidan balansingiz tahrirlandi!\n"
+        if amt is not None:
+            msg += f"Asosiy balans: <b>{int(amt):,} so'm</b>\n"
+        if seller_amt is not None:
+            msg += f"Savdo hisobi (balans): <b>{int(seller_amt):,} so'm</b>\n"
+        await bot_instance.send_message(tid, msg, parse_mode="HTML")
     except:
         pass
     finally:
