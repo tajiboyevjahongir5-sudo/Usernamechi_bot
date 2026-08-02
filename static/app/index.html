@@ -756,6 +756,35 @@
     <div class="balance-hint">To'ldirish uchun Balans bo'limiga o'ting</div>
   </div>
 
+  <!-- KUNLIK BONUS KARTASI -->
+  <div id="daily-bonus-card" class="card" style="display:none; background:linear-gradient(135deg,rgba(16,185,129,0.15) 0%,rgba(5,150,105,0.08) 100%); border:1px solid rgba(16,185,129,0.35); border-radius:20px; padding:18px 20px; margin-bottom:0; position:relative; overflow:hidden;">
+    <div style="position:absolute;top:-30px;right:-30px;width:100px;height:100px;background:radial-gradient(circle,rgba(16,185,129,0.25),transparent 70%);pointer-events:none;"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+      <div style="flex:1;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+          <span style="font-size:22px;">🎁</span>
+          <span style="font-size:15px; font-weight:800; color:#10b981; letter-spacing:0.3px;">Kunlik Bonus</span>
+        </div>
+        <div id="bonus-amount-label" style="font-size:24px; font-weight:900; color:#fff; letter-spacing:-0.5px;">+1,000 so'm</div>
+        <div id="bonus-status-text" style="font-size:12px; color:rgba(255,255,255,0.55); margin-top:3px;">Har kuni bepul bonus oling!</div>
+      </div>
+      <button id="bonus-claim-btn" onclick="claimBonus()" style="flex-shrink:0; background:linear-gradient(135deg,#10b981,#059669); color:#fff; border:none; border-radius:14px; padding:12px 18px; font-size:13px; font-weight:800; cursor:pointer; transition:all 0.2s; box-shadow:0 4px 16px rgba(16,185,129,0.4); white-space:nowrap;">
+        🎁 Olish
+      </button>
+    </div>
+  </div>
+
+  <div id="daily-bonus-no-tg" style="display:none; background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(245,158,11,0.06)); border:1px solid rgba(251,191,36,0.3); border-radius:16px; padding:14px 16px; margin-bottom:0;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span style="font-size:20px;">💡</span>
+      <div>
+        <div style="font-size:13px; font-weight:700; color:#fbbf24;">Kunlik bonusdan quruq qolmang!</div>
+        <div style="font-size:12px; color:rgba(255,255,255,0.5); margin-top:2px;">Telegram akkauntingizni ulab, har kuni bepul bonus oling.</div>
+      </div>
+      <button onclick="navigateTo('account')" style="margin-left:auto; flex-shrink:0; background:rgba(251,191,36,0.2); border:1px solid rgba(251,191,36,0.4); color:#fbbf24; border-radius:10px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer;">Ulash →</button>
+    </div>
+  </div>
+
   <div class="stats">
     <div class="stat-card">
       <div class="icon-badge badge-purple"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Rocket/3D/rocket_3d.png" class="icon-3d-img"></div>
@@ -1456,6 +1485,7 @@ async function init() {
     await loadUserData();
     await loadOrders();
     loadCardNumber();
+    loadDailyBonus(); // Kunlik bonus statusini yuklash
   } catch(e) {
     alert("Init init() XATO: " + e.message);
   }
@@ -3250,6 +3280,97 @@ if (typeof twemoji !== 'undefined') {
 
     // Barcha setup (interceptor + modallar) tayyor bo'lgach ilovani ishga tushiramiz
     init();
+
+// ── KUNLIK BONUS ──────────────────────────────────────────
+async function loadDailyBonus() {
+  try {
+    const res = await fetch('/api/bonus/status', { headers: { 'X-Telegram-Init-Data': tg.initData } });
+    const data = await res.json();
+    if (!data.ok) return;
+
+    const card = document.getElementById('daily-bonus-card');
+    const noTgCard = document.getElementById('daily-bonus-no-tg');
+    const amountLabel = document.getElementById('bonus-amount-label');
+    const statusText = document.getElementById('bonus-status-text');
+    const claimBtn = document.getElementById('bonus-claim-btn');
+
+    const amount = data.bonus_amount || 1000;
+    amountLabel.textContent = `+${amount.toLocaleString()} so'm`;
+
+    if (!data.has_telegram) {
+      // Telegram ulanmagan
+      noTgCard.style.display = 'block';
+      card.style.display = 'none';
+    } else {
+      card.style.display = 'block';
+      noTgCard.style.display = 'none';
+
+      if (data.already_claimed) {
+        // Bugun olingan
+        claimBtn.textContent = '✅ Olindi';
+        claimBtn.style.background = 'rgba(255,255,255,0.1)';
+        claimBtn.style.boxShadow = 'none';
+        claimBtn.style.cursor = 'not-allowed';
+        claimBtn.disabled = true;
+        statusText.textContent = 'Bugungi bonus allaqachon olindi. Ertaga yana keling!';
+        statusText.style.color = '#10b981';
+      } else if (!data.is_subscribed) {
+        // Obunalar bajarilmagan
+        claimBtn.textContent = '📢 Obuna bo\'l';
+        claimBtn.style.background = 'linear-gradient(135deg,#7c3aed,#4f46e5)';
+        claimBtn.onclick = () => navigateTo('home'); // Subscription modal ochiladi
+        statusText.textContent = 'Bonusni olish uchun avval majburiy obunalarga a\'zo bo\'ling!';
+      } else {
+        // Bonus olish mumkin
+        statusText.textContent = 'Bugungi bonusingiz tayyor! ✨';
+      }
+    }
+  } catch(e) { console.warn('loadDailyBonus error:', e); }
+}
+
+async function claimBonus() {
+  const btn = document.getElementById('bonus-claim-btn');
+  if (btn.disabled) return;
+  
+  const orig = btn.innerHTML;
+  btn.innerHTML = '⏳';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/bonus/claim', {
+      method: 'POST',
+      headers: { 'X-Telegram-Init-Data': tg.initData }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      // Muvaffaqiyat animatsiyasi
+      btn.innerHTML = '🎉';
+      btn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+      document.getElementById('bonus-status-text').textContent = 'Bonus balansingizga qo\'shildi!';
+      document.getElementById('bonus-status-text').style.color = '#10b981';
+      
+      // Balansni yangilash
+      setTimeout(async () => {
+        await loadUserData();
+        btn.innerHTML = '✅ Olindi';
+        btn.style.background = 'rgba(255,255,255,0.1)';
+        btn.style.boxShadow = 'none';
+        btn.style.cursor = 'not-allowed';
+        document.getElementById('bonus-status-text').textContent = 'Ertaga yana keling!';
+      }, 1200);
+
+      tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('success');
+    } else {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+      tg.showAlert(data.error || 'Xatolik yuz berdi');
+      tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('error');
+    }
+  } catch(e) {
+    btn.innerHTML = orig;
+    btn.disabled = false;
+  }
+}
 
 </script>
 </body>

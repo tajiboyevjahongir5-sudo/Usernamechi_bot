@@ -554,6 +554,10 @@ body::before {
           <label class="form-label">📢 E'lon Berish Komissiyasi (so'm)</label>
           <input type="number" id="set-listing-price" class="form-input" placeholder="1000">
         </div>
+        <div class="form-group">
+          <label class="form-label">🎁 Kunlik Bonus Miqdori (so'm)</label>
+          <input type="number" id="set-daily-bonus" class="form-input" placeholder="1000">
+        </div>
         <button class="action-btn btn-primary" style="padding:14px 28px; width:100%; justify-content:center; margin-top:10px;" onclick="saveSettings()">💾 Saqlash</button>
       </div>
     </div>
@@ -1431,6 +1435,7 @@ async function loadSettings() {
     document.getElementById('set-premium-price').value = s.premium_price || '20000';
     document.getElementById('set-monitor-price').value = s.monitor_price || '10000';
     document.getElementById('set-listing-price').value = s.listing_price || '1000';
+    document.getElementById('set-daily-bonus').value = s.daily_bonus_amount || '1000';
     loadCards();
     loadMandatoryChannels();
   } catch(e) {}
@@ -1441,7 +1446,8 @@ async function saveSettings() {
     payment_channel_id: document.getElementById('set-channel').value,
     premium_price: document.getElementById('set-premium-price').value,
     monitor_price: document.getElementById('set-monitor-price').value,
-    listing_price: document.getElementById('set-listing-price').value
+    listing_price: document.getElementById('set-listing-price').value,
+    daily_bonus_amount: document.getElementById('set-daily-bonus').value
   };
   try {
     await fetch('/api/admin/settings', {

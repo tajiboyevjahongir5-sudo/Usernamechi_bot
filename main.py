@@ -101,6 +101,8 @@ async def init_db():
                 referred_by INTEGER DEFAULT 0,
                 referrer_id INTEGER DEFAULT 0,
                 reward_given INTEGER DEFAULT 0,
+                last_bonus_date TEXT,
+                last_bonus_notify_date TEXT,
                 created_at INTEGER DEFAULT 0
             )
         """)
@@ -129,6 +131,10 @@ async def init_db():
         try: await db.execute("ALTER TABLE users ADD COLUMN referrer_id INTEGER DEFAULT 0")
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN reward_given INTEGER DEFAULT 0")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN last_bonus_date TEXT")
+        except Exception: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN last_bonus_notify_date TEXT")
         except Exception: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN created_at INTEGER DEFAULT 0")
         except Exception: pass
@@ -2949,29 +2955,66 @@ def verify_init_data(init_data: str) -> dict | None:
         return None
 
 async def check_if_fragment_username(http_session, uname: str) -> bool:
-    """Tekshiradi: Username Fragment.com auksionida yoki NFT sifatida turibdimi"""
-    # 1. t.me sahifasini tekshirish
+    """
+    Tekshiradi: Username Fragment.com auksionida NFT sifatida SOTILMOQDAMI?
+    
+    MUHIM FARQ:
+    - Fragment NFT (True): username Fragment.com da narx bilan sotilmoqda — sotib bo'lmaydi
+    - Unavailable / Taken (False): Fragment sahifasi ochiladi lekin sotish yo'q —
+      bu oddiy Telegram username, nishonga qo'yish mumkin
+    """
+    # 1. t.me sahifasida "Buy on Fragment" havolasi bormi?
+    # (faqat haqiqiy Fragment NFT usernamlarida bu link bo'ladi)
     try:
         url = f"https://t.me/{uname}"
-        async with http_session.get(url, timeout=3.0) as resp:
+        async with http_session.get(url, timeout=4.0) as resp:
             if resp.status == 200:
                 text = await resp.text()
-                if 'fragment.com' in text.lower() or 'auction' in text.lower() or 'buy on fragment' in text.lower():
+                # Aniq Fragment NFT belgisi: sahifada Fragment auction havolasi
+                if 'fragment.com/username/' in text.lower() and (
+                    'buy on fragment' in text.lower() or
+                    'auction' in text.lower()
+                ):
                     return True
+                # Agar faqat "fragment.com" bor lekin "buy on fragment" yo'q — bu NFT emas
     except Exception:
         pass
 
-    # 2. Fragment.com to'g'ridan-to'g'ri tekshirish
+    # 2. Fragment.com sahifasida HAQIQIY auktsion elementlari bormi?
     try:
         url = f"https://fragment.com/username/{uname}"
-        async with http_session.get(url, timeout=3.0) as resp:
+        async with http_session.get(url, timeout=4.0) as resp:
             if resp.status == 200:
                 text = await resp.text()
-                if 'table-cell' in text or 'tm-section' in text or 'auction' in text.lower() or 'sold' in text.lower():
+                text_lower = text.lower()
+                
+                # Fragment da "unavailable" yoki "taken" deb ko'rsatilgan username —
+                # bu Fragment NFT EMAS, oddiy Telegram username!
+                if 'unavailable' in text_lower or 'taken' in text_lower:
+                    return False
+                
+                # Haqiqiy Fragment NFT auktsion belgilari:
+                # narx ko'rsatuvchi elementlar, bid tugmasi, auktsion statusi
+                nft_signals = [
+                    'class="tm-value"',       # narx elementi
+                    'data-ton-price',          # TON narxi
+                    '"auction"',               # auktsion holati JSON da
+                    'class="tm-section-bid"',  # bid bo'limi
+                    'place-a-bid',             # bid qo'yish tugmasi
+                    '"status":"active"',       # faol auktsion
+                    '"status":"sold"',         # sotilgan NFT
+                    'make_bid',                # bid funksiyasi
+                ]
+                if any(sig in text for sig in nft_signals):
                     return True
+                    
+                # Hech qanday NFT belgisi yo'q — bu Fragment sahifasida
+                # "unavailable" ko'rinishdagi oddiy Telegram username
+                return False
     except Exception:
         pass
     return False
+
 
 
 def get_admin_token(telegram_id: int) -> str:
@@ -3014,6 +3057,78 @@ async def api_check_subscription(request: Request):
         return {"ok": True}
     else:
         return {"ok": False, "channels": [dict(c) for c in unsubbed]}
+
+@app.get("/api/bonus/status")
+async def api_bonus_status(request: Request):
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    if not init_data: raise HTTPException(403)
+    user = verify_init_data(init_data)
+    if not user: raise HTTPException(403)
+    
+    tid = user['id']
+    u = await get_user(tid)
+    if not u:
+        return {"ok": False, "error": "Foydalanuvchi topilmadi"}
+
+    has_telegram = bool(u.get('session_string'))
+    
+    # Obunani tekshirish
+    unsubbed = await get_unsubscribed_channels(bot, tid, bypass_cache=False)
+    is_subscribed = not bool(unsubbed)
+
+    # Bugungi sana (Toshkent vaqti UTC+5)
+    uz_time = time.time() + 5 * 3600
+    today_str = time.strftime('%Y-%m-%d', time.gmtime(uz_time))
+    
+    already_claimed = (u.get('last_bonus_date') == today_str)
+    bonus_amount = int(await get_setting("daily_bonus_amount", 1000))
+
+    return {
+        "ok": True,
+        "has_telegram": has_telegram,
+        "is_subscribed": is_subscribed,
+        "already_claimed": already_claimed,
+        "bonus_amount": bonus_amount
+    }
+
+@app.post("/api/bonus/claim")
+async def api_bonus_claim(request: Request):
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    if not init_data: raise HTTPException(403)
+    user = verify_init_data(init_data)
+    if not user: raise HTTPException(403)
+    
+    tid = user['id']
+    u = await get_user(tid)
+    if not u:
+        return {"ok": False, "error": "Foydalanuvchi topilmadi"}
+
+    # 1. Telegram ulanganligini tekshirish
+    if not u.get('session_string'):
+        return {"ok": False, "error": "Kunlik bonusni olish uchun avval Akkaunt bo'limida shaxsiy Telegram akkauntingizni botga ulashingiz kerak!"}
+
+    # 2. Obunani tekshirish
+    unsubbed = await get_unsubscribed_channels(bot, tid, bypass_cache=True)
+    if unsubbed:
+        return {"ok": False, "error": "Kunlik bonusni olish uchun avval barcha majburiy obuna kanallariga a'zo bo'lishingiz shart!"}
+
+    # 3. Bugungi sanani tekshirish
+    uz_time = time.time() + 5 * 3600
+    today_str = time.strftime('%Y-%m-%d', time.gmtime(uz_time))
+
+    if u.get('last_bonus_date') == today_str:
+        return {"ok": False, "error": "Siz bugungi kunlik bonusni allaqachon qabul qilib oldingiz! Keyingi bonusni ertaga olishingiz mumkin."}
+
+    # 4. Bonus berish
+    bonus_amount = int(await get_setting("daily_bonus_amount", 1000))
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET balance = balance + ?, last_bonus_date = ? WHERE telegram_id = ?",
+            (bonus_amount, today_str, tid)
+        )
+        await db.commit()
+
+    return {"ok": True, "message": f"🎉 Tabriklaymiz! Kunlik bonus muvaffaqiyatli qabul qilindi: +{bonus_amount:,} so'm balansingizga qo'shildi!"}
 
 async def process_referral_reward(user_id: int):
     try:
@@ -4834,12 +4949,14 @@ async def api_admin_settings_get(x_admin_token: str = Header(default="")):
     premium_price = await get_setting("premium_price", "20000")
     monitor_price = await get_setting("monitor_price", "10000")
     listing_price = await get_setting("listing_price", "1000")
+    daily_bonus_amount = await get_setting("daily_bonus_amount", "1000")
     return {
         "payment_card": card, 
         "payment_channel_id": channel, 
         "premium_price": premium_price,
         "monitor_price": monitor_price,
-        "listing_price": listing_price
+        "listing_price": listing_price,
+        "daily_bonus_amount": daily_bonus_amount
     }
 
 @app.post("/api/admin/settings")
@@ -4859,6 +4976,8 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
         await set_setting("monitor_price", data['monitor_price'])
     if 'listing_price' in data:
         await set_setting("listing_price", data['listing_price'])
+    if 'daily_bonus_amount' in data:
+        await set_setting("daily_bonus_amount", data['daily_bonus_amount'])
 @app.get("/api/admin/channels")
 async def api_admin_channels_get(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
@@ -5935,6 +6054,93 @@ async def cleanup_fragment_monitoring_tasks(bot_inst: Bot):
         logger.error(f"cleanup_fragment_monitoring_tasks xato: {e}")
 
 
+async def bonus_notification_loop():
+    """Kunlik bonus bildirishnomalar: har kuni 08:00-20:00 (Toshkent vaqti) orasida 1 marta yuboriladi"""
+    logger.info("🎁 Bonus notification loop ishga tushdi")
+    while True:
+        try:
+            # Toshkent vaqtini aniqlash (UTC+5)
+            uz_time = time.gmtime(time.time() + 5 * 3600)
+            hour = uz_time.tm_hour
+            today_str = time.strftime('%Y-%m-%d', uz_time)
+
+            # Faqat 08:00-20:00 orasida ishlaydi
+            if 8 <= hour < 20:
+                async with aiosqlite.connect(DB_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute(
+                        "SELECT telegram_id, session_string, last_bonus_date, last_bonus_notify_date FROM users"
+                    ) as cur:
+                        users_list = await cur.fetchall()
+
+                bonus_amount = int(await get_setting("daily_bonus_amount", 1000))
+
+                for u in users_list:
+                    tid = u['telegram_id']
+                    if not tid:
+                        continue
+
+                    # Bugun xabar yuborilganmi?
+                    if u['last_bonus_notify_date'] == today_str:
+                        continue  # Bugun allaqachon xabar yuborilgan
+
+                    has_telegram = bool(u['session_string'])
+                    already_claimed = (u['last_bonus_date'] == today_str)
+
+                    try:
+                        if has_telegram and not already_claimed:
+                            # Telegram ulangan, lekin bonus olinmagan → eslatma
+                            await bot.send_message(
+                                tid,
+                                f"🎁 <b>Kunlik Bonusingiz sizni kutmoqda!</b>\n\n"
+                                f"Bugun <b>+{bonus_amount:,} so'm</b> bepul bonus olishingiz mumkin!\n"
+                                f"Bonusni olish uchun ilovani oching va \"Kunlik Bonus\" tugmasini bosing.\n\n"
+                                f"⏰ Bonus har kuni yangilanadi!",
+                                parse_mode="HTML"
+                            )
+                        elif not has_telegram:
+                            # Telegram ulanmagan → ulab olishga undash
+                            await bot.send_message(
+                                tid,
+                                f"💡 <b>Kunlik bonusdan quruq qolmang!</b>\n\n"
+                                f"Telegram akkauntingizni botga ulagan foydalanuvchilar <b>har kuni {bonus_amount:,} so'm</b> "
+                                f"bepul bonus oladi!\n\n"
+                                f"Ulash uchun ilovani oching → <b>Akkaunt</b> bo'limi → "
+                                f"<b>Telegram Akkauntni Ulash</b>",
+                                parse_mode="HTML"
+                            )
+                        else:
+                            # Bugun allaqachon olingan — xabar yuborish shart emas
+                            pass
+
+                        # Xabar yuborildi — sanani yangilaymiz
+                        if has_telegram or not has_telegram:
+                            async with aiosqlite.connect(DB_PATH) as db:
+                                await db.execute(
+                                    "UPDATE users SET last_bonus_notify_date=? WHERE telegram_id=?",
+                                    (today_str, tid)
+                                )
+                                await db.commit()
+
+                    except Exception as ne:
+                        err = str(ne).lower()
+                        if 'blocked' in err or 'deactivated' in err or 'not found' in err:
+                            pass  # Bloklagan foydalanuvchi — o'tkazib yuboramiz
+                        else:
+                            logger.warning(f"Bonus notify xato ({tid}): {ne}")
+
+                    await asyncio.sleep(0.05)  # Telegram rate-limit ga tushinmaslik uchun
+
+            # Keyingi tekshirishgacha 3 soat kutamiz
+            await asyncio.sleep(3 * 3600)
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"bonus_notification_loop xato: {e}")
+            await asyncio.sleep(3600)  # Xato bo'lsa 1 soat kutib qayta urinish
+
+
 async def main():
     import signal
 
@@ -5988,13 +6194,16 @@ async def main():
     # Muddati tugagan auksionlarni avtomatik yopuvchi loop
     auction_task = asyncio.create_task(auction_close_loop(bot))
 
+    # Kunlik bonus bildirsinoma loopini ishga tushiramiz
+    bonus_notify_task = asyncio.create_task(bonus_notification_loop())
+
     # Aiogram bot va FastAPI parallel ishlatish
     config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)), log_level="warning")
     server = uvicorn.Server(config)
 
     # Graceful shutdown: SIGTERM va SIGINT uchun
     loop = asyncio.get_event_loop()
-    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task]
+    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task, bonus_notify_task]
 
     async def _shutdown():
         logger.info("⏹ Graceful shutdown boshlandi...")
