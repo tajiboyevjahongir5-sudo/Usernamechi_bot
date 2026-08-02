@@ -924,7 +924,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
     buyer = await get_user(buyer_id)
     if not seller or not seller.get('session_string'): return
     if not buyer or not buyer.get('session_string'): return
-    
+
     from telethon import TelegramClient
     from telethon.sessions import StringSession
     from telethon.tl.functions.channels import (
@@ -936,20 +936,42 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         AuthKeyUnregisteredError, UserDeactivatedError, UsernameOccupiedError,
         ChannelsAdminPublicTooMuchError, AdminRankInvalidError
     )
-    import telethon.errors as telethon_errs
 
     seller_client = TelegramClient(StringSession(seller['session_string']), API_ID, API_HASH)
     buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
-    
+
     target_channel = None
     released = False
     is_personal_profile = False
 
+    # Listing ma'lumotlarini oldindan olamiz (refund uchun kerak)
+    listing_price = 0
+    listing_db_id = None
+    seller_net = 0
+    try:
+        async with aiosqlite.connect(DB_PATH) as _db:
+            _db.row_factory = aiosqlite.Row
+            async with _db.execute(
+                "SELECT id, price, seller_id FROM listings WHERE username=? ORDER BY id DESC LIMIT 1",
+                (username,)
+            ) as _c:
+                _lr = await _c.fetchone()
+            if _lr:
+                listing_db_id = _lr['id']
+                listing_price = int(_lr['price'])
+                # seller_user orqali komissiyani hisoblash
+                seller_user = await get_user(seller_id)
+                is_premium = seller_user.get('is_premium', 0) if seller_user else 0
+                fee = 0.05 if is_premium else 0.10
+                seller_net = int(listing_price * (1 - fee))
+    except Exception as le:
+        logger.warning(f"Listing ma'lumotlarini olishda xato: {le}")
+
     try:
         await seller_client.connect()
         await buyer_client.connect()
-        
-        # 1. Sotuvchi hisobidan username o'rganiladi va bo'shatiladi
+
+        # ── 1. Sotuvchi hisobidan username bo'shatiladi ─────────────────
         try:
             req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
             res = await seller_client(req)
@@ -960,7 +982,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         except Exception as fe:
             logger.warning(f"Sotuvchi kanallarini olishda xato ({seller_id}): {fe}")
 
-        # Fallback: Agar birinchi tekshiruvda topilmasa dialoglar orqali qidiramiz
+        # Fallback: dialoglar orqali qidiramiz
         if not target_channel:
             try:
                 async for dialog in seller_client.iter_dialogs():
@@ -973,7 +995,6 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 logger.warning(f"Sotuvchi dialoglarini aylanib chiqishda xato: {de}")
 
         if target_channel:
-            # Kanaldan username ni bo'shatish yoki kanalni o'chirish
             try:
                 await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=""))
                 released = True
@@ -993,16 +1014,19 @@ async def transfer_username(bot, seller_id, buyer_id, username):
 
         if not released:
             logger.error(f"Sotuvchi profilida yoki kanalida @{username} topilmadi!")
-            raise ValueError(f"Sotuvchi profilida yoki kanallarida @{username} topilmadi! (Sotuvchi username'ni almashtirgan bo'lishi mumkin)")
+            raise ValueError(
+                f"Sotuvchi profilida yoki kanallarida @{username} topilmadi! "
+                f"(Sotuvchi username'ni almashtirgan bo'lishi mumkin)"
+            )
 
-        await asyncio.sleep(2.0)  # Telegram serverlarida username bo'shashi va sinxronlanishi uchun 2 soniya kutish
+        await asyncio.sleep(2.0)  # Telegram serverlarida sinxronlanish uchun kutish
 
-        # 2. Xaridor hisobida kanal yaratishga yoki profili uchun sinash
+        # ── 2. Xaridor hisobiga username biriktiriladi ─────────────────
         assigned = False
         last_assign_err = None
         new_channel_id = None
 
-        # Avval kanal ochishga urinib ko'ramiz
+        # Avval kanal ochishga urinamiz
         try:
             created = await buyer_client(CreateChannelRequest(
                 title=f"Usernamechi: @{username}",
@@ -1010,12 +1034,12 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 megagroup=False
             ))
             new_channel_id = created.chats[0].id
-        except (ChannelsAdminPublicTooMuchError, AdminRankInvalidError) as ce:
-            logger.warning(f"Buyer has too many public channels, trying profile fallback: {ce}")
+        except Exception as ce:
+            logger.warning(f"Buyer kanal yaratishda xato (profile fallback ishlatiladi): {ce}")
             last_assign_err = ce
 
         if new_channel_id:
-            # Kanallarga username bog'lash (5 marta harakat)
+            # Kanalga username bog'lash (5 marta urinish)
             for attempt in range(5):
                 try:
                     await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
@@ -1026,14 +1050,15 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     logger.warning(f"Assign to channel attempt {attempt+1}/5 failed: {ae}")
                     await asyncio.sleep(1.5)
 
-        # Agar kanallarga bog'lay olmasak (limit to'lgan bo'lsa yoki xato bo'lsa), xaridor profiliga qo'yib ko'ramiz
+        # Agar kanalga bog'lay olmasak, profilga o'rnatishga urinamiz
         if not assigned:
-            logger.info("Trying fallback: binding username directly to buyer's personal profile...")
+            logger.info("Fallback: username to'g'ridan-to'g'ri xaridor profiliga o'rnatilmoqda...")
             for attempt in range(3):
                 try:
                     await buyer_client(AccountUpdateUsernameRequest(username=username))
                     assigned = True
                     is_personal_profile = True
+                    new_channel_id = None  # Profilda saqlandi, kanal yo'q
                     break
                 except Exception as ae:
                     last_assign_err = ae
@@ -1041,7 +1066,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     await asyncio.sleep(1.5)
 
         if not assigned:
-            # Rollback: Xaridorga o'tmadimi, sotuvchiga qaytarishga urinamiz
+            # Rollback: username ni sotuvchiga qaytarishga urinamiz
             try:
                 if target_channel and not is_personal_profile:
                     await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=username))
@@ -1051,85 +1076,147 @@ async def transfer_username(bot, seller_id, buyer_id, username):
             except Exception as re_err:
                 logger.error(f"Rollback failed for @{username}: {re_err}")
             raise last_assign_err or UsernameOccupiedError(request=None)
-        
-        # 3. Xabarnoma yuborish
+
+        # ── 3. Muvaffaqiyat: xabarnoma yuborish ───────────────────────
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         if new_channel_id and not is_personal_profile:
             markup = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="👤 Profilga qo'yish", callback_data=f"setprofile_{username}_{new_channel_id}")]
+                [InlineKeyboardButton(
+                    text="👤 Profilga qo'yish",
+                    callback_data=f"setprofile_{username}_{new_channel_id}"
+                )]
             ])
             buyer_msg = (
-                f"🎉 <b>Tabriklaymiz!</b>\n\n<b>@{username}</b> sizning akkauntingizga muvaffaqiyatli o'tkazildi!\n"
-                f"Hozirda u avtomatik yaratilgan maxsus kanalda saqlanmoqda.\n\n"
+                f"🎉 <b>Tabriklaymiz!</b>\n\n"
+                f"<b>@{username}</b> sizning akkauntingizga muvaffaqiyatli o'tkazildi!\n"
+                f"Hozirda u maxsus kanalda saqlanmoqda.\n\n"
                 f"Uni o'z profilingizga o'rnatmoqchimisiz?"
             )
         else:
             markup = None
             buyer_msg = (
-                f"🎉 <b>Tabriklaymiz!</b>\n\n<b>@{username}</b> to'g'ridan-to'g'ri profilingizga (username sifatida) muvaffaqiyatli o'tkazildi! 🚀"
+                f"🎉 <b>Tabriklaymiz!</b>\n\n"
+                f"<b>@{username}</b> to'g'ridan-to'g'ri profilingizga username sifatida "
+                f"muvaffaqiyatli o'tkazildi! 🚀"
             )
 
         try:
             await bot.send_message(buyer_id, buyer_msg, reply_markup=markup, parse_mode="HTML")
             await bot.send_message(
                 seller_id,
-                f"💰 <b>Username muvaffaqiyatli sotildi!</b>\n\n<b>@{username}</b> xaridorga o'tkazib berildi va sotuv balansingizga qo'shildi. ✅",
+                f"💰 <b>Username muvaffaqiyatli sotildi!</b>\n\n"
+                f"<b>@{username}</b> xaridorga o'tkazib berildi va "
+                f"savdo balansingizga qo'shildi. ✅",
                 parse_mode="HTML"
             )
-        except Exception: pass
-        
+        except Exception:
+            pass
+
     except Exception as e:
         logger.error(f"Transfer error for @{username}: {type(e).__name__} - {e}")
         err_str = str(e).lower()
-        # ── REFUND: xaridor puliga qaytaramiz ──────────────────────────
+
+        # ── REFUND: xaridorga pul qaytaramiz, listingni qayta active qilamiz ──
         try:
             async with aiosqlite.connect(DB_PATH) as _db:
-                # Xarid narxini listing dan aniqlaymiz
                 _db.row_factory = aiosqlite.Row
-                async with _db.execute(
-                    "SELECT price FROM listings WHERE username=? ORDER BY id DESC LIMIT 1",
-                    (username,)
-                ) as _c:
-                    _lr = await _c.fetchone()
-                refund_price = int(_lr['price']) if _lr else 0
+
+                # Agar listing_price yuqorida topilmagan bo'lsa, qayta topamiz
+                refund_price = listing_price
+                ref_seller_net = seller_net
+                if refund_price == 0:
+                    async with _db.execute(
+                        "SELECT id, price FROM listings WHERE username=? ORDER BY id DESC LIMIT 1",
+                        (username,)
+                    ) as _c:
+                        _lr = await _c.fetchone()
+                    if _lr:
+                        refund_price = int(_lr['price'])
+                        listing_db_id = _lr['id']
+                        seller_user = await get_user(seller_id)
+                        is_premium = seller_user.get('is_premium', 0) if seller_user else 0
+                        fee = 0.05 if is_premium else 0.10
+                        ref_seller_net = int(refund_price * (1 - fee))
 
                 if refund_price > 0:
-                    # Xaridorga pulni qaytaramiz
+                    # Xaridorga to'liq narxni qaytaramiz
                     await _db.execute(
                         "UPDATE users SET balance = balance + ? WHERE telegram_id = ?",
                         (refund_price, buyer_id)
                     )
-                    # Sotuvchidan seller_balance ni olib qo'yamiz (agar qo'shilgan bo'lsa)
+                    # Sotuvchidan faqat seller_net (unga qo'shilgan miqdor)ni olamiz
                     await _db.execute(
                         "UPDATE users SET seller_balance = MAX(0, seller_balance - ?) WHERE telegram_id = ?",
-                        (refund_price, seller_id)
+                        (ref_seller_net, seller_id)
                     )
-                    await _db.commit()
-                    logger.info(f"REFUND: {refund_price} so'm xaridorga ({buyer_id}) qaytarildi (@{username} transfer xato)")
+                    logger.info(
+                        f"REFUND: {refund_price:,} so'm xaridorga ({buyer_id}) qaytarildi, "
+                        f"{ref_seller_net:,} so'm sotuvchidan ({seller_id}) olinindi (@{username})"
+                    )
+
+                # Listing ni qayta 'active' qilamiz (xaridor pul qaytarsa, listing ham ochilsin)
+                if listing_db_id:
+                    await _db.execute(
+                        "UPDATE listings SET status='active' WHERE id=?",
+                        (listing_db_id,)
+                    )
+                    # listing_orders ni failed qilamiz
+                    await _db.execute(
+                        "UPDATE listing_orders SET status='failed' WHERE listing_id=? AND buyer_id=?",
+                        (listing_db_id, buyer_id)
+                    )
+
+                await _db.commit()
         except Exception as re:
             logger.error(f"Refund xato @{username}: {re}")
         # ────────────────────────────────────────────────────────────────
 
-        if isinstance(e, (AuthKeyUnregisteredError, UserDeactivatedError)) or "unregistered" in err_str or "deactivated" in err_str:
+        if isinstance(e, (AuthKeyUnregisteredError, UserDeactivatedError)) or \
+                "unregistered" in err_str or "deactivated" in err_str:
             await save_session(seller_id, None)
             try:
-                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik: Telegram akkauntingiz sessiyasi uzilgan!")
-                await bot.send_message(buyer_id,
-                    f"❌ @{username} o'tkazilmadi (Sotuvchi sessiyasi uzilgan).\n"
-                    f"Pulingiz to'liq balansingizga qaytarildi. ✅")
-            except Exception: pass
+                await bot.send_message(
+                    seller_id,
+                    f"❌ <b>@{username}</b> ni o'tkazishda xatolik:\n"
+                    f"Telegram akkauntingiz sessiyasi uzilgan! "
+                    f"Qayta ulanib, username ni sotuvdan oling.",
+                    parse_mode="HTML"
+                )
+                await bot.send_message(
+                    buyer_id,
+                    f"❌ <b>@{username}</b> o'tkazilmadi.\n"
+                    f"Sabab: Sotuvchi sessiyasi uzilgan.\n\n"
+                    f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
         else:
             try:
-                await bot.send_message(seller_id, f"❌ @{username} ni o'tkazishda xatolik yuz berdi: {type(e).__name__}")
-                await bot.send_message(buyer_id,
-                    f"❌ @{username} o'tkazishda texnik xatolik yuz berdi.\n"
-                    f"Pulingiz to'liq balansingizga qaytarildi. ✅")
-            except Exception: pass
+                await bot.send_message(
+                    seller_id,
+                    f"❌ <b>@{username}</b> ni o'tkazishda xatolik yuz berdi.\n"
+                    f"Sabab: {type(e).__name__}",
+                    parse_mode="HTML"
+                )
+                await bot.send_message(
+                    buyer_id,
+                    f"❌ <b>@{username}</b> o'tkazishda texnik xatolik yuz berdi.\n\n"
+                    f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
     finally:
-        try: await seller_client.disconnect()
-        except Exception: pass
-        try: await buyer_client.disconnect()
-        except Exception: pass
+        try:
+            await seller_client.disconnect()
+        except Exception:
+            pass
+        try:
+            await buyer_client.disconnect()
+        except Exception:
+            pass
+
 
 @router.channel_post()
 async def auto_payment_handler(message: Message):
