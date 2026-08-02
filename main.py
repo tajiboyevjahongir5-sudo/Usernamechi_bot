@@ -5655,6 +5655,98 @@ async def cleanup_short_monitoring_tasks(bot_inst: Bot):
     except Exception as e:
         logger.error(f"cleanup_short_monitoring_tasks xato: {e}")
 
+async def cleanup_fragment_monitoring_tasks(bot_inst: Bot):
+    """
+    Barcha faol monitoring tasklarni tekshiradi va Fragment.com auksionida/NFT formatida
+    turgan usernamelarni o'chirib, foydalanuvchilarga kafolat pulini to'liq qaytaradi.
+    """
+    try:
+        import aiohttp
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT id, telegram_id, username, paid_amount FROM monitoring_tasks WHERE status='monitoring'"
+            ) as c:
+                tasks = await c.fetchall()
+
+        if not tasks:
+            logger.info("cleanup_fragment: tekshiriladigan nishon topilmadi.")
+            return
+
+        logger.info(f"🔍 Fragment cleanup: {len(tasks)} ta nishon tekshirilmoqda...")
+
+        user_refunds = {}       # {telegram_id: refund_amount}
+        user_usernames = {}     # {telegram_id: [username_list]}
+        task_ids_to_delete = []
+
+        price_per_item = int(await get_setting("monitor_price", 10000))
+
+        async with aiohttp.ClientSession() as session:
+            for t in tasks:
+                tid = t["telegram_id"]
+                uname = t["username"]
+                paid = int(t["paid_amount"] or price_per_item)
+                task_id = t["id"]
+
+                is_frag = await check_if_fragment_username(session, uname)
+                if is_frag:
+                    task_ids_to_delete.append(task_id)
+                    if tid not in user_refunds:
+                        user_refunds[tid] = 0
+                        user_usernames[tid] = []
+                    user_refunds[tid] += paid
+                    user_usernames[tid].append(f"@{uname}")
+                    logger.info(f"🧹 Fragment nishon topildi: @{uname} (user: {tid})")
+
+                # So'rovlar orasida biroz kutamiz — API limitiga tushmaslik uchun
+                await asyncio.sleep(0.5)
+
+        if not task_ids_to_delete:
+            logger.info("✅ Fragment cleanup: barcha nishonlar tekshirildi, Fragment'da hech narsa topilmadi.")
+            return
+
+        # Bazada o'chirish va pul qaytarish
+        async with aiosqlite.connect(DB_PATH) as db:
+            for tid, refund_amount in user_refunds.items():
+                await db.execute(
+                    "UPDATE users SET balance = balance + ? WHERE telegram_id = ?",
+                    (refund_amount, tid)
+                )
+            for task_id in task_ids_to_delete:
+                await db.execute("DELETE FROM monitoring_tasks WHERE id = ?", (task_id,))
+            await db.commit()
+
+        logger.info(
+            f"🧹 Fragment cleanup yakunlandi: {len(task_ids_to_delete)} ta nishon o'chirildi, "
+            f"{len(user_refunds)} ta foydalanuvchiga pul qaytarildi"
+        )
+
+        # Har bir foydalanuvchiga bildirishnoma
+        for tid, refund_amount in user_refunds.items():
+            unames = user_usernames[tid]
+            count = len(unames)
+            uname_str = ", ".join(unames[:10])
+            if count > 10:
+                uname_str += f" va yana {count - 10} ta"
+
+            msg = (
+                f"⚠️ <b>Fragment nishonlari o'chirildi!</b>\n\n"
+                f"Quyidagi username(lar) <b>Fragment.com auksionida yoki NFT formatida</b> ekanligi "
+                f"aniqlanib, nishon ro'yxatidan chiqarildi:\n"
+                f"<code>{uname_str}</code>\n\n"
+                f"Telegram qoidalariga ko'ra Fragment'dagi nomlarni oddiy usulda "
+                f"band qilib bo'lmaydi.\n\n"
+                f"💰 Balansingizga <b>+{refund_amount:,} so'm</b> to'liq qaytarildi! ✅"
+            )
+            try:
+                await bot_inst.send_message(tid, msg, parse_mode="HTML")
+            except Exception as ne:
+                logger.warning(f"Fragment cleanup notify xato ({tid}): {ne}")
+
+    except Exception as e:
+        logger.error(f"cleanup_fragment_monitoring_tasks xato: {e}")
+
+
 async def main():
     import signal
 
@@ -5680,6 +5772,9 @@ async def main():
 
     # 5-dan kam harfli nishonlarni tozalab pulini qaytarish
     asyncio.create_task(cleanup_short_monitoring_tasks(bot))
+
+    # Fragment.com auksionida turgan nishonlarni tozalab pulini qaytarish
+    asyncio.create_task(cleanup_fragment_monitoring_tasks(bot))
 
     # Orqa fonda monitoring loop ni ishga tushiramiz
     monitoring_task = asyncio.create_task(monitoring_loop(bot))
