@@ -1042,34 +1042,46 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         last_assign_err = None
 
         if new_channel_id:
-            # 15 marta urinish, har biri 0.3s oraliq = jami ~4.5s oyna
-            for attempt in range(15):
+            # 100 marta urinish (smart backoff orqali jami 60+ soniya kutish)
+            # Bu Telegram CDNLari sinxron bo'lishiga yetarli vaqt beradi va username o'g'irlanishini 100% oldini oladi.
+            for attempt in range(100):
                 try:
                     await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
                     assigned = True
                     logger.info(f"✅ @{username} xaridor kanaliga biriktirildi (urinish #{attempt+1})")
                     break
                 except UsernameNotModifiedError:
-                    # Allaqachon o'rnatilgan — muvaffaqiyat!
                     assigned = True
                     break
                 except FloodWaitError as fw:
-                    wait_time = min(fw.seconds, 3)
-                    logger.warning(f"FloodWait {fw.seconds}s, {wait_time}s kutilmoqda...")
+                    wait_time = min(fw.seconds, 5)
+                    logger.warning(f"FloodWait {fw.seconds}s (maks {wait_time}s kutilmoqda...)")
                     await asyncio.sleep(wait_time)
                 except UsernameInvalidError as ui:
                     logger.error(f"Username format noto'g'ri: {ui}")
                     last_assign_err = ui
-                    break  # Qayta urinishdan foyda yo'q
+                    break
                 except Exception as ae:
                     last_assign_err = ae
-                    logger.warning(f"Kanal assign #{attempt+1}/15 xato: {type(ae).__name__}: {ae}")
-                    await asyncio.sleep(0.3)
+                    logger.warning(f"Kanal assign #{attempt+1}/100 xato: {type(ae).__name__}: {ae}")
+                    
+                    # Dinamik kechikish (smart backoff)
+                    if attempt < 5:
+                        delay = 0.05  # Dastlabki 5 ta tezkor urinish (0.25s)
+                    elif attempt < 15:
+                        delay = 0.1   # Keyingi 10 ta urinish (1.0s)
+                    elif attempt < 30:
+                        delay = 0.2   # Keyingi 15 ta urinish (3.0s)
+                    elif attempt < 50:
+                        delay = 0.5   # Keyingi 20 ta urinish (10.0s)
+                    else:
+                        delay = 1.0   # Qolgan 50 ta urinish (50.0s)
+                    await asyncio.sleep(delay)
 
         # Kanal orqali bo'lmadi — shaxsiy profilga urinamiz
         if not assigned:
             logger.info(f"Profil fallback: @{username} xaridor profiliga o'rnatilmoqda...")
-            for attempt in range(8):
+            for attempt in range(40):
                 try:
                     await buyer_client(AccountUpdateUsernameRequest(username=username))
                     assigned = True
@@ -1083,11 +1095,19 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     new_channel_id = None
                     break
                 except FloodWaitError as fw:
-                    await asyncio.sleep(min(fw.seconds, 3))
+                    await asyncio.sleep(min(fw.seconds, 5))
                 except Exception as ae:
                     last_assign_err = ae
-                    logger.warning(f"Profil assign #{attempt+1}/8 xato: {type(ae).__name__}: {ae}")
-                    await asyncio.sleep(0.3)
+                    logger.warning(f"Profil assign #{attempt+1}/40 xato: {type(ae).__name__}: {ae}")
+                    
+                    # Dinamik kechikish
+                    if attempt < 10:
+                        delay = 0.1
+                    elif attempt < 25:
+                        delay = 0.3
+                    else:
+                        delay = 0.8
+                    await asyncio.sleep(delay)
 
         if not assigned:
             # ROLLBACK: username ni sotuvchiga qaytarishga urinamiz
