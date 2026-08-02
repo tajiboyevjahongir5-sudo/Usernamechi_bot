@@ -937,8 +937,17 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         FloodWaitError, UsernameNotModifiedError, UsernameInvalidError
     )
 
-    seller_client = TelegramClient(StringSession(seller['session_string']), API_ID, API_HASH)
-    buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
+    # Stealth clientlar keshidan foydalanamiz, agar foydalanuvchi faol bo'lsa
+    # Bu qayta-qayta ulanish va Telegram xavfsizlik cheklovlariga (FloodWait) tushib qolishni 100% oldini oladi.
+    seller_client = stealth_clients.get(seller_id)
+    seller_is_stealth = seller_client is not None
+    if not seller_client:
+        seller_client = TelegramClient(StringSession(seller['session_string']), API_ID, API_HASH)
+
+    buyer_client = stealth_clients.get(buyer_id)
+    buyer_is_stealth = buyer_client is not None
+    if not buyer_client:
+        buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
 
     target_channel = None
     released = False
@@ -968,8 +977,10 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         logger.warning(f"Listing ma'lumotlarini olishda xato: {le}")
 
     try:
-        await seller_client.connect()
-        await buyer_client.connect()
+        if not seller_is_stealth:
+            await seller_client.connect()
+        if not buyer_is_stealth:
+            await buyer_client.connect()
 
         # ── QADAM 1: Xaridor kanalini AVVALDAN yaratamiz ─────────────────
         # Seller release qilishdan OLDIN kanal tayyor bo'lishi kerak —
@@ -986,20 +997,37 @@ async def transfer_username(bot, seller_id, buyer_id, username):
             logger.warning(f"Xaridor kanali yaratishda xato (profil fallback ishlatiladi): {ce}")
 
         # ── QADAM 2: Sotuvchi hisobidan username topib bo'shatamiz ───────
+        # Avval eng tezkor usul: resolve_entity yordamida obyektni to'g'ridan-to'g'ri olish.
+        # Bu iter_dialogs kabi og'ir so'rovlarni va cheklovlarni (FloodWait) chetlab o'tadi.
         try:
-            req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
-            res = await seller_client(req)
-            for ch in res.chats:
-                if getattr(ch, 'username', '').lower() == username.lower():
-                    target_channel = ch
-                    break
-        except Exception as fe:
-            logger.warning(f"GetAdminedPublicChannels xato: {fe}")
+            entity = await seller_client.get_entity(username)
+            if hasattr(entity, 'broadcast') or hasattr(entity, 'megagroup'):
+                target_channel = entity
+                logger.info(f"🎯 Username get_entity orqali kanal sifatida aniqlandi: {entity.id}")
+            else:
+                me_user = await seller_client.get_me()
+                if entity.id == me_user.id:
+                    is_personal_profile = True
+                    logger.info("🎯 Username get_entity orqali shaxsiy profil sifatida aniqlandi")
+        except Exception as ee:
+            logger.warning(f"get_entity orqali tezkor qidirish xato: {ee}")
 
-        # Fallback: barcha dialoglardan qidiramiz
-        if not target_channel:
+        # Agarda tezkor resolve topilmasa, eski xavfsiz usullarga o'tamiz
+        if not target_channel and not is_personal_profile:
             try:
-                async for dialog in seller_client.iter_dialogs():
+                req = GetAdminedPublicChannelsRequest(by_location=False, check_limit=False)
+                res = await seller_client(req)
+                for ch in res.chats:
+                    if getattr(ch, 'username', '').lower() == username.lower():
+                        target_channel = ch
+                        break
+            except Exception as fe:
+                logger.warning(f"GetAdminedPublicChannels xato: {fe}")
+
+        # So'nggi chora sifatida dialoglarni aylanib chiqish (faqat 50 ta dialog bilan cheklaymiz)
+        if not target_channel and not is_personal_profile:
+            try:
+                async for dialog in seller_client.iter_dialogs(limit=50):
                     if dialog.is_channel or dialog.is_group:
                         entity = dialog.entity
                         if getattr(entity, 'username', '').lower() == username.lower():
@@ -1021,11 +1049,14 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 except Exception as de:
                     logger.error(f"Sotuvchi kanalini o'chirishda xato: {de}")
         else:
-            me = await seller_client.get_me()
-            if me and me.username and me.username.lower() == username.lower():
+            if not is_personal_profile:
+                me = await seller_client.get_me()
+                if me and me.username and me.username.lower() == username.lower():
+                    is_personal_profile = True
+
+            if is_personal_profile:
                 await seller_client(AccountUpdateUsernameRequest(username=""))
                 released = True
-                is_personal_profile = True
                 logger.info(f"✅ @{username} shaxsiy profildan bo'shatildi")
 
         if not released:
@@ -1238,10 +1269,12 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 )
             except Exception: pass
     finally:
-        try: await seller_client.disconnect()
-        except Exception: pass
-        try: await buyer_client.disconnect()
-        except Exception: pass
+        if not seller_is_stealth:
+            try: await seller_client.disconnect()
+            except Exception: pass
+        if not buyer_is_stealth:
+            try: await buyer_client.disconnect()
+            except Exception: pass
 
 
 
