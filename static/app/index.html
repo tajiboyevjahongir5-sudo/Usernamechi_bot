@@ -747,42 +747,41 @@
     </div>
   </div>
 
-  <div class="balance-card card">
+  <div class="balance-card card" style="position: relative;">
     <div class="label" style="display:inline-flex; align-items:center; gap:6px;"><span class="icon-badge badge-amber icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Coin/3D/coin_3d.png" class="icon-3d-img"></span> Joriy Balansingiz</div>
     <div class="balance-row">
       <div class="amount" id="home-balance">0</div>
       <div class="sub">so'm</div>
     </div>
-    <div class="balance-hint">To'ldirish uchun Balans bo'limiga o'ting</div>
-  </div>
-
-  <!-- KUNLIK BONUS KARTASI -->
-  <div id="daily-bonus-card" class="card" style="display:none; background:linear-gradient(135deg,rgba(16,185,129,0.15) 0%,rgba(5,150,105,0.08) 100%); border:1px solid rgba(16,185,129,0.35); border-radius:20px; padding:18px 20px; margin-bottom:0; position:relative; overflow:hidden;">
-    <div style="position:absolute;top:-30px;right:-30px;width:100px;height:100px;background:radial-gradient(circle,rgba(16,185,129,0.25),transparent 70%);pointer-events:none;"></div>
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-      <div style="flex:1;">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-          <span style="font-size:22px;">🎁</span>
-          <span style="font-size:15px; font-weight:800; color:#10b981; letter-spacing:0.3px;">Kunlik Bonus</span>
+    
+    <!-- KUNLIK BONUS INTEGRATED PANEL -->
+    <div id="daily-bonus-card" style="display:none; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); justify-content: space-between; align-items: center; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+        <span style="font-size: 20px; flex-shrink: 0;">🎁</span>
+        <div>
+          <div id="bonus-amount-label" style="font-size: 13px; font-weight: 800; color: #10b981; letter-spacing: 0.3px;">+1,000 so'm</div>
+          <div id="bonus-status-text" style="font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 1px;">Kunlik bonus bepul!</div>
         </div>
-        <div id="bonus-amount-label" style="font-size:24px; font-weight:900; color:#fff; letter-spacing:-0.5px;">+1,000 so'm</div>
-        <div id="bonus-status-text" style="font-size:12px; color:rgba(255,255,255,0.55); margin-top:3px;">Har kuni bepul bonus oling!</div>
       </div>
-      <button id="bonus-claim-btn" onclick="claimBonus()" style="flex-shrink:0; background:linear-gradient(135deg,#10b981,#059669); color:#fff; border:none; border-radius:14px; padding:12px 18px; font-size:13px; font-weight:800; cursor:pointer; transition:all 0.2s; box-shadow:0 4px 16px rgba(16,185,129,0.4); white-space:nowrap;">
-        🎁 Olish
+      <button id="bonus-claim-btn" onclick="claimBonus()" style="flex-shrink: 0; background: linear-gradient(135deg,#10b981,#059669); color: #fff; border: none; border-radius: 10px; padding: 8px 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(16,185,129,0.3); white-space: nowrap;">
+        Olish
       </button>
     </div>
-  </div>
 
-  <div id="daily-bonus-no-tg" style="display:none; background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(245,158,11,0.06)); border:1px solid rgba(251,191,36,0.3); border-radius:16px; padding:14px 16px; margin-bottom:0;">
-    <div style="display:flex; align-items:center; gap:10px;">
-      <span style="font-size:20px;">💡</span>
-      <div>
-        <div style="font-size:13px; font-weight:700; color:#fbbf24;">Kunlik bonusdan quruq qolmang!</div>
-        <div style="font-size:12px; color:rgba(255,255,255,0.5); margin-top:2px;">Telegram akkauntingizni ulab, har kuni bepul bonus oling.</div>
+    <div id="daily-bonus-no-tg" style="display:none; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); justify-content: space-between; align-items: center; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+        <span style="font-size: 20px; flex-shrink: 0;">💡</span>
+        <div>
+          <div style="font-size: 13px; font-weight: 800; color: #fbbf24; letter-spacing: 0.3px;">Kunlik Bonus</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 1px;">Telegram ulab, bonus oling!</div>
+        </div>
       </div>
-      <button onclick="navigateTo('account')" style="margin-left:auto; flex-shrink:0; background:rgba(251,191,36,0.2); border:1px solid rgba(251,191,36,0.4); color:#fbbf24; border-radius:10px; padding:8px 12px; font-size:12px; font-weight:700; cursor:pointer;">Ulash →</button>
+      <button onclick="navigateTo('account')" style="flex-shrink: 0; background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.3); color: #fbbf24; border-radius: 10px; padding: 6px 12px; font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap;">
+        Ulash →
+      </button>
     </div>
+
+    <div class="balance-hint" style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.04); padding-top: 8px;">To'ldirish uchun Balans bo'limiga o'ting</div>
   </div>
 
   <div class="stats">
@@ -926,7 +925,7 @@
       <textarea id="monitor-username" placeholder="sinov, bugun, jinnilar" rows="3" style="width:100%; padding:14px; border-radius:12px; border:2px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.3); color:#fff; font-family:inherit; resize:none; font-size:15px; outline:none; transition:all 0.2s;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='rgba(255,255,255,0.05)'"></textarea>
     </div>
 
-    <button class="btn btn-primary" onclick="startMonitor()">
+    <button class="btn btn-primary" id="monitor-start-btn" onclick="startMonitor()">
       <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img" style="margin-right:6px;"> Kuzatuvni boshlash
     </button>
   </div>
@@ -2412,6 +2411,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(initNavDragPhysics, 100);
 });
 
+// Nishon auto-refresh uchun global timer
+let monitorAutoRefreshTimer = null;
+
 function goPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -2423,7 +2425,22 @@ function goPage(name) {
     navBtn.classList.add('active');
     moveDropletTo(navBtn);
   }
-  if(name==='monitor') loadMonitors();
+  if(name==='monitor') {
+    loadMonitors();
+    // Auto-refresh: har 30 soniyada nishonlarni yangilash
+    if (monitorAutoRefreshTimer) clearInterval(monitorAutoRefreshTimer);
+    monitorAutoRefreshTimer = setInterval(() => {
+      if (document.getElementById('page-monitor').classList.contains('active')) {
+        loadMonitors();
+      } else {
+        clearInterval(monitorAutoRefreshTimer);
+        monitorAutoRefreshTimer = null;
+      }
+    }, 30000);
+  } else {
+    // Boshqa sahifaga o'tganda auto-refresh ni to'xtatamiz
+    if (monitorAutoRefreshTimer) { clearInterval(monitorAutoRefreshTimer); monitorAutoRefreshTimer = null; }
+  }
   if(name==='market') loadMarketplace();
   if(name==='my-listings') loadMyListings();
   if(name==='balance'||name==='home') { loadUserData(); loadOrders(); }
@@ -2440,17 +2457,22 @@ setTimeout(() => {
 }, 100);
 
 // ── MONITORING LOGIC ──────────────────────────
+
 async function startMonitor() {
   const username = document.getElementById('monitor-username').value.trim();
   if (!username) { showToast('Username kiriting!','error'); return; }
   if (!userData.session_string) { showToast('Avval akkauntni ulang!','error'); goPage('account'); return; }
-  
+
   // Qat'iy tekshiruv: apostrof ('), qo'shtirnoq ("), probel va taqiqlangan simvollar
-  if (/'|"|’|`/.test(username)) {
+  if (/'|"|'|`/.test(username)) {
     showToast("❌ Usernameda apostrof (') yoki qo'shtirnoq (\") ishlatish MUMKIN EMAS! Faqat lotin harflari, raqamlar va pastki chiziq (_) kiritilishi shart.", 'error');
     return;
   }
-  
+
+  // Loading holati: tugmani bloklash
+  const btn = document.getElementById('monitor-start-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Qo\'shilmoqda...'; }
+
   try {
     const res = await fetch(`${API}/api/monitor/start`, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -2458,14 +2480,18 @@ async function startMonitor() {
     });
     const d = await res.json();
     if (d.ok) {
-      // Backend qaytargan xabarni ko'rsatamiz
       showToast(d.message || '✅ Kuzatuv boshlandi!','success');
       document.getElementById('monitor-username').value = '';
       await loadUserData();
       await loadMonitors();
     } else { showToast(d.error||'Xato yuz berdi','error'); }
   } catch(e) { showToast('Tarmoq xatosi','error'); }
+  finally {
+    // Tugmani qayta yoqish
+    if (btn) { btn.disabled = false; btn.innerHTML = '<img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img" style="margin-right:6px;"> Kuzatuvni boshlash'; }
+  }
 }
+
 
 let monitorOffset = 0;
 let monitorLoading = false;
@@ -2503,75 +2529,108 @@ async function loadMonitors(isLoadMore = false) {
     monitorHasMore = true;
   }
   if (!monitorHasMore) return;
-  
+
   monitorLoading = true;
   try {
     const res = await fetch(`${API}/api/monitor/list?init_data=${encodeURIComponent(tg.initData)}&offset=${monitorOffset}&limit=100`);
     const d = await res.json();
     if(!d.ok) { monitorLoading = false; return; }
-    
+
     document.getElementById('monitor-count').textContent = `(${d.total_count} ta)`;
-    
+
     const el = document.getElementById('monitor-list');
-    
+
     if (!d.tasks || d.tasks.length < 100) {
       monitorHasMore = false;
     }
-    
+
     if (monitorOffset === 0 && (!d.tasks || d.tasks.length === 0)) {
       el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">📭 Hozircha nishonlar yo'q</div>`;
       monitorLoading = false;
       return;
     }
-    
+
     const stMap = {
       'monitoring': '<span style="color:var(--warning);">🔍 Kuzatilmoqda</span>',
-      'claimed': '<span style="color:var(--success);">✅ Olingan!</span>',
+      'claimed':    '<span style="color:var(--success);">✅ Muvaffaqiyatli olindi!</span>',
       'failed_limit': '<span style="color:var(--danger);">❌ Limit tugagan</span>'
     };
-    
-    const html = d.tasks.map(t => `
+
+    const html = d.tasks.map(t => {
+      const paid = t.paid_amount ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;">💰 To'langan: ${Number(t.paid_amount).toLocaleString()} so'm</div>` : '';
+      // Status bo'yicha harakat tugmasi
+      let actionBtn = '';
+      if (t.status === 'monitoring') {
+        actionBtn = `<button onclick="deleteMonitorTask(${t.id}, '${t.username}', ${t.paid_amount||0})" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#ef4444; border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer; white-space:nowrap;">🗑 O'chirish</button>`;
+      } else if (t.status === 'claimed') {
+        actionBtn = `<button onclick="deleteMonitorTask(${t.id}, '${t.username}', 0)" style="background:rgba(100,100,100,0.15); border:1px solid rgba(100,100,100,0.3); color:var(--muted); border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer;">🗑</button>`;
+      } else if (t.status === 'failed_limit') {
+        actionBtn = `<button onclick="deleteMonitorTask(${t.id}, '${t.username}', 0)" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#ef4444; border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer;">🗑</button>`;
+      } else {
+        actionBtn = `<button onclick="deleteMonitorTask(${t.id}, '${t.username}', 0)" style="background:rgba(100,100,100,0.15); border:1px solid rgba(100,100,100,0.3); color:var(--muted); border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer;">🗑</button>`;
+      }
+      return `
       <div style="padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div>
+        <div style="min-width:0;">
           <div style="font-weight:600;">@${t.username}</div>
-          <div style="font-size:12px;">${stMap[t.status] || t.status}</div>
+          <div style="font-size:12px;margin-top:2px;">${stMap[t.status] || t.status}</div>
+          ${paid}
         </div>
-        <button onclick="deleteMonitorTask(${t.id}, '${t.username}')" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#ef4444; border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer;">🗑</button>
-      </div>
-    `).join('');
-    
+        <div style="flex-shrink:0;">${actionBtn}</div>
+      </div>`;
+    }).join('');
+
     if (isLoadMore) {
       el.insertAdjacentHTML('beforeend', html);
     } else {
       el.innerHTML = html;
     }
-    
+
     monitorOffset += d.tasks.length;
-    
+
     // IntersectionObserver ni qayta ulash (har render da)
     setupMonitorObserver();
-    
+
   } catch(e) { console.error('loadMonitors error:', e); }
   monitorLoading = false;
 }
 
-async function deleteMonitorTask(taskId, username) {
-  if (!confirm(`@${username} nishondan olib tashlansinmi? (Pul qaytarilmaydi)`)) return;
-  try {
-    const res = await fetch(`${API}/api/monitor/delete`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({init_data: tg.initData, task_id: taskId})
-    });
-    const d = await res.json();
-    if (d.ok) {
-      showToast(`@${username} nishondan o'chirildi`, 'success');
-      await loadMonitors();
-    } else {
-      showToast(d.error || 'Xatolik', 'error');
+async function deleteMonitorTask(taskId, username, paidAmount) {
+  // Telegram WebApp'da confirm() BLOKLANADI — tg.showConfirm() ishlatamiz
+  const halfRefund = paidAmount > 0 ? Math.floor(paidAmount / 2) : 0;
+  const msg = halfRefund > 0
+    ? `@${username} nishondan o'chirilsinmi?\n💰 ${halfRefund.toLocaleString()} so'm (50%) qaytariladi.`
+    : `@${username} nishondan o'chirilsinmi?`;
+
+  const doDelete = async () => {
+    try {
+      const res = await fetch(`${API}/api/monitor/delete`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({init_data: tg.initData, task_id: taskId})
+      });
+      const d = await res.json();
+      if (d.ok) {
+        const toast = d.refund > 0
+          ? `✅ @${username} o'chirildi. ${Number(d.refund).toLocaleString()} so'm qaytarildi!`
+          : `✅ @${username} nishondan o'chirildi`;
+        showToast(toast, 'success');
+        await loadUserData();
+        await loadMonitors();
+      } else {
+        showToast(d.error || 'Xatolik', 'error');
+      }
+    } catch(e) {
+      showToast('Tarmoq xatosi', 'error');
     }
-  } catch(e) {
-    showToast('Tarmoq xatosi', 'error');
+  };
+
+  // tg.showConfirm mavjud bo'lsa ishlatamiz (Telegram WebApp)
+  if (tg && tg.showConfirm) {
+    tg.showConfirm(msg, (confirmed) => { if (confirmed) doDelete(); });
+  } else {
+    // Oddiy brauzer fallback
+    if (window.confirm(msg)) doDelete();
   }
 }
 
@@ -3299,10 +3358,10 @@ async function loadDailyBonus() {
 
     if (!data.has_telegram) {
       // Telegram ulanmagan
-      noTgCard.style.display = 'block';
+      noTgCard.style.display = 'flex';
       card.style.display = 'none';
     } else {
-      card.style.display = 'block';
+      card.style.display = 'flex';
       noTgCard.style.display = 'none';
 
       if (data.already_claimed) {

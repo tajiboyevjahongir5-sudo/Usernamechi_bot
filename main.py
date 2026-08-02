@@ -539,6 +539,275 @@ from bot.words import (
 )
 
 
+# ─── LLM USERNAME GENERATOR ─────────────────────────────────────────────
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")   # OpenRouter yoki boshqa provider
+LLM_MODEL   = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5")
+LLM_API_URL = os.getenv("LLM_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+
+CUSTOM_PROMPT = """Siz professional Telegram username generatorisiz. Foydalanuvchi bergan so'zga asoslanib, chiroyli, o'qilishi oson va tabiiy ko'rinadigan username variantlari yarating.
+
+QOIDALAR:
+- Faqat lotin harflari (a-z), raqamlar va pastki chiziq (_) ishlatiladi
+- Username 5-32 belgi oralig'ida
+- Foydalanuvchi so'zi "{base_word}" albatta natijada ishtirok etishi kerak
+- Pastki chiziqni oxiriga qo'ymang, ketma-ket ikkita pastki chiziq ishlatmang
+- Raqamlarni faqat mantiqiy bo'lsa qo'shing, tasodifiy raqam ta'qiqlanadi
+- Har bir variant boshqasidan farqli uslubda bo'lsin
+
+TIL: {language}
+- "uz" bo'lsa: qo'shimcha qism o'zbekcha ma'noli so'z (masalan: aqlli, yulduz, usta, olov)
+- "en" bo'lsa: ingliz tilidagi mos so'z (masalan: official, world, pro, hub, zone, prime)
+
+VAZIFA: "{base_word}" asosida 18 ta turli username varianti yarating.
+{excluded_part}
+
+FORMAT: faqat JSON array qaytaring, boshqa hech narsa yozmang:
+["variant1", "variant2", ...]"""
+
+STYLED_PROMPT = """Siz professional Telegram username generatorisiz. Vazifangiz — turli xil USLUB va KO'RINISHDA username variantlari yaratish.
+
+QOIDALAR:
+- Faqat lotin harflari, raqamlar va pastki chiziq
+- 5-32 belgi
+- Har bir variant boshqa-boshqa uslubda bo'lsin
+
+USLUBLAR (har biridan kamida 2-3 ta variant yarating):
+1. So'z + mavzuga oid qisqartma  (masalan: techno_uz, gamer_pro)
+2. So'z + mantiqiy son            (masalan: koinot33, matrix2025)
+3. Ikki mazmunli so'z birikmasi   (masalan: darkmoon, silverfox)
+4. Mavzu + joy/millat             (masalan: crypto_uz, music_asia)
+5. Ijodiy brend uslubidagi yangi so'z (masalan: nexoria, vantix)
+
+TIL: {language}
+MAVZU: {theme}
+{excluded_part}
+
+VAZIFA: yuqoridagi 5 uslubning har biridan 3-4 tadan, jami 18 ta username generatsiya qiling.
+
+FORMAT: faqat JSON array qaytaring:
+["variant1", "variant2", ...]"""
+
+SHORT_UNIQUE_PROMPT = """Siz professional brendlash va nomlash mutaxassisisiz. Vazifangiz — juda QISQA (5-7 harf), MA'NOLI, BITTA SO'ZDAN iborat, noyob username'lar yaratish.
+
+QATTIY QOIDALAR:
+- Aniq 5 dan 7 gacha harf — raqam va pastki chiziq umuman YO'Q
+- Faqat BITTA so'z (ikki so'z qo'shilgan birikma emas)
+- Talaffuzi oson bo'lishi shart (CVCVC yoki CVCCV pattern)
+- Yoki haqiqiy lug'at so'zi (masalan "nova", "kamon", "orbit") YOKI juda tabiiy eshituvchi brendga o'xshash yangi so'z (masalan "vexor", "lumino")
+- Tasodifiy harf to'plami TAQIQLANADI
+
+TIL: {language}
+- "uz" bo'lsa: qisqa ma'noli o'zbekcha so'zlarni lotin alifbosida bering (masalan: quyosh, bulut, olov, kamon)
+- "en" bo'lsa: ingliz yoki xalqaro tushunarli brendga o'xshash so'zlar (masalan: nova, orbit, flux, ember)
+{excluded_part}
+
+VAZIFA: yuqoridagi qoidalarga to'liq mos 20 ta noyob, qisqa, ma'noli username taklif qiling. Turli mavzulardan so'zlar tanlang.
+
+FORMAT: faqat JSON array:
+["nova", "kamon", ...]"""
+
+
+async def llm_generate_candidates(
+    category: str,
+    language: str,
+    base_word: str = "",
+    theme: str = "",
+    excluded: list | None = None
+) -> list[str]:
+    """LLM API orqali username nomzodlari generatsiya qilish."""
+    import httpx
+    import json as _json
+
+    # API kalitini DB settingsdan yoki envdan olamiz
+    api_key = await get_setting("llm_api_key", LLM_API_KEY)
+    if not api_key:
+        logger.warning("LLM_API_KEY yo'q — statik lug'atga o'tiladi")
+        return []
+
+    model = await get_setting("llm_model", LLM_MODEL)
+    api_url = await get_setting("llm_api_url", LLM_API_URL)
+
+    excluded = excluded or []
+    excluded_part = ""
+    if excluded:
+        sample = excluded[:30]  # Juda ko'p yubormaslik uchun
+        excluded_part = f"\nBU NOMLAR BAND, ULARNI TAKLIF QILMANG: {', '.join(sample)}"
+
+    if category == "qisqa":
+        prompt = SHORT_UNIQUE_PROMPT.format(language=language, excluded_part=excluded_part)
+    elif category == "turli":
+        prompt = STYLED_PROMPT.format(
+            language=language,
+            theme=theme or "umumiy (texnologiya, koinot, tabiat, sport, biznes)",
+            excluded_part=excluded_part
+        )
+    else:  # custom:word
+        word = base_word or category.split(":", 1)[-1] if ":" in category else base_word or "user"
+        prompt = CUSTOM_PROMPT.format(
+            language=language, base_word=word, excluded_part=excluded_part
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                api_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": WEB_URL,
+                    "X-Title": "Usernamechi Bot",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 1000,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+        if resp.status_code != 200:
+            logger.warning(f"LLM API xato {resp.status_code}: {resp.text[:200]}")
+            return []
+
+        data = resp.json()
+        text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not text:
+            # Anthropic-style fallback
+            content = data.get("content", [{}])
+            text = content[0].get("text", "") if content else ""
+
+        text = text.strip()
+        # JSON blokni ajratib olish
+        if "```" in text:
+            text = text.split("```")[-2] if text.count("```") >= 2 else text
+            text = text.removeprefix("json").strip()
+        # Faqat JSON array qismini olish
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end != -1:
+            text = text[start:end+1]
+
+        raw = _json.loads(text)
+        # Kategoriya 2 dict list bo'lishi mumkin — normalizatsiya
+        candidates = []
+        for item in raw:
+            if isinstance(item, dict):
+                uname = item.get("username", "")
+            else:
+                uname = str(item)
+            uname = uname.strip().lower().replace("@", "")
+            if uname:
+                candidates.append(uname)
+        logger.info(f"LLM {len(candidates)} ta nomzod qaytardi (cat={category})")
+        return candidates
+
+    except Exception as e:
+        logger.warning(f"LLM generate error: {e}")
+        return []
+
+
+def score_username(username: str, category: str) -> int:
+    """Username sifatini baholash (yuqori ball = yaxshiroq)."""
+    score = 100
+    length = len(username)
+    # Uzunlik penaltisi: har ortiqcha belgi uchun -6
+    score -= max(0, length - 4) * 6
+    # Pastki chiziq penaltisi
+    if "_" in username:
+        score -= 15
+        if username.startswith("_") or username.endswith("_"):
+            score -= 20
+    # Raqam penaltisi (qisqa kategoriya uchun juda og'ir)
+    if any(c.isdigit() for c in username):
+        score -= 25 if category == "qisqa" else 10
+    # Tozalik bonusi: faqat harflar
+    if username.isalpha():
+        score += 15
+    return max(score, 0)
+
+
+async def llm_find_best_usernames(
+    telethon_client,
+    category: str,
+    language: str,
+    count: int,
+    base_word: str = "",
+    theme: str = ""
+) -> list[str]:
+    """LLM + Telethon yordamida eng yaxshi N ta bo'sh username topish."""
+    from telethon.tl.functions.contacts import ResolveUsernameRequest
+    from telethon.errors import UsernameNotOccupiedError, UsernameInvalidError
+
+    TELEGRAM_RE = re.compile(r'^[a-z0-9][a-z0-9_]{3,30}[a-z0-9]$')
+
+    async def check_available(uname: str) -> bool | None:
+        """Telethon orqali username bo'shligini tekshirish."""
+        if not telethon_client or not telethon_client.is_connected():
+            return None
+        try:
+            await asyncio.wait_for(
+                telethon_client(ResolveUsernameRequest(uname)),
+                timeout=5.0
+            )
+            return False  # Topildi = band
+        except UsernameNotOccupiedError:
+            return True   # Topilmadi = bo'sh
+        except UsernameInvalidError:
+            return None   # Noto'g'ri format
+        except Exception as e:
+            logger.debug(f"check_available error @{uname}: {e}")
+            return None
+
+    tried: set[str] = set()
+    results: list[tuple[str, int]] = []
+    MAX_ROUNDS = 3
+
+    for round_num in range(MAX_ROUNDS):
+        if len(results) >= count:
+            break
+
+        candidates = await llm_generate_candidates(
+            category=category,
+            language=language,
+            base_word=base_word,
+            theme=theme,
+            excluded=list(tried)
+        )
+
+        if not candidates:
+            logger.warning(f"LLM 0 nomzod qaytardi (round {round_num+1}) — to'xtatilmoqda")
+            break
+
+        for uname in candidates:
+            if uname in tried:
+                continue
+            # Formatni tekshirish
+            if not TELEGRAM_RE.match(uname):
+                tried.add(uname)
+                continue
+            if "__" in uname or len(uname) < 5 or len(uname) > 32:
+                tried.add(uname)
+                continue
+            # Qisqa kategoriya uchun qo'shimcha tekshiruv
+            if category == "qisqa" and (not uname.isalpha() or len(uname) > 7):
+                tried.add(uname)
+                continue
+
+            tried.add(uname)
+            available = await check_available(uname)
+            if available is True:
+                score = score_username(uname, category)
+                results.append((uname, score))
+                logger.info(f"✅ [LLM] Bo'sh topildi: @{uname} (score={score})")
+                if len(results) >= count * 3:  # Buffer: 3x ko'proq to'playmiz
+                    break
+            await asyncio.sleep(0.4)  # FloodWait oldini olish
+
+        logger.info(f"LLM round {round_num+1}: {len(results)} ta bo'sh topildi")
+
+    # Eng yaxshi N tasini qaytaramiz
+    results.sort(key=lambda x: x[1], reverse=True)
+    return [u for u, _ in results[:count]]
+
+
 def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> list:
     from bot.words import (
         UZ_MALE_NAMES, UZ_FEMALE_NAMES, UZ_SURNAMES,
@@ -988,6 +1257,46 @@ async def transfer_username(bot, seller_id, buyer_id, username):
         if not buyer_is_stealth:
             await buyer_client.connect()
 
+        # ── OLDINDAN: target_channel va is_personal_profile ni aniqlaymiz ──
+        # (Bu juda muhim — agar bu resolve qilinmasa, 1-qadam hech qachon ishlamaydi)
+        try:
+            entity = await seller_client.get_entity(username)
+            if hasattr(entity, 'broadcast') or hasattr(entity, 'megagroup'):
+                target_channel = entity
+                logger.info(f"🎯 @{username} kanal sifatida aniqlandi (ID: {entity.id})")
+            else:
+                me_user = await seller_client.get_me()
+                if me_user and entity.id == me_user.id:
+                    is_personal_profile = True
+                    logger.info("🎯 @{username} shaxsiy profil sifatida aniqlandi")
+        except Exception as ee:
+            logger.warning(f"get_entity orqali aniqlash xato ({ee}), GetAdminedPublicChannels sinab ko'rilmoqda...")
+
+        # Agar get_entity topilmasa, sotuvchi kanallaridan qidirish
+        if not target_channel and not is_personal_profile:
+            try:
+                res = await seller_client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False))
+                for ch in res.chats:
+                    if getattr(ch, 'username', '').lower() == username.lower():
+                        target_channel = ch
+                        logger.info(f"🎯 @{username} GetAdminedPublicChannels orqali topildi (ID: {ch.id})")
+                        break
+            except Exception as gce:
+                logger.warning(f"GetAdminedPublicChannels xato: {gce}")
+
+        # Profil tekshiruvi fallback
+        if not target_channel and not is_personal_profile:
+            try:
+                me_user = await seller_client.get_me()
+                if me_user and me_user.username and me_user.username.lower() == username.lower():
+                    is_personal_profile = True
+                    logger.info(f"🎯 @{username} shaxsiy profil sifatida aniqlandi (get_me fallback)")
+            except Exception:
+                pass
+
+        if not target_channel and not is_personal_profile:
+            raise ValueError(f"@{username} sotuvchi ({seller_id}) akkauntida topilmadi! Sotuvchi username'ni o'zgartirgan bo'lishi mumkin.")
+
         # ── QADAM 1: Kanal egaligini o'tkazishga urinib ko'ramiz (Agarda username kanalda bo'lsa) ──
         # Bu xaridor uchun eng mukammal yechim: kanal barcha obunachilari va postlari bilan birga o'tadi!
         ownership_transferred = False
@@ -996,7 +1305,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 logger.info(f"👑 Kanal egaligini o'tkazish sinab ko'rilmoqda... (Kanal: {target_channel.id})")
                 from telethon.tl.functions.channels import JoinChannelRequest, EditAdminRequest, EditCreatorRequest
                 from telethon.tl.types import ChatAdminRights
-                
+
                 # 1. Xaridorni kanalga qo'shamiz (JoinChannelRequest)
                 try:
                     await buyer_client(JoinChannelRequest(channel=target_channel))
@@ -1004,7 +1313,33 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 except Exception as je:
                     logger.warning(f"Xaridor kanalga qo'shila olmadi (ehtimol allaqachon a'zo): {je}")
 
-                # 2. Xaridorni kanalda to'liq huquqli admin qilamiz (majburiy qoida)
+                # 2. Xaridor entity ni seller_client keshiga kiritamiz (get_participants orqali)
+                # Bu MUHIM: get_input_entity(buyer_id) — agar keshda yo'q bo'lsa ValueError chiqaradi!
+                buyer_peer = None
+                try:
+                    participants = await seller_client.get_participants(target_channel)
+                    for p in participants:
+                        if p.id == buyer_id:
+                            buyer_peer = p
+                            logger.info(f"✅ Xaridor kanal a'zolari ichida topildi (ID: {buyer_id})")
+                            break
+                except Exception as pe:
+                    logger.warning(f"Kanal a'zolarini o'qishda xatolik: {pe}")
+
+                if buyer_peer is None:
+                    # Fallback: buyer_client orqali o'z entity sini olamiz
+                    try:
+                        buyer_me = await buyer_client.get_me()
+                        buyer_peer = await seller_client.get_input_entity(buyer_me.username or buyer_id)
+                        logger.info(f"✅ Xaridor entity username orqali olindi")
+                    except Exception as bpe:
+                        logger.warning(f"Buyer peer resolve xatoligi: {bpe}")
+                        buyer_peer = None
+
+                if buyer_peer is None:
+                    raise Exception("Xaridor entity kanalda topilmadi, kanal egaligini o'tkazib bo'lmadi.")
+
+                # 3. Xaridorni kanalda to'liq huquqli admin qilamiz (majburiy qoida)
                 admin_rights = ChatAdminRights(
                     post_messages=True,
                     add_admins=True,
@@ -1017,8 +1352,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     ban_users=True,
                     edit_messages=True
                 )
-                
-                buyer_peer = await seller_client.get_input_entity(buyer_id)
+
                 await seller_client(EditAdminRequest(
                     channel=target_channel,
                     user_id=buyer_peer,
@@ -1027,16 +1361,16 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 ))
                 logger.info("✅ Xaridor kanalda admin qilindi")
 
-                # 3. Sotuvchi 2FA parolini olamiz
+                # 4. Sotuvchi 2FA parolini olamiz
                 password = seller.get('tg_password')
                 if password:
                     from telethon.password import compute_check
                     from telethon.tl.functions.account import GetPasswordRequest
-                    
+
                     pass_info = await seller_client(GetPasswordRequest())
                     input_srp = compute_check(pass_info, password)
-                    
-                    # 4. Egaligini o'tkazamiz
+
+                    # 5. Egaligini o'tkazamiz (EditCreatorRequest)
                     await seller_client(EditCreatorRequest(
                         channel=target_channel,
                         user_id=buyer_peer,
@@ -1054,14 +1388,16 @@ async def transfer_username(bot, seller_id, buyer_id, username):
 
         # ── QADAM 2: Agarda egalik o'tmagan bo'lsa, eski usulda (bo'shatib-biriktirib) o'tkazamiz ──
         if not ownership_transferred:
-            # Xaridor kanalini tayyorlaymiz
+            # Xaridor uchun yangi kanal tayyorlaymiz
+            new_channel_entity = None
             try:
                 created = await buyer_client(CreateChannelRequest(
                     title=f"Usernamechi: @{username}",
                     about="Bu kanal Usernamechi orqali sotib olingan username saqlanishi uchun.",
                     megagroup=False
                 ))
-                new_channel_id = created.chats[0].id
+                new_channel_entity = created.chats[0]   # To'liq entity (access_hash bilan!)
+                new_channel_id = new_channel_entity.id
                 logger.info(f"✅ Xaridor kanali avvaldan yaratildi: {new_channel_id}")
             except Exception as ce:
                 logger.warning(f"Xaridor kanali yaratishda xato (profil fallback ishlatiladi): {ce}")
@@ -1069,22 +1405,18 @@ async def transfer_username(bot, seller_id, buyer_id, username):
             # Sotuvchidan username ni bo'shatamiz
             if target_channel:
                 try:
-                    await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=""))
+                    # target_channel to'liq entity — raw ID o'rniga entity beramiz!
+                    await seller_client(UpdateUsernameRequest(channel=target_channel, username=""))
                     released = True
                     logger.info(f"✅ @{username} kanaldan bo'shatildi")
                 except Exception:
                     try:
-                        await seller_client(DeleteChannelRequest(channel=target_channel.id))
+                        await seller_client(DeleteChannelRequest(channel=target_channel))
                         released = True
                         logger.info(f"✅ @{username} bor kanal o'chirildi (username bo'shadi)")
                     except Exception as de:
                         logger.error(f"Sotuvchi kanalini o'chirishda xato: {de}")
             else:
-                if not is_personal_profile:
-                    me = await seller_client.get_me()
-                    if me and me.username and me.username.lower() == username.lower():
-                        is_personal_profile = True
-
                 if is_personal_profile:
                     await seller_client(AccountUpdateUsernameRequest(username=""))
                     released = True
@@ -1102,11 +1434,12 @@ async def transfer_username(bot, seller_id, buyer_id, username):
             assigned = False
             last_assign_err = None
 
-            if new_channel_id:
+            if new_channel_entity:
                 # 100 marta urinish (smart backoff orqali jami 60+ soniya kutish)
+                # new_channel_entity (to'liq entity) raw ID o'rniga beramiz!
                 for attempt in range(100):
                     try:
-                        await buyer_client(UpdateUsernameRequest(channel=new_channel_id, username=username))
+                        await buyer_client(UpdateUsernameRequest(channel=new_channel_entity, username=username))
                         assigned = True
                         logger.info(f"✅ @{username} xaridor kanaliga biriktirildi (urinish #{attempt+1})")
                         break
@@ -1124,7 +1457,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     except Exception as ae:
                         last_assign_err = ae
                         logger.warning(f"Kanal assign #{attempt+1}/100 xato: {type(ae).__name__}: {ae}")
-                        
+
                         # Dinamik kechikish (smart backoff)
                         if attempt < 5:
                             delay = 0.05
@@ -1159,7 +1492,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     except Exception as ae:
                         last_assign_err = ae
                         logger.warning(f"Profil assign #{attempt+1}/40 xato: {type(ae).__name__}: {ae}")
-                        
+
                         # Dinamik kechikish
                         if attempt < 10:
                             delay = 0.1
@@ -1174,13 +1507,14 @@ async def transfer_username(bot, seller_id, buyer_id, username):
             logger.error(f"@{username} xaridorga o'tkazilmadi, rollback...")
             try:
                 if target_channel and not is_personal_profile:
-                    await seller_client(UpdateUsernameRequest(channel=target_channel.id, username=username))
+                    await seller_client(UpdateUsernameRequest(channel=target_channel, username=username))
                 else:
                     await seller_client(AccountUpdateUsernameRequest(username=username))
                 logger.info(f"Rollback muvaffaqiyatli: @{username} sotuvchiga qaytarildi")
             except Exception as re_err:
                 logger.error(f"Rollback xato @{username}: {re_err}")
             raise last_assign_err or UsernameOccupiedError(request=None)
+
 
         # ── QADAM 4: Muvaffaqiyat xabarlari ───────────────────────────
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -1284,16 +1618,23 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 )
             except Exception: pass
         else:
+            err_type = type(e).__name__
+            err_detail = str(e)[:100] if str(e) else ''
             try:
                 await bot.send_message(
                     seller_id,
-                    f"❌ <b>@{username}</b> o'tkazishda xatolik: {type(e).__name__}",
+                    f"❌ <b>@{username}</b> o'tkazishda xatolik!\n\n"
+                    f"Xato: <code>{err_type}</code>\n"
+                    f"<i>{err_detail}</i>\n\n"
+                    f"Iltimos, admin bilan bog'laning.",
                     parse_mode="HTML"
                 )
                 await bot.send_message(
                     buyer_id,
                     f"❌ <b>@{username}</b> o'tkazishda texnik xatolik yuz berdi.\n\n"
-                    f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅",
+                    f"Xato turi: <code>{err_type}</code>\n\n"
+                    f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅\n\n"
+                    f"⚠️ Agar mablag' qaytarilmagan bo'lsa, admin bilan bog'laning.",
                     parse_mode="HTML"
                 )
             except Exception: pass
@@ -1802,13 +2143,28 @@ async def set_profile_username(call: CallbackQuery):
     client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
     try:
         await client.connect()
-        # 1. Kanaldan o'chiramiz
-        await client(DeleteChannelRequest(channel=channel_id))
-        
-        # 2. Profilga qo'yamiz
+        # 1. Kanal entity sini resolve qilamiz (raw ID ishlamay qolishi mumkin)
+        channel_entity = None
+        try:
+            channel_entity = await client.get_entity(channel_id)
+        except Exception:
+            try:
+                from telethon.tl.types import PeerChannel
+                channel_entity = await client.get_entity(PeerChannel(channel_id))
+            except Exception as ee:
+                logger.warning(f"setprofile: channel entity resolve xato: {ee}")
+
+        # 2. Kanaldan o'chiramiz
+        if channel_entity:
+            await client(DeleteChannelRequest(channel=channel_entity))
+        else:
+            await client(DeleteChannelRequest(channel=channel_id))
+
+        # 3. Profilga qo'yamiz
         await client(AccountUpdateUsernameRequest(username=username))
-        
+
         await call.message.edit_text(f"✅ <b>Tabriklaymiz!</b>\n\n@{username} muvaffaqiyatli sizning Telegram profilingizga o'rnatildi!", parse_mode="HTML")
+
     except Exception as e:
         logger.error(f"Set profile error: {e}")
         await call.message.edit_text(f"❌ Xatolik yuz berdi: {e}\n\nKanal o'chirilgan bo'lishi mumkin. Telegramingizga kirib usernameni o'zingiz qo'yib ko'ring.")
@@ -1900,7 +2256,11 @@ async def _get_fast_client(session_string: str):
     """Keshdan tezkor Telethon client qaytaradi yoki yangisini yaratadi. 15s timeout."""
     from telethon import TelegramClient
     from telethon.sessions import StringSession
-    
+
+    # Himoya: bo'sh yoki None session_string ni rad etamiz
+    if not session_string or not session_string.strip():
+        raise ValueError("session_string bo'sh yoki None — Telethon client yaratib bo'lmaydi")
+
     if session_string in _telethon_cache:
         client = _telethon_cache[session_string]
         try:
@@ -1909,7 +2269,7 @@ async def _get_fast_client(session_string: str):
         except Exception:
             pass
         _telethon_cache.pop(session_string, None)
-    
+
     client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
     try:
         await asyncio.wait_for(client.connect(), timeout=15.0)
@@ -2006,6 +2366,53 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                         logger.warning(f"Search sniper stealth telethon client fallback error: {se}")
                         telethon_client = None
 
+        # ── LLM QIDIRUV (agar API kalit bo'lsa va LLM kategoriyasi bo'lsa) ──
+        llm_categories = ('custom', 'turli', 'qisqa')
+        cat_key_for_llm = category.split(':')[0] if ':' in category else category
+        
+        db_api_key = await get_setting("llm_api_key", os.getenv("LLM_API_KEY", ""))
+        llm_results = []
+        
+        if db_api_key and cat_key_for_llm in llm_categories:
+            logger.info(f"🤖 LLM generator ishga tushdi (cat={category}, lang={lang})")
+            try:
+                base_word = category.split(':', 1)[1].strip() if ':' in category else ""
+                
+                # LLM orqali eng yaxshi bo'sh usernamelarni topish
+                llm_results = await llm_find_best_usernames(
+                    telethon_client=telethon_client,
+                    category=cat_key_for_llm,
+                    language=lang,
+                    count=max(paid_qty * 3, 10),
+                    base_word=base_word,
+                    theme=""
+                )
+                
+                # LLM natijalarini DB ga yozish
+                if llm_results:
+                    async with aiosqlite.connect(DB_PATH) as _llm_db:
+                        for _uname in llm_results:
+                            try:
+                                await _llm_db.execute(
+                                    "INSERT OR IGNORE INTO search_results (search_id, username) VALUES (?,?)",
+                                    (search_id, _uname)
+                                )
+                            except Exception:
+                                pass
+                        await _llm_db.commit()
+                    found_count += len(llm_results)
+                    logger.info(f"🤖 LLM {len(llm_results)} ta natija DB ga yozildi")
+                
+                # LLM yetarli topsa — statik qidiruvni butunlay o'tkazib yuboramiz
+                if found_count >= paid_qty:
+                    logger.info(f"🤖 LLM yetarli natija topdi ({found_count} ta) — statik lug'at o'tkazib yuborildi")
+                    async with aiosqlite.connect(DB_PATH) as _fdb:
+                        await _fdb.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
+                        await _fdb.commit()
+                    return
+            except Exception as llm_err:
+                logger.warning(f"LLM qidiruv xato — statik lug'atga o'tiladi: {llm_err}")
+
         from telethon.tl.functions.account import CheckUsernameRequest
         from telethon.errors import UsernamePurchaseAvailableError, UsernameInvalidError
 
@@ -2018,7 +2425,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         MAX_SECONDS = 100
 
         found_lock = asyncio.Lock()
-        found_usernames_set = set()
+        found_usernames_set = set(llm_results) if llm_results else set()
 
         async def check_via_telethon(uname: str) -> bool:
             if not telethon_client or not telethon_client.is_connected():
@@ -2675,9 +3082,10 @@ async def monitoring_loop(bot):
                             async with aiosqlite.connect(DB_PATH) as _db2:
                                 _db2.row_factory = aiosqlite.Row
                                 async with _db2.execute(
-                                    "SELECT t.id, t.telegram_id, t.username, u.session_string "
+                                    "SELECT t.id, t.telegram_id, t.username, u.session_string, t.paid_amount "
                                     "FROM monitoring_tasks t JOIN users u ON t.telegram_id=u.telegram_id "
-                                    "WHERE LOWER(t.username)=? AND t.status='monitoring'",
+                                    "WHERE LOWER(t.username)=? AND t.status='monitoring' "
+                                    "AND u.session_string IS NOT NULL AND u.session_string != ''",
                                     (u_lower,)
                                 ) as _c2:
                                     _tg = [dict(r) for r in await _c2.fetchall()]
@@ -2685,7 +3093,7 @@ async def monitoring_loop(bot):
                                 logger.info(f"⚡ [INSTANT CLAIM] @{queued_uname} uchun claim task yaratildi ({len(_tg)} sessiya)")
                                 asyncio.create_task(_claim_username(_tg, queued_uname, http_session))
                             else:
-                                logger.warning(f"⚡ [INSTANT WARN] @{queued_uname} DB da monitoring_tasks topilmadi (status o'zgardi?)")
+                                logger.warning(f"⚡ [INSTANT WARN] @{queued_uname} DB da monitoring_tasks topilmadi (status o'zgardi yoki sessiya yo'q?)")
                         else:
                             # BAND — Lekin monitoring davom etishi uchun KESHGA OLMAYDI!
                             # (12 soat kesh nishon usernamelarini to'xtatib qo'yadi)
@@ -2716,9 +3124,10 @@ async def monitoring_loop(bot):
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute(
-                    "SELECT t.id, t.telegram_id, t.username, u.session_string "
+                    "SELECT t.id, t.telegram_id, t.username, u.session_string, t.paid_amount "
                     "FROM monitoring_tasks t JOIN users u ON t.telegram_id=u.telegram_id "
                     "WHERE t.status='monitoring' "
+                    "AND u.session_string IS NOT NULL AND u.session_string != '' "
                     "ORDER BY t.id DESC"
                 ) as c:
                     tasks = await c.fetchall()
@@ -2842,7 +3251,8 @@ async def monitoring_loop(bot):
             ])
 
         except Exception as e:
-            logger.error(f"Monitoring loop xato: {e}")
+            import traceback
+            logger.error(f"Monitoring loop xato: {e}\n{traceback.format_exc()}")
 
         await asyncio.sleep(2.0)  # 2 soniya kutamiz — ortiqcha so'rovlar oldini oladi
 
@@ -4673,6 +5083,7 @@ async def api_search_start(request: Request):
     CATEGORY_PRICES = {
         'qisqa': 15000,   # Qisqa noyob so'z
         'turli': 10000,   # Turli ko'rinishdagi
+        'custom': 5000,   # O'zim kiritaman
     }
     # custom: o'zim kiritaman
     cat_key = cat.split(':')[0] if ':' in cat else cat
@@ -4950,13 +5361,19 @@ async def api_admin_settings_get(x_admin_token: str = Header(default="")):
     monitor_price = await get_setting("monitor_price", "10000")
     listing_price = await get_setting("listing_price", "1000")
     daily_bonus_amount = await get_setting("daily_bonus_amount", "1000")
+    llm_api_key = await get_setting("llm_api_key", "")
+    llm_model = await get_setting("llm_model", "anthropic/claude-sonnet-4-5")
+    llm_api_url = await get_setting("llm_api_url", "https://openrouter.ai/api/v1/chat/completions")
     return {
         "payment_card": card, 
         "payment_channel_id": channel, 
         "premium_price": premium_price,
         "monitor_price": monitor_price,
         "listing_price": listing_price,
-        "daily_bonus_amount": daily_bonus_amount
+        "daily_bonus_amount": daily_bonus_amount,
+        "llm_api_key": llm_api_key,
+        "llm_model": llm_model,
+        "llm_api_url": llm_api_url
     }
 
 @app.post("/api/admin/settings")
@@ -4978,6 +5395,12 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
         await set_setting("listing_price", data['listing_price'])
     if 'daily_bonus_amount' in data:
         await set_setting("daily_bonus_amount", data['daily_bonus_amount'])
+    if 'llm_api_key' in data:
+        await set_setting("llm_api_key", data['llm_api_key'])
+    if 'llm_model' in data:
+        await set_setting("llm_model", data['llm_model'])
+    if 'llm_api_url' in data:
+        await set_setting("llm_api_url", data['llm_api_url'])
 @app.get("/api/admin/channels")
 async def api_admin_channels_get(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:

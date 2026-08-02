@@ -558,6 +558,18 @@ body::before {
           <label class="form-label">🎁 Kunlik Bonus Miqdori (so'm)</label>
           <input type="number" id="set-daily-bonus" class="form-input" placeholder="1000">
         </div>
+        <div class="form-group">
+          <label class="form-label">🔑 LLM API Key (OpenRouter, Gemini, OpenAI va h.k.)</label>
+          <input type="password" id="set-llm-api-key" class="form-input" placeholder="sk-or-v1-...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">🤖 LLM Model</label>
+          <input type="text" id="set-llm-model" class="form-input" placeholder="anthropic/claude-sonnet-4-5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">🌐 LLM API URL</label>
+          <input type="text" id="set-llm-api-url" class="form-input" placeholder="https://openrouter.ai/api/v1/chat/completions">
+        </div>
         <button class="action-btn btn-primary" style="padding:14px 28px; width:100%; justify-content:center; margin-top:10px;" onclick="saveSettings()">💾 Saqlash</button>
       </div>
     </div>
@@ -1436,6 +1448,9 @@ async function loadSettings() {
     document.getElementById('set-monitor-price').value = s.monitor_price || '10000';
     document.getElementById('set-listing-price').value = s.listing_price || '1000';
     document.getElementById('set-daily-bonus').value = s.daily_bonus_amount || '1000';
+    document.getElementById('set-llm-api-key').value = s.llm_api_key || '';
+    document.getElementById('set-llm-model').value = s.llm_model || 'anthropic/claude-sonnet-4-5';
+    document.getElementById('set-llm-api-url').value = s.llm_api_url || 'https://openrouter.ai/api/v1/chat/completions';
     loadCards();
     loadMandatoryChannels();
   } catch(e) {}
@@ -1447,7 +1462,10 @@ async function saveSettings() {
     premium_price: document.getElementById('set-premium-price').value,
     monitor_price: document.getElementById('set-monitor-price').value,
     listing_price: document.getElementById('set-listing-price').value,
-    daily_bonus_amount: document.getElementById('set-daily-bonus').value
+    daily_bonus_amount: document.getElementById('set-daily-bonus').value,
+    llm_api_key: document.getElementById('set-llm-api-key').value,
+    llm_model: document.getElementById('set-llm-model').value,
+    llm_api_url: document.getElementById('set-llm-api-url').value
   };
   try {
     await fetch('/api/admin/settings', {
