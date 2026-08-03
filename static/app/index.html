@@ -2149,9 +2149,35 @@ async function buyListing(id) {
   const price = listing.price || 0;
   const uname = listing.username || '';
 
-  if (!confirm(`@${uname} ni ${price.toLocaleString()} so'm balansingizdan sotib olasizmi?`)) return;
+  // Telegram WebApp Native Popup tanlov oynasi
+  if (typeof tg.showPopup === 'function') {
+    tg.showPopup({
+      title: "Sotib olish usulini tanlang",
+      message: `@${uname} nomini qanday usulda sotib olmoqchisiz?\n\nNarxi: ${price.toLocaleString()} so'm`,
+      buttons: [
+        {id: "auto", type: "default", text: "🤖 Avtomatik bot orqali (Instant)"},
+        {id: "admin", type: "ok", text: "👤 Admin orqali (Escrow/Garant)"},
+        {id: "cancel", type: "cancel", text: "Bekor qilish"}
+      ]
+    }, function(buttonId) {
+      if (buttonId === "auto") {
+        executeAutoBuy(id, uname, price);
+      } else if (buttonId === "admin") {
+        executeAdminBuy(id, uname, price);
+      }
+    });
+  } else {
+    // Brauzer uchun fallback
+    const choice = confirm(`@${uname} ni sotib olish usulini tanlang:\n\n[OK] - Avtomatik bot orqali\n[Cancel] - Admin (Garant) orqali`);
+    if (choice) {
+      executeAutoBuy(id, uname, price);
+    } else {
+      executeAdminBuy(id, uname, price);
+    }
+  }
+}
 
-  // Tugmani lock qilamiz (double-click oldini olish)
+async function executeAutoBuy(id, uname, price) {
   const btn = document.querySelector(`[onclick="buyListing(${id})"]`);
   const origText = btn ? btn.innerHTML : null;
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Kutilmoqda...'; }
@@ -2171,6 +2197,41 @@ async function buyListing(id) {
       if (card) card.remove();
       showToast(`✅ @${d.username} sotib olindi! Username akkauntingizga o'tkazilmoqda...`, "success");
       await loadUserData();
+    } else {
+      showToast(d.error || "Xatolik yuz berdi", "error");
+      if (btn) { btn.disabled = false; btn.innerHTML = origText; }
+    }
+  } catch(e) {
+    showToast("Internet ulanishini tekshiring", "error");
+    if (btn) { btn.disabled = false; btn.innerHTML = origText; }
+  }
+}
+
+async function executeAdminBuy(id, uname, price) {
+  const btn = document.querySelector(`[onclick="buyListing(${id})"]`);
+  const origText = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Garant rasmiylashtirilmoqda...'; }
+
+  try {
+    const res = await fetch(`${API}/api/marketplace/buy_via_admin`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({init_data: tg.initData, listing_id: id})
+    });
+
+    let d;
+    try { d = await res.json(); }
+    catch(je) { return showToast(`Server javobi xato (HTTP ${res.status})`, "error"); }
+
+    if(d.ok) {
+      const card = document.getElementById(`listing-item-${id}`);
+      if (card) card.remove();
+      showToast("✅ Garant rasmiylashtirildi! Adminga yo'naltirilmoqda...", "success");
+      await loadUserData();
+      if (d.redirect_url) {
+        setTimeout(() => {
+          tg.openTelegramLink(d.redirect_url);
+        }, 1500);
+      }
     } else {
       showToast(d.error || "Xatolik yuz berdi", "error");
       if (btn) { btn.disabled = false; btn.innerHTML = origText; }

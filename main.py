@@ -4512,6 +4512,112 @@ async def api_marketplace_buy(request: Request):
         "message": f"✅ @{username} muvaffaqiyatli sotib olindi! Username akkauntingizga o'tkazilmoqda..."
     }
 
+@app.post("/api/marketplace/buy_via_admin")
+async def api_marketplace_buy_via_admin(request: Request):
+    data = await request.json()
+    user = verify_init_data(data.get('init_data',''))
+    if not user: raise HTTPException(403)
+    tid = user['id']
+    listing_id = int(data.get('listing_id', 0))
+    
+    buyer = await get_user(tid)
+    if not buyer:
+        return {"ok": False, "error": "Foydalanuvchi topilmadi"}
+        
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        
+        # E'lonni olish
+        async with db.execute("SELECT * FROM listings WHERE id=? AND status='active'", (listing_id,)) as c:
+            listing = await c.fetchone()
+        if not listing:
+            return {"ok": False, "error": "E'lon topilmadi yoki allaqachon sotilgan"}
+        if listing['seller_id'] == tid:
+            return {"ok": False, "error": "O'z e'loningizni sotib ololmaysiz"}
+        
+        price = int(listing['price'])
+        buyer_balance = int(buyer.get('balance', 0))
+        
+        # Balansni tekshirish
+        if buyer_balance < price:
+            return {
+                "ok": False, 
+                "error": f"Balansingiz yetarli emas! Kerak: {price:,} so'm, Mavjud: {buyer_balance:,} so'm"
+            }
+        
+        username = listing['username']
+        seller_id = listing['seller_id']
+
+        # ── ATOMIK TRANZAKSIYA ──────────────────
+        # 1. Xaridor balansidan pulni yechamiz (Garant hisobi uchun botda ushlab turiladi)
+        cur = await db.execute(
+            "UPDATE users SET balance = balance - ? WHERE telegram_id = ? AND balance >= ?",
+            (price, tid, price)
+        )
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"Balansingiz yetarli emas! Kerak: {price:,} so'm"}
+
+        # 2. E'lonni 'sold' qilamiz
+        cur2 = await db.execute(
+            "UPDATE listings SET status='sold' WHERE id=? AND status='active'",
+            (listing_id,)
+        )
+        if cur2.rowcount == 0:
+            await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, tid))
+            await db.commit()
+            return {"ok": False, "error": "E'lon allaqachon sotilgan. Pul balansingizga qaytarildi."}
+
+        # 3. Buyurtma yaratamiz (status='pending_admin')
+        await db.execute(
+            "INSERT INTO listing_orders (listing_id, buyer_id, expected_amount, status) VALUES (?,?,?,'pending_admin')",
+            (listing_id, tid, price)
+        )
+        await db.commit()
+
+    # 4. Kanal postini "SOTILDI" holatiga o'tkazamiz
+    asyncio.create_task(update_channel_listing_post(listing_id, 'sold'))
+
+    # 5. Sotuvchiga botdan maxsus ogohlantirish xabari yuboriladi
+    buyer_name = buyer.get('first_name', '') or ''
+    buyer_uname = buyer.get('username', '') or ''
+    buyer_mention = f"@{buyer_uname}" if buyer_uname else buyer_name or f"ID:{tid}"
+    
+    seller_msg = (
+        f"🔔 <b>Username sotildi! (Admin orqali Garant)</b>\n\n"
+        f"🔤 Username: <b>@{username}</b>\n"
+        f"👤 Xaridor: <b>{buyer_mention}</b>\n"
+        f"💵 Narxi: <b>{price:,} so'm</b>\n"
+        f"─────────────────\n"
+        f"⚠️ <b>E'tibor bering:</b> Xaridor ushbu nomni <b>Admin (Garant)</b> orqali sotib olishni tanladi.\n\n"
+        f"💬 Iltimos, zudlik bilan admin bilan bog'lanib, usernamening egaligini xaridorga o'tkazishingiz kerak. "
+        f"O'tkazish to'liq yakunlanganidan so'ng, admin savdo balansingizga pulni o'tkazib beradi va uni yechib olishingiz mumkin bo'ladi."
+    )
+    try:
+        await bot.send_message(seller_id, seller_msg, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Failed to notify seller for admin-buy: {e}")
+
+    # 6. Admin kontaktini olish (birlamchi qiymat: 'admin')
+    admin_contact = await get_setting("admin_username", "admin")
+    admin_contact = admin_contact.strip().replace("@", "")
+
+    # 7. Xaridor uchun xabarni tayyorlaymiz (urlencode)
+    import urllib.parse
+    chat_text = (
+        f"Assalomu alaykum, admin! Men bot orqali @{username} nomini sotib olish uchun balansimdan to'lov qildim. "
+        f"Ushbu usernameni xavfsiz mening akkauntimga o'tkazishda garant (escrow) bo'lib berishingizni so'rayman."
+    )
+    encoded_text = urllib.parse.quote(chat_text)
+    tg_link = f"https://t.me/{admin_contact}?text={encoded_text}"
+
+    return {
+        "ok": True,
+        "username": username,
+        "price": price,
+        "message": "Garant orqali sotib olish muvaffaqiyatli rasmiylashtirildi!",
+        "redirect_url": tg_link
+    }
+
 # ── TOP LISTINGS & USERNAME CHECKER ─────────────
 @app.get("/api/marketplace/top")
 async def api_marketplace_top(init_data: str = ""):
