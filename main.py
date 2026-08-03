@@ -1822,6 +1822,36 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     target_status = 'active'
                     if released and not assigned and not rollback_success:
                         target_status = 'failed'
+                        
+                        # 🚨 SOS: ADMIN ALERT (USERNAME YO'QOTILDI!)
+                        try:
+                            # 1. Admin kanali yoki adminlarga favqulodda xabar yuborish
+                            alert_msg = (
+                                f"🚨 <b>FAVQULODDA XATOLIK: USERNAME YO'QOTILDI!</b> 🚨\n\n"
+                                f"🔤 Username: <b>@{username}</b>\n"
+                                f"👤 Sotuvchi ID: <code>{seller_id}</code>\n"
+                                f"👤 Xaridor ID: <code>{buyer_id}</code>\n"
+                                f"💵 Tranzaksiya narxi: <b>{refund_price:,} so'm</b>\n\n"
+                                f"⚠️ <b>Tafsilot:</b> Username sotuvchi akkauntidan muvaffaqiyatli bo'shatildi, "
+                                f"lekin xaridor akkauntiga biriktirishda xatolik yuz berdi. "
+                                f"Shuningdek, uni sotuvchiga qaytarish (Rollback) urinishi ham <b>MUVAFFAQIYATSIZ</b> tugadi!\n\n"
+                                f"📢 <b>Zudlik bilan choralar ko'ring:</b> Username band qilinganligini va har ikki "
+                                f"akkaunt holatini qo'lda tekshiring!"
+                            )
+                            
+                            # Admin kanaliga jo'natish
+                            if ADMIN_CHANNEL and ADMIN_CHANNEL != 0:
+                                await bot.send_message(ADMIN_CHANNEL, alert_msg, parse_mode="HTML")
+                            
+                            # Barcha adminlarga jo'natish
+                            for admin_id in ADMIN_IDS:
+                                try:
+                                    await bot.send_message(admin_id, alert_msg, parse_mode="HTML")
+                                except: pass
+                                
+                            logger.critical(f"🚨 CRITICAL SOS: @{username} lost! Admin alerted.")
+                        except Exception as alert_err:
+                            logger.error(f"SOS alert sending error: {alert_err}")
 
                     await _db.execute(
                         "UPDATE listings SET status=? WHERE id=?",
