@@ -527,10 +527,11 @@ async def update_balance(telegram_id, amount):
         await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (amount, telegram_id))
         await db.commit()
 
-async def deduct_balance(telegram_id, amount):
+async def deduct_balance(telegram_id, amount) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET balance=balance-? WHERE telegram_id=?", (amount, telegram_id))
+        cur = await db.execute("UPDATE users SET balance=balance-? WHERE telegram_id=? AND balance>=?", (amount, telegram_id, amount))
         await db.commit()
+        return cur.rowcount > 0
 
 # ─── USERNAME GENERATOR ───────────────────────
 from bot.words import (
@@ -2345,7 +2346,9 @@ async def place_order(call: CallbackQuery):
     total = int(data[3])
     user_id = call.from_user.id
     
-    await deduct_balance(user_id, total)
+    if not await deduct_balance(user_id, total):
+        await call.answer("❌ Balansingiz yetarli emas!", show_alert=True)
+        return
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             "INSERT INTO orders (telegram_id, category, quantity, price, status, user_first_name) VALUES (?,?,?,?,'processing',?)",
@@ -4145,7 +4148,8 @@ async def api_marketplace_list(request: Request):
     is_auction = 1 if data.get('is_auction') else 0
     auction_ends_at = time.time() + 86400 if is_auction else 0
     
-    await deduct_balance(tid, LISTING_FEE)
+    if not await deduct_balance(tid, LISTING_FEE):
+        return {"ok": False, "error": f"E'lon joylash narxi {LISTING_FEE:,} so'm. Balansingiz yetarli emas."}
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("INSERT INTO listings (seller_id, username, price, is_auction, current_bid, auction_ends_at) VALUES (?,?,?,?,?,?)", 
                          (tid, username, price, is_auction, price if is_auction else 0, auction_ends_at))
@@ -4540,8 +4544,25 @@ async def auction_close_loop(bot_instance):
                     seller_net  = int(final_bid * (1 - fee_pct))
                     
                     async with aiosqlite.connect(DB_PATH) as db:
-                        # Xaridordan pul yechish
-                        await db.execute("UPDATE users SET balance=balance-? WHERE telegram_id=?", (final_bid, winner_id))
+                        # Atomik ravishda xaridordan pul yechamiz (balans yetarli bo'lsagina)
+                        cur = await db.execute(
+                            "UPDATE users SET balance=balance-? WHERE telegram_id=? AND balance>=?", 
+                            (final_bid, winner_id, final_bid)
+                        )
+                        if cur.rowcount == 0:
+                            # Balans yetmay qoldi (so'nggi soniyada pul sarflangan)
+                            await db.execute("UPDATE listings SET status='cancelled' WHERE id=?", (lid,))
+                            await db.commit()
+                            try:
+                                await bot_instance.send_message(
+                                    winner_id,
+                                    f"❌ <b>Auksion bekor qilindi</b>\n\n"
+                                    f"@{username} auksionini yutdingiz, lekin balansingiz yetarli emas!",
+                                    parse_mode="HTML"
+                                )
+                            except Exception: pass
+                            continue
+
                         # Sotuvchiga seller_balance
                         await db.execute("UPDATE users SET seller_balance=seller_balance+? WHERE telegram_id=?", (seller_net, seller_id))
                         # E'lonni yopish
@@ -4845,13 +4866,13 @@ async def api_seller_transfer(request: Request):
     if amount < 1000:
         return {"ok": False, "error": "Minimal o'tkazma: 1,000 so'm"}
     
-    row = await get_user(tid)
-    seller_bal = row.get('seller_balance', 0) if row else 0
-    if seller_bal < amount:
-        return {"ok": False, "error": f"Sotuvchi balansingiz yetarli emas ({seller_bal:,} so'm)"}
-    
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET seller_balance=seller_balance-?, balance=balance+? WHERE telegram_id=?", (amount, amount, tid))
+        cur = await db.execute(
+            "UPDATE users SET seller_balance=seller_balance-?, balance=balance+? WHERE telegram_id=? AND seller_balance>=?",
+            (amount, amount, tid, amount)
+        )
+        if cur.rowcount == 0:
+            return {"ok": False, "error": "Sotuvchi balansingiz yetarli emas"}
         await db.commit()
     
     return {"ok": True, "message": f"{amount:,} so'm asosiy balansga o'tkazildi!"}
@@ -4868,10 +4889,9 @@ async def api_premium_buy(request: Request):
     row = await get_user(tid)
     if not row: return {"ok": False, "error": "Foydalanuvchi topilmadi"}
     
-    if (row.get('balance') or 0) < PREMIUM_PRICE:
+    if not await deduct_balance(tid, PREMIUM_PRICE):
         return {"ok": False, "error": f"Premium uchun {PREMIUM_PRICE:,} so'm kerak. Balansingiz yetarli emas."}
-    
-    await deduct_balance(tid, PREMIUM_PRICE)
+        
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE users SET is_premium=1, premium_until=datetime('now', '+30 days') WHERE telegram_id=?", (tid,))
         await db.commit()
@@ -5280,11 +5300,8 @@ async def api_search_start(request: Request):
 
     # Narxni kategoriyaga qarab hisoblash (100% haqiqiy narx yechiladi)
     total_price = qty * unit_price
-    if (row['balance'] or 0) < total_price:
+    if not await deduct_balance(tid, total_price):
         return {"ok": False, "error": f"Balans yetarli emas ({total_price:,} so'm kerak)"}
-
-    # Pulni foydalanuvchi balansidan yechamiz
-    await deduct_balance(tid, total_price)
 
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
@@ -5393,13 +5410,8 @@ async def api_buy_selected(request: Request):
     price_per_item = CATEGORY_PRICES.get(cat_key, int(await get_setting("username_price", 5000)))
     price = qty * price_per_item
     
-    # Balans tekshiruvi
-    user_balance = int(row.get('balance') or 0)
-    if user_balance < price:
-        return {"ok": False, "error": f"Balans yetarli emas! Kerak: {price:,} so'm, Sizda: {user_balance:,} so'm"}
-    
-    # Balansdan yechib olamiz (oldindan)
-    await deduct_balance(tid, price)
+    if not await deduct_balance(tid, price):
+        return {"ok": False, "error": f"Balans yetarli emas! Kerak: {price:,} so'm"}
     
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("INSERT INTO orders (telegram_id, category, quantity, price, status, user_first_name) VALUES (?,?,?,?,'processing',?)",
