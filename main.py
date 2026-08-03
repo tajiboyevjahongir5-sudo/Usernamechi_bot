@@ -2971,6 +2971,7 @@ async def monitoring_loop(bot):
     taken_usernames_cache: dict = {}   # {uname_lower: expiry_ts} — Band/muzlatilgan nomlar keshi (12 soat TTL)
     last_channel_created: dict = {}    # {session_hash: timestamp}
     last_checked_ts: dict = {}         # {uname_lower: last_check_time} — har bir nom uchun oxirgi tekshiruv vaqti
+    dynamic_intervals: dict = {}       # {uname_lower: interval_seconds} — dinamik rate limit
     CHECK_INTERVAL = 5.0               # Har bir username minimum 5 soniyada bir tekshiriladi
     last_monitor_log_ts = 0.0          # Monitoring log spamini oldini olish uchun
 
@@ -3352,7 +3353,7 @@ async def monitoring_loop(bot):
                 continue
 
             async def check_uname_group(uname_lower, task_group):
-                nonlocal global_429_count, taken_usernames_cache, last_channel_created, last_checked_ts
+                nonlocal global_429_count, taken_usernames_cache, last_channel_created, last_checked_ts, dynamic_intervals
                 # Kesh ichida bo'lsa — o'tkazib yuboramiz
                 if taken_usernames_cache.get(uname_lower, 0) > time.time():
                     return
@@ -3361,10 +3362,11 @@ async def monitoring_loop(bot):
                 if not task_group:
                     return
 
-                # Rate limit: har bir username kamida CHECK_INTERVAL soniyada bir tekshiriladi
+                # Dinamik Rate limit: interval nishon turiga qarab o'zgaradi
                 now_t = time.time()
                 last_t = last_checked_ts.get(uname_lower, 0)
-                if now_t - last_t < CHECK_INTERVAL:
+                current_interval = dynamic_intervals.get(uname_lower, 5.0)
+                if now_t - last_t < current_interval:
                     return  # Hali erta, keyingi tsiklga qoldiramiz
 
                 async with sem:
@@ -3377,7 +3379,7 @@ async def monitoring_loop(bot):
 
                     uname = task_group[0]["username"]
                     last_checked_ts[uname_lower] = time.time()  # Tekshiruv vaqtini belgilaymiz
-                    logger.info(f"Checking target @{uname}...")
+                    logger.info(f"Checking target @{uname} (interval: {current_interval:.1f}s)...")
                     try:
                         # 1-qadam: t.me HTTP tekshiruv (User-Agent rotatsiyasi, timeout 4.0s)
                         async with http_session.get(
@@ -3396,7 +3398,35 @@ async def monitoring_loop(bot):
 
                             text = await resp.text()  # HTML matnini o'qiymiz
 
-                            # Aniq band profil, kanal, guruh, bot yoki fragment auksioni bo'lsa — monitoring davom etadi (CHECK_INTERVAL bilan)
+                            # Smart Adaptive Polling: subscribers/members va status tekshirish
+                            extra_text = ""
+                            if 'tgme_page_extra' in text:
+                                import re as _re
+                                match_extra = _re.search(r'class="tgme_page_extra"[^>]*>(.*?)</div>', text, _re.DOTALL)
+                                if match_extra:
+                                    extra_text = match_extra.group(1).lower()
+
+                            new_interval = 8.0  # normal profil uchun standart
+                            if 'subscribers' in extra_text or 'members' in extra_text:
+                                digits = ''.join(c for c in extra_text if c.isdigit() or c in (' ', ',', '.'))
+                                digits_clean = ''.join(c for c in digits if c.isdigit())
+                                if digits_clean:
+                                    count = int(digits_clean)
+                                    if count > 10000:
+                                        new_interval = 75.0  # 10k+ kanallar -> 75s (egasi o'zgartirishi kamdan-kam)
+                                    elif count > 1000:
+                                        new_interval = 45.0  # 1k+ kanallar -> 45s
+                                    elif count > 100:
+                                        new_interval = 25.0  # 100+ o'rtacha kanallar -> 25s
+                                    else:
+                                        new_interval = 15.0  # kichik ommaviy kanallar -> 15s
+                            elif 'fragment.com' in text or 'auction' in text:
+                                new_interval = 35.0  # auktsionlar bir necha kunga cho'ziladi -> 35s
+                            
+                            # Dinamik intervalni keshlaymiz
+                            dynamic_intervals[uname_lower] = new_interval
+
+                            # Aniq band profil, kanal, guruh, bot yoki fragment auksioni bo'lsa — monitoring davom etadi
                             taken_markers = (
                                 'tgme_page_title', 'tgme_page_extra', 'tgme_page_photo',
                                 'tgme_page_action', 'tgme_action_button_new', 'tgme_page_icon',
