@@ -950,6 +950,57 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         random.shuffle(var_pool)
         pool = var_pool
 
+    elif cat == 'turli':
+        # Har xil uslub aralash: brend, ism, tabiat, texno, ijodiy
+        style_words = {
+            'uz': [
+                'koinot','olov','botir','usta','tezkor','ulug','yulduz',
+                'bulut','qoplon','arslon','lochin','shamol','daryo','togʼ',
+                'nurli','jasur','aqlli','jasorat','mard','zafar'
+            ],
+            'en': [
+                'storm','forge','nova','spark','echo','flux','edge',
+                'core','drift','vault','lynx','hawk','ridge','dawn',
+                'swift','blaze','axon','prime','orbit','craft'
+            ]
+        }
+        style_sfx = {
+            'uz': ['uz','uzb','bot','kanal','clan','pro','vip','top','hub','usta'],
+            'en': ['pro','hub','lab','hq','bot','zone','clan','co','ai','x']
+        }
+        style_pfx = {
+            'uz': ['real','the','mega','ultra','super','vip','iam','mr','top'],
+            'en': ['real','the','neo','dark','cyber','ultra','super','vip','iam']
+        }
+        if lang == 'uz':
+            bases_all = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_WORDS_CLEAN + style_words['uz']))
+        else:
+            bases_all = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + EN_COOL_CLEAN + nouns + style_words['en']))
+        bases_all = [str(w).lower() for w in bases_all if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+        random.shuffle(bases_all)
+        sfx_list = style_sfx.get(lang, style_sfx['en'])
+        pfx_list = style_pfx.get(lang, style_pfx['en'])
+        var_pool = []
+        for w in bases_all[:600]:
+            # Uslub 1: so'z + qisqartma
+            for sfx in sfx_list[:5]:
+                var_pool.append(f"{w}_{sfx}")
+                var_pool.append(f"{w}{sfx}")
+            # Uslub 2: prefiks + so'z
+            for pfx in pfx_list[:4]:
+                var_pool.append(f"{pfx}_{w}")
+                var_pool.append(f"{pfx}{w}")
+            # Uslub 3: so'z + raqam
+            for num in ['7','21','33','99','2025','007']:
+                var_pool.append(f"{w}{num}")
+            # Uslub 4: ikki so'z birikmasi
+            if bases_all:
+                pair = random.choice(bases_all)
+                if 7 <= len(w + pair) <= 14:
+                    var_pool.append(f"{w}{pair}")
+        random.shuffle(var_pool)
+        pool = var_pool
+
     else:
         from bot.words import _is_pronounceable
         if lang == 'uz':
@@ -1223,8 +1274,72 @@ async def stop_stealth_client(telegram_id):
 async def transfer_username(bot, seller_id, buyer_id, username):
     seller = await get_user(seller_id)
     buyer = await get_user(buyer_id)
-    if not seller or not seller.get('session_string'): return
-    if not buyer or not buyer.get('session_string'): return
+
+    # Sotuvchi sessiyasi yo'q — refund qilib xabar yubor
+    if not seller or not seller.get('session_string'):
+        logger.error(f"Transfer @{username}: sotuvchi ({seller_id}) sessiyasi yo'q — refund boshlanadi")
+        try:
+            async with aiosqlite.connect(DB_PATH) as _rdb:
+                _rdb.row_factory = aiosqlite.Row
+                async with _rdb.execute(
+                    "SELECT id, price FROM listings WHERE username=? ORDER BY id DESC LIMIT 1", (username,)
+                ) as _rc:
+                    _rl = await _rc.fetchone()
+                if _rl:
+                    _rprice = int(_rl['price'])
+                    await _rdb.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (_rprice, buyer_id))
+                    _sd = await get_user(seller_id)
+                    _fee = 0.05 if (_sd and _sd.get('is_premium')) else 0.10
+                    _snet = int(_rprice * (1 - _fee))
+                    await _rdb.execute("UPDATE users SET seller_balance = MAX(0, seller_balance - ?) WHERE telegram_id = ?", (_snet, seller_id))
+                    await _rdb.execute("UPDATE listings SET status='active' WHERE id=?", (_rl['id'],))
+                    await _rdb.commit()
+                    logger.info(f"Refund muvaffaqiyatli: {_rprice:,} so'm → buyer ({buyer_id})")
+        except Exception as _re:
+            logger.error(f"Sotuvchi sessiyasiz refund xato: {_re}")
+        try:
+            await bot.send_message(buyer_id,
+                f"❌ <b>@{username}</b> o'tkazilmadi!\n\nSotuvchining Telegram sessiyasi uzilgan.\n"
+                f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅", parse_mode="HTML")
+            await bot.send_message(seller_id,
+                f"❌ <b>@{username}</b> o'tkazishda xatolik!\nTelegram sessiyangiz uzilgan. Qayta ulaning.",
+                parse_mode="HTML")
+        except Exception: pass
+        return
+
+    # Xaridor sessiyasi yo'q — xaridorga sessiyasiz transfer urinib ko'ramiz
+    # (kanal usuli uchun xaridor sessiyasi shart; profil usuli uchun esa shart emas)
+    if not buyer or not buyer.get('session_string'):
+        logger.warning(f"Transfer @{username}: xaridor ({buyer_id}) sessiyasi yo'q — refund qilinadi")
+        try:
+            async with aiosqlite.connect(DB_PATH) as _rdb:
+                _rdb.row_factory = aiosqlite.Row
+                async with _rdb.execute(
+                    "SELECT id, price FROM listings WHERE username=? ORDER BY id DESC LIMIT 1", (username,)
+                ) as _rc:
+                    _rl = await _rc.fetchone()
+                if _rl:
+                    _rprice = int(_rl['price'])
+                    await _rdb.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (_rprice, buyer_id))
+                    _sd = await get_user(seller_id)
+                    _fee = 0.05 if (_sd and _sd.get('is_premium')) else 0.10
+                    _snet = int(_rprice * (1 - _fee))
+                    await _rdb.execute("UPDATE users SET seller_balance = MAX(0, seller_balance - ?) WHERE telegram_id = ?", (_snet, seller_id))
+                    await _rdb.execute("UPDATE listings SET status='active' WHERE id=?", (_rl['id'],))
+                    await _rdb.commit()
+                    logger.info(f"Refund (xaridor sessiyasiz): {_rprice:,} so'm → buyer ({buyer_id})")
+        except Exception as _re:
+            logger.error(f"Xaridor sessiyasiz refund xato: {_re}")
+        try:
+            await bot.send_message(buyer_id,
+                f"❌ <b>@{username}</b> o'tkazilmadi!\n\nUsername qabul qilish uchun Telegram akkauntingizni ulang.\n"
+                f"👉 Akkaunt → Telegram ulash\n"
+                f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅", parse_mode="HTML")
+            await bot.send_message(seller_id,
+                f"ℹ️ <b>@{username}</b> o'tkazilmadi — xaridor Telegram sessiyasini ulamagan.\n"
+                f"E'lon qayta faol holatga qaytarildi.", parse_mode="HTML")
+        except Exception: pass
+        return
 
     from telethon import TelegramClient
     from telethon.sessions import StringSession
