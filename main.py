@@ -3618,7 +3618,16 @@ async def mini_app():
         })
 
 @app.get("/admin")
-async def admin_panel():
+async def admin_panel(token: str = ""):
+    # 👑 Xavfsizlik: Faqat to'g'ri admin token bilan kirishga ruxsat beramiz
+    is_valid = False
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == token:
+            is_valid = True
+            break
+    if not is_valid:
+        return HTMLResponse(content="<h1>403 Forbidden</h1>", status_code=403)
+
     with open("static/admin/index.html", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
