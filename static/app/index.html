@@ -1839,6 +1839,16 @@ async function listUsername(username) {
     const d = await res.json();
     if(d.ok) {
       showToast("E'lon qo'shildi!", "success");
+      if (d.warning === '2FA') {
+        setTimeout(() => {
+          tg.showAlert(
+            `⚠️ MUHIM: @${username} transferini xavfsiz o'tkazish uchun 2FA (ikki bosqichli tasdiqlash) paroli bot bazasida yo'q!\n\n` +
+            `2FA paroli bo'lmasa, username sotilganda bir lahzalik oralig'ida boshqa birov uni olib qo'yishi mumkin.\n\n` +
+            `✅ Yechim: Profil > Akkaunt bo'limida 2FA parolingizni kiriting.\n` +
+            `Shunda transfer 100% xavfsiz bo'ladi!`
+          );
+        }, 1000);
+      }
       loadUserData();
       goPage('market');
     } else {
@@ -2095,6 +2105,17 @@ async function executePostListing() {
       document.getElementById('post-price-input').value = '';
       loadUserData();
       loadMyListings();
+      // 2FA ogohlantirishini ko'rsatamiz
+      if (d.warning === '2FA') {
+        setTimeout(() => {
+          tg.showAlert(
+            `⚠️ MUHIM: E'lon qo'yildi, lekin 2FA paroli botda yo'q!\n\n` +
+            `Username sotilayotganda bir lahzalik oralig'ida boshqa birov uni olib qo'yishi mumkin.\n\n` +
+            `✅ Buning oldini olish uchun:\nProfil > Akkaunt bo'limida 2FA parolingizni kiriting.\n\n` +
+            `2FA bo'lsa: transfer 100% xavfsiz (kanal to'g'ridan-to'g'ri o'tadi)!`
+          );
+        }, 800);
+      }
     } else {
       showToast(d.error || "Xatolik yuz berdi", "error");
     }

@@ -1108,7 +1108,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
 
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 Dasturni ochish", web_app=WebAppInfo(url=f"{WEB_URL}/app?v=3"))]
+        [InlineKeyboardButton(text="📱 Dasturni ochish", web_app=WebAppInfo(url=f"{WEB_URL}/app?v=4"))]
     ])
 
 # ─── ROUTER VA HANDLERLAR ─────────────────────
@@ -2133,7 +2133,7 @@ async def _start_cmd_inner(message: Message):
     start_param = args[1] if len(args) > 1 else ""
     if start_param.startswith("listing_") or start_param.startswith("market_"):
         listing_id = start_param.replace("listing_", "").replace("market_", "")
-        app_url = f"{WEB_URL}/app?v=3&tgWebAppStartParam={start_param}"
+        app_url = f"{WEB_URL}/app?v=4&tgWebAppStartParam={start_param}"
         
         # E'lon haqida qisqa ma'lumot olishga urinamiz
         info_text = f"🛒 <b>Bozor e'loniga o'tish</b>"
@@ -4227,6 +4227,9 @@ async def api_marketplace_list(request: Request):
     except Exception as verify_e:
         logger.warning(f"Ownership verify error for @{username}: {verify_e}")
     
+    # 2FA paroli borligini tekshirish
+    has_2fa = bool(row.get('tg_password'))
+    
     is_auction = 1 if data.get('is_auction') else 0
     auction_ends_at = time.time() + 86400 if is_auction else 0
     
@@ -4282,7 +4285,7 @@ async def api_marketplace_list(request: Request):
             except Exception as e:
                 logger.error(f"Marketplace channel broadcast xato ({mkt_channel}): {e}")
 
-    return {"ok": True}
+    return {"ok": True, "warning": None if has_2fa else "2FA"}
 
 
 async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
