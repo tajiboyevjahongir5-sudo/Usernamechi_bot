@@ -1827,11 +1827,13 @@ async def auto_payment_handler(message: Message):
         if not text:
             return
             
-        clean_text = re.sub(r'[^0-9]', ' ', text)
+        # Minglik ajratuvchi bo'shliq, vergul va nuqtalarni o'chirib normalized qilamiz (masalan: 25 000, 25,000, 25.000 -> 25000)
+        normalized = re.sub(r'(?<=\d)[\s,.]+(?=\d{3}(?!\d))', '', text)
+        clean_text = re.sub(r'[^0-9]', ' ', normalized)
         numbers = [int(n) for n in clean_text.split() if n.strip()]
         
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE topups SET status='expired' WHERE status='pending' AND created_at <= (strftime('%s','now') - 180)")
+            await db.execute("UPDATE topups SET status='expired' WHERE status='pending' AND created_at <= (strftime('%s','now') - 600)")
             await db.commit()
             
             db.row_factory = aiosqlite.Row
@@ -5025,8 +5027,8 @@ async def api_topup_request(request: Request):
     
     # Generate unique amount (add 1 to 99 tiyin)
     async with aiosqlite.connect(DB_PATH) as db:
-        # Eski to'lovlarni avtomatik muddati o'tgan deb belgilaymiz (180 soniya = 3 daqiqa)
-        await db.execute("UPDATE topups SET status='expired' WHERE status='pending' AND created_at <= (strftime('%s','now') - 180)")
+        # Eski to'lovlarni avtomatik muddati o'tgan deb belgilaymiz (600 soniya = 10 daqiqa)
+        await db.execute("UPDATE topups SET status='expired' WHERE status='pending' AND created_at <= (strftime('%s','now') - 600)")
         await db.commit()
         
         for _ in range(100):
@@ -5036,7 +5038,7 @@ async def api_topup_request(request: Request):
                     # Unikal summa topildi
                     await db.execute("INSERT INTO topups (telegram_id, expected_amount) VALUES (?, ?)", (tid, unique_amount))
                     await db.commit()
-                    return {"ok": True, "amount": unique_amount, "expires_in": 180}
+                    return {"ok": True, "amount": unique_amount, "expires_in": 600}
     
     return {"ok": False, "error": "Bandlik yuqori, keyinroq urining"}
 

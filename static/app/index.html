@@ -975,7 +975,7 @@
     <div style="font-size:32px;font-weight:800;color:var(--success);margin-bottom:8px;" id="pay-exact-amount">0 so'm</div>
 
     <div style="font-size:18px;font-weight:700;color:var(--warning);margin-bottom:20px;">
-      ⏳ To'lov uchun vaqt: <span id="topup-timer">03:00</span>
+      ⏳ To'lov uchun vaqt: <span id="topup-timer">10:00</span>
     </div>
 
     <div style="background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.3);border-radius:12px;padding:16px;margin-bottom:16px;">
@@ -2959,8 +2959,9 @@ async function requestTopup() {
         timeLeft--;
         if(timeLeft <= 0) {
           clearInterval(topupTimerInterval);
-          showToast('⏳ 3 daqiqalik to\'lov vaqti tugadi!', 'error');
-          alert("⏳ 3 daqiqalik to'lov vaqti tugadi!\n\nAgar to'lovni o'tkazgan bo'lsangiz xavotir olmang, balans avtomatik to'ldiriladi. Lekin yangi to'lov uchun yangidan summa kiritishingiz so'raladi.");
+          const durationMins = Math.round((d.expires_in || 600) / 60);
+          showToast(`⏳ ${durationMins} daqiqalik to'lov vaqti tugadi!`, 'error');
+          alert(`⏳ ${durationMins} daqiqalik to'lov vaqti tugadi!\n\nAgar to'lovni o'tkazgan bo'lsangiz xavotir olmang, balans avtomatik to'ldiriladi. Lekin yangi to'lov uchun yangidan summa kiritishingiz so'raladi.`);
           cancelTopup();
         } else {
           updateTimerDisplay();
