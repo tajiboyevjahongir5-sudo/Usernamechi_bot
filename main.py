@@ -323,6 +323,21 @@ async def init_db():
                 created_at REAL DEFAULT (strftime('%s','now'))
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS garant_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                listing_id INTEGER,
+                group_chat_id INTEGER UNIQUE,
+                buyer_id INTEGER,
+                seller_id INTEGER,
+                username TEXT,
+                price INTEGER,
+                seller_net INTEGER,
+                seller_confirmed INTEGER DEFAULT 0,
+                buyer_confirmed INTEGER DEFAULT 0,
+                created_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
         
         # ─── BD INDEKSLARI (Tezlikni 10x-50x oshirish uchun) ───
         await db.execute("CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);")
@@ -2096,6 +2111,109 @@ async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: 
                 pass
     except Exception as e:
         logger.error(f"grant_pending_referral_bonus error: {e}")
+
+# ─── GARANT GROUP CHAT MESSAGE LISTENER ─────────────────
+@router.message(F.chat.type.in_({"group", "supergroup"}))
+async def garant_group_message_listener(message: Message):
+    chat_id = message.chat.id
+    text = (message.text or "").strip().lower()
+    if not text:
+        return
+        
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM garant_groups WHERE group_chat_id = ?", (chat_id,)) as c:
+            group = await c.fetchone()
+            
+    if not group:
+        return # Not a garant group
+        
+    sender_id = message.from_user.id
+    
+    # Clean text to ignore non-alphanumeric characters or common typos
+    clean_text = re.sub(r'[^a-z0-9_]', '', text)
+    
+    seller_id = group['seller_id']
+    buyer_id = group['buyer_id']
+    username = group['username']
+    price = group['price']
+    seller_net = group['seller_net']
+    listing_id = group['listing_id']
+    
+    is_seller = (sender_id == seller_id)
+    is_buyer = (sender_id == buyer_id)
+    
+    # Sotuvchi "o'tkazdim" deb yozsa
+    if is_seller and clean_text in ("otkazdim", "otkazdim", "otkazdim", "utkazdim"):
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE garant_groups SET seller_confirmed = 1 WHERE group_chat_id = ?", (chat_id,))
+            await db.commit()
+        await message.reply(
+            f"✅ <b>Sotuvchi tasdiqladi!</b>\n\n"
+            f"👤 Xaridor: <a href='tg://user?id={buyer_id}'>Xaridor</a>\n"
+            f"Username'ni qabul qilib olgach, ushbu guruhga faqat <code>oldim</code> so'zini yuboring."
+        , parse_mode="HTML")
+        
+    # Xaridor "oldim" deb yozsa
+    elif is_buyer and clean_text == "oldim":
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE garant_groups SET buyer_confirmed = 1 WHERE group_chat_id = ?", (chat_id,))
+            await db.commit()
+        await message.reply(
+            f"✅ <b>Xaridor tasdiqladi!</b>\n\n"
+            f"👤 Sotuvchi: <a href='tg://user?id={seller_id}'>Sotuvchi</a>\n"
+            f"Username'ni o'tkazib bo'lgach, ushbu guruhga faqat <code>o'tkazdim</code> so'zini yuboring."
+        , parse_mode="HTML")
+
+    # Qayta tekshiramiz: ikkala tomon ham tasdiqladimi?
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM garant_groups WHERE group_chat_id = ?", (chat_id,)) as c:
+            updated_group = await c.fetchone()
+            
+    if updated_group and updated_group['seller_confirmed'] == 1 and updated_group['buyer_confirmed'] == 1:
+        # Bitim muvaffaqiyatli yakunlandi!
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                # 1. Sotuvchining balansiga pul o'tkazamiz
+                await db.execute(
+                    "UPDATE users SET seller_balance = seller_balance + ? WHERE telegram_id = ?",
+                    (seller_net, seller_id)
+                )
+                # 2. Listing statusini 'sold' qilamiz
+                await db.execute(
+                    "UPDATE listings SET status='sold' WHERE id=?",
+                    (listing_id,)
+                )
+                # 3. Listing orders statusini 'completed' qilamiz
+                await db.execute(
+                    "UPDATE listing_orders SET status='completed' WHERE listing_id=? AND buyer_id=?",
+                    (listing_id, buyer_id)
+                )
+                # 4. Bazadan o'chiramiz
+                await db.execute("DELETE FROM garant_groups WHERE group_chat_id = ?", (chat_id,))
+                await db.commit()
+                
+            # Muvaffaqiyat xabarlari
+            success_msg = (
+                f"🎉 <b>TABRIKLAYMIZ! BITIM MUVAFFAQIYATLI YAKUNLANDI!</b> 🎉\n\n"
+                f"🔤 Username: <b>@{username}</b>\n"
+                f"💰 Narxi: <b>{price:,} so'm</b>\n"
+                f"💸 Sotuvchi hisobiga: <b>+{seller_net:,} so'm</b> o'tkazildi! ✅\n\n"
+                f"🤝 Garant xizmatidan foydalanganingiz uchun rahmat.\n"
+                f"⏰ Ushbu guruh 24 soatdan so'ng avtomatik ravishda o'chiriladi."
+            )
+            await message.answer(success_msg, parse_mode="HTML")
+            
+            # Sotuvchi va xaridorga shaxsiy xabar
+            try:
+                await message.bot.send_message(seller_id, f"💰 <b>Username muvaffaqiyatli sotildi (Garant)!</b>\n\n@{username} xaridorga o'tkazildi. Savdo balansingizga <b>+{seller_net:,} so'm</b> qo'shildi. ✅", parse_mode="HTML")
+                await message.bot.send_message(buyer_id, f"🎉 <b>Tabriklaymiz! Bitim yakunlandi!</b>\n\n@{username} o'zingizga muvaffaqiyatli o'rnatildi va sotuvchiga pul to'landi. ✅", parse_mode="HTML")
+            except: pass
+            
+        except Exception as tx_err:
+            logger.error(f"Garant group transaction completion error: {tx_err}")
+            await message.answer("⚠️ Bitimni yakunlashda xatolik yuz berdi. Iltimos, admin bilan bog'laning.")
 
 @router.message(CommandStart())
 async def start_cmd(message: Message):
@@ -4523,6 +4641,8 @@ async def api_marketplace_buy_via_admin(request: Request):
     buyer = await get_user(tid)
     if not buyer:
         return {"ok": False, "error": "Foydalanuvchi topilmadi"}
+    if not buyer.get('session_string'):
+        return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
         
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -4577,45 +4697,165 @@ async def api_marketplace_buy_via_admin(request: Request):
     # 4. Kanal postini "SOTILDI" holatiga o'tkazamiz
     asyncio.create_task(update_channel_listing_post(listing_id, 'sold'))
 
-    # 5. Sotuvchiga botdan maxsus ogohlantirish xabari yuboriladi
-    buyer_name = buyer.get('first_name', '') or ''
-    buyer_uname = buyer.get('username', '') or ''
-    buyer_mention = f"@{buyer_uname}" if buyer_uname else buyer_name or f"ID:{tid}"
+    # 5. Garant guruhini Telethon orqali yaratish
+    group_chat_id = None
+    invite_link = None
     
-    seller_msg = (
-        f"🔔 <b>Username sotildi! (Admin orqali Garant)</b>\n\n"
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from telethon.tl.functions.messages import CreateChatRequest, ExportChatInviteRequest
+    
+    buyer_client = stealth_clients.get(tid)
+    buyer_is_stealth = buyer_client is not None
+    if not buyer_client:
+        buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
+        
+    try:
+        if not buyer_is_stealth:
+            await buyer_client.connect()
+            
+        bot_me = await bot.get_me()
+        bot_username = bot_me.username
+        
+        admin_contact = await get_setting("admin_username", "admin")
+        admin_contact = admin_contact.strip().replace("@", "")
+        
+        users_to_add = []
+        
+        # Botni qo'shish
+        try:
+            bot_entity = await buyer_client.get_input_entity(bot_username)
+            users_to_add.append(bot_entity)
+        except Exception as be:
+            logger.warning(f"Garant group: Bot entity topilmadi: {be}")
+            
+        # Adminni qo'shish
+        try:
+            admin_entity = await buyer_client.get_input_entity(admin_contact)
+            users_to_add.append(admin_entity)
+        except Exception as ae:
+            logger.warning(f"Garant group: Admin entity ({admin_contact}) topilmadi: {ae}")
+            
+        # Sotuvchini qo'shish
+        try:
+            seller_entity = await buyer_client.get_input_entity(seller_id)
+            users_to_add.append(seller_entity)
+        except Exception as se:
+            logger.warning(f"Garant group: Sotuvchi entity ({seller_id}) topilmadi: {se}")
+            
+        res = await buyer_client(CreateChatRequest(users=users_to_add, title=f"🤝 Garant: @{username}"))
+        chat = res.chats[0]
+        group_chat_id = -int(chat.id)
+        
+        try:
+            invite_res = await buyer_client(ExportChatInviteRequest(peer=chat.id))
+            invite_link = invite_res.link
+        except Exception as ie:
+            logger.error(f"Garant group invite link export error: {ie}")
+            
+    except Exception as ge:
+        logger.error(f"Garant group creation error: {ge}")
+        # Muammo bo'lsa, pulni qaytarib active qilamiz
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, tid))
+            await db.execute("UPDATE listings SET status='active' WHERE id=?", (listing_id,))
+            await db.execute("DELETE FROM listing_orders WHERE listing_id=? AND buyer_id=? AND status='pending_admin'", (listing_id, tid))
+            await db.commit()
+        return {"ok": False, "error": f"Garant guruhini yaratishda xatolik: {type(ge).__name__}. Balans qaytarildi."}
+    finally:
+        if not buyer_is_stealth:
+            try: await buyer_client.disconnect()
+            except: pass
+
+    # 6. Ma'lumotlar bazasida saqlash
+    async with aiosqlite.connect(DB_PATH) as db:
+        seller_user = await get_user(seller_id)
+        is_premium_seller = seller_user.get('is_premium', 0) if seller_user else 0
+        fee_percent = 0.05 if is_premium_seller else 0.10
+        seller_net = int(price * (1 - fee_percent))
+        
+        await db.execute("""
+            INSERT INTO garant_groups (listing_id, group_chat_id, buyer_id, seller_id, username, price, seller_net, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (listing_id, group_chat_id, tid, seller_id, username, price, seller_net, time.time()))
+        await db.commit()
+
+    # 7. Guruh ichiga xabarlar yuborish
+    try:
+        seller_user = await get_user(seller_id)
+        buyer_user = await get_user(tid)
+        
+        seller_name = seller_user.get('first_name', '') or ''
+        seller_uname = seller_user.get('username', '') or ''
+        seller_mention = f"@{seller_uname}" if seller_uname else f"<a href='tg://user?id={seller_id}'>{seller_name or 'Sotuvchi'}</a>"
+        
+        buyer_name = buyer_user.get('first_name', '') or ''
+        buyer_uname = buyer_user.get('username', '') or ''
+        buyer_mention = f"@{buyer_uname}" if buyer_uname else f"<a href='tg://user?id={tid}'>{buyer_name or 'Xaridor'}</a>"
+
+        msg_seller = (
+            f"🤝 <b>Assalomu alaykum, hurmatli ishtirokchilar!</b>\n\n"
+            f"👤 {seller_mention} (Sotuvchi):\n"
+            f"Iltimos, ushbu guruh a'zosi bo'lgan xaridorga <b>@{username}</b> nomining egaligini o'tkazib bering."
+        )
+        await bot.send_message(group_chat_id, msg_seller, parse_mode="HTML")
+        await asyncio.sleep(0.3)
+
+        msg_buyer = (
+            f"👤 {buyer_mention} (Xaridor):\n"
+            f"Sotuvchi username'ni o'tkazib berganidan so'ng, uni o'z profilingiz yoki kanalingizda to'liq tekshirib oling."
+        )
+        await bot.send_message(group_chat_id, msg_buyer, parse_mode="HTML")
+        await asyncio.sleep(0.3)
+
+        msg_rules = (
+            f"📢 <b>KAFOLATLANGAN BITIM QOIDALARI:</b>\n\n"
+            f"1️⃣ <b>Sotuvchi</b>: Username'ni xaridorga muvaffaqiyatli o'tkazib bo'lgach, ushbu guruhga aynan <code>o'tkazdim</code> (yoki <code>otkazdim</code>) so'zini yuboring.\n"
+            f"2️⃣ <b>Xaridor</b>: Username'ni o'z akkauntingizga qabul qilib olganingizdan so'ng, ushbu guruhga aynan <code>oldim</code> so'zini yuboring.\n\n"
+            f"⚠️ <b>Avtomatlashtirish:</b> Har ikki tomon ham tasdiqlovchi so'zlarni yuborishi bilanoq bot avtomatik ravishda bitimni yakunlaydi va to'lovni sotuvchining balansiga o'tkazadi.\n"
+            f"⏰ Ushbu guruh 24 soatdan so'ng avtomatik ravishda o'chiriladi."
+        )
+        await bot.send_message(group_chat_id, msg_rules, parse_mode="HTML")
+    except Exception as e_msg:
+        logger.error(f"Garant group message sending error: {e_msg}")
+
+    # 8. Sotuvchiga shaxsiy xabar
+    seller_private = (
+        f"🔔 <b>Sizning e'loningiz sotildi (Admin/Garant orqali)!</b>\n\n"
         f"🔤 Username: <b>@{username}</b>\n"
-        f"👤 Xaridor: <b>{buyer_mention}</b>\n"
-        f"💵 Narxi: <b>{price:,} so'm</b>\n"
-        f"─────────────────\n"
-        f"⚠️ <b>E'tibor bering:</b> Xaridor ushbu nomni <b>Admin (Garant)</b> orqali sotib olishni tanladi.\n\n"
-        f"💬 Iltimos, zudlik bilan admin bilan bog'lanib, usernamening egaligini xaridorga o'tkazishingiz kerak. "
-        f"O'tkazish to'liq yakunlanganidan so'ng, admin savdo balansingizga pulni o'tkazib beradi va uni yechib olishingiz mumkin bo'ladi."
+        f"💵 Narxi: <b>{price:,} so'm</b>\n\n"
+        f"🤝 Bitimni xavfsiz yakunlash uchun maxsus guruh tashkil etildi.\n"
+        f"Iltimos, guruhga a'zo bo'ling va username'ni o'tkazib bering:\n"
+        f"👉 <a href='{invite_link or ''}'>Guruhga kirish</a>"
     )
     try:
-        await bot.send_message(seller_id, seller_msg, parse_mode="HTML")
+        await bot.send_message(seller_id, seller_private, parse_mode="HTML")
     except Exception as e:
-        logger.error(f"Failed to notify seller for admin-buy: {e}")
-
-    # 6. Admin kontaktini olish (birlamchi qiymat: 'admin')
-    admin_contact = await get_setting("admin_username", "admin")
-    admin_contact = admin_contact.strip().replace("@", "")
-
-    # 7. Xaridor uchun xabarni tayyorlaymiz (urlencode)
-    import urllib.parse
-    chat_text = (
-        f"Assalomu alaykum, admin! Men bot orqali @{username} nomini sotib olish uchun balansimdan to'lov qildim. "
-        f"Ushbu usernameni xavfsiz mening akkauntimga o'tkazishda garant (escrow) bo'lib berishingizni so'rayman."
+        logger.error(f"Failed to notify seller private: {e}")
+        
+    # Adminga shaxsiy xabar
+    admin_private = (
+        f"🚨 <b>Yangi Garant bitimi!</b>\n\n"
+        f"🔤 Username: <b>@{username}</b>\n"
+        f"👤 Sotuvchi: {seller_mention}\n"
+        f"👤 Xaridor: {buyer_mention}\n"
+        f"💵 Narxi: <b>{price:,} so'm</b>\n\n"
+        f"👉 <a href='{invite_link or ''}'>Guruhga qo'shilish (Garant)</a>"
     )
-    encoded_text = urllib.parse.quote(chat_text)
-    tg_link = f"https://t.me/{admin_contact}?text={encoded_text}"
+    try:
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, admin_private, parse_mode="HTML")
+            except: pass
+    except Exception as e:
+        logger.error(f"Failed to notify admins private: {e}")
 
     return {
         "ok": True,
         "username": username,
         "price": price,
-        "message": "Garant orqali sotib olish muvaffaqiyatli rasmiylashtirildi!",
-        "redirect_url": tg_link
+        "message": "Garant guruhi muvaffaqiyatli yaratildi!",
+        "redirect_url": invite_link
     }
 
 # ── TOP LISTINGS & USERNAME CHECKER ─────────────
@@ -7105,6 +7345,89 @@ async def bonus_notification_loop():
             await asyncio.sleep(3600)  # Xato bo'lsa 1 soat kutib qayta urinish
 
 
+async def garant_cleanup_loop(bot):
+    """Garant guruhlarini avtomatik tozalash: 24 soatdan oshgan guruhlar bazadan va Telegramdan o'chiriladi"""
+    logger.info("🤝 Garant cleanup loop ishga tushdi")
+    while True:
+        try:
+            now = time.time()
+            limit_time = now - 24 * 3600
+            
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("SELECT * FROM garant_groups WHERE created_at < ?", (limit_time,)) as c:
+                    expired_groups = await c.fetchall()
+                    
+            for g in expired_groups:
+                chat_id = g['group_chat_id']
+                listing_id = g['listing_id']
+                buyer_id = g['buyer_id']
+                price = g['price']
+                username = g['username']
+                
+                logger.info(f"Clearing expired Garant group {chat_id} for @{username}")
+                
+                # 1. Guruhga muddati tugaganligi haqida xabar yuborish
+                try:
+                    await bot.send_message(
+                        chat_id,
+                        f"⏰ <b>Ushbu guruhning faoliyat muddati (24 soat) tugadi.</b>\n\n"
+                        f"Bitim yakunlanmagan bo'lsa, xaridorning puli avtomatik qaytariladi. "
+                        f"Bot ushbu guruhni tark etmoqda.",
+                        parse_mode="HTML"
+                    )
+                except Exception: pass
+                
+                # 2. Bot guruhni tark etadi (leave chat)
+                try:
+                    await bot.leave_chat(chat_id)
+                except Exception as le:
+                    logger.warning(f"Bot failed to leave group {chat_id}: {le}")
+                    
+                # 3. Agar bitim yakunlanmagan bo'lsa (pending_admin) — xaridorga refund
+                try:
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        db.row_factory = aiosqlite.Row
+                        async with db.execute(
+                            "SELECT id FROM listing_orders WHERE listing_id=? AND buyer_id=? AND status='pending_admin'",
+                            (listing_id, buyer_id)
+                        ) as c:
+                            order = await c.fetchone()
+                        
+                        if order:
+                            await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, buyer_id))
+                            await db.execute("UPDATE listings SET status='active' WHERE id=?", (listing_id,))
+                            await db.execute(
+                                "UPDATE listing_orders SET status='failed' WHERE listing_id=? AND buyer_id=? AND status='pending_admin'",
+                                (listing_id, buyer_id)
+                            )
+                            await db.commit()
+                            logger.info(f"Garant expired: Refunded {price:,} so'm to buyer {buyer_id}")
+                            try:
+                                await bot.send_message(
+                                    buyer_id,
+                                    f"⚠️ <b>@{username}</b> bo'yicha garant bitimi 24 soat ichida yakunlanmadi.\n"
+                                    f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅",
+                                    parse_mode="HTML"
+                                )
+                            except: pass
+                except Exception as ref_err:
+                    logger.error(f"Garant group expiration refund error: {ref_err}")
+                
+                # 4. Bazadan o'chirish
+                async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute("DELETE FROM garant_groups WHERE group_chat_id = ?", (chat_id,))
+                    await db.commit()
+                    
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"garant_cleanup_loop xato: {e}")
+            
+        # Keyingi tekshirishgacha 1 soat kutamiz
+        await asyncio.sleep(3600)
+
+
 async def main():
     import signal
 
@@ -7167,13 +7490,16 @@ async def main():
     # Kunlik bonus bildirsinoma loopini ishga tushiramiz
     bonus_notify_task = asyncio.create_task(bonus_notification_loop())
 
+    # Garant guruhlarini avtomatik tozalash (24 soatdan oshganlarni o'chiradi)
+    garant_cleanup_task = asyncio.create_task(garant_cleanup_loop(bot))
+
     # Aiogram bot va FastAPI parallel ishlatish
     config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)), log_level="warning")
     server = uvicorn.Server(config)
 
     # Graceful shutdown: SIGTERM va SIGINT uchun
     loop = asyncio.get_event_loop()
-    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task, bonus_notify_task]
+    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task, bonus_notify_task, garant_cleanup_task]
 
     async def _shutdown():
         logger.info("⏹ Graceful shutdown boshlandi...")
