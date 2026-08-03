@@ -4342,6 +4342,7 @@ async def api_marketplace_buy(request: Request):
                 "error": f"Balansingiz yetarli emas! Kerak: {price:,} so'm, Mavjud: {buyer_balance:,} so'm"
             }
         
+
         username = listing['username']
         seller_id = listing['seller_id']
 
@@ -4351,20 +4352,34 @@ async def api_marketplace_buy(request: Request):
         fee_percent = 0.05 if is_premium_seller else 0.10
         seller_net = int(price * (1 - fee_percent))
 
-        # Atomik tranzaksiya:
-        # - Xaridor balansi kamayadi (to'liq narx)
-        # - Sotuvchi seller_balance ga net summa qo'shiladi (komissiya chegirib)
-        # - E'lon 'sold' qilinadi
-        await db.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (price, tid))
+        # ── ATOMIK TRANZAKSIYA (Race condition himoyasi) ──────────────────
+        # 1. Balansi yetarli BO'LGANDAGINA yechamiz (ikki so'rov o'rtasida pul sarflanib qolmasin)
+        cur = await db.execute(
+            "UPDATE users SET balance = balance - ? WHERE telegram_id = ? AND balance >= ?",
+            (price, tid, price)
+        )
+        if cur.rowcount == 0:
+            return {"ok": False, "error": f"Balansingiz yetarli emas! Kerak: {price:,} so'm"}
+
+        # 2. E'lonni atomik 'sold' qilamiz — bir vaqtda ikki xaridor sotib ololmasin
+        cur2 = await db.execute(
+            "UPDATE listings SET status='sold' WHERE id=? AND status='active'",
+            (listing_id,)
+        )
+        if cur2.rowcount == 0:
+            # Boshqa xaridor bir zumda sotib oldi — pulni qaytaramiz
+            await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, tid))
+            await db.commit()
+            return {"ok": False, "error": "E'lon allaqachon sotilgan. Pul balansingizga qaytarildi."}
+
+        # 3. Sotuvchiga pul va tarix
         await db.execute("UPDATE users SET seller_balance = seller_balance + ? WHERE telegram_id = ?", (seller_net, seller_id))
-        await db.execute("UPDATE listings SET status='sold' WHERE id=?", (listing_id,))
-        
-        # Xarid tarixini saqlash
         await db.execute(
             "INSERT INTO listing_orders (listing_id, buyer_id, expected_amount, status) VALUES (?,?,?,'completed')",
             (listing_id, tid, price)
         )
         await db.commit()
+
     
     # Username transfer fonda boshlanadi
     asyncio.create_task(transfer_username(bot, seller_id, tid, username))
