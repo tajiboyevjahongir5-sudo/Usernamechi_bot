@@ -2129,35 +2129,58 @@ async function executePostListing() {
 }
 
 async function buyListing(id) {
-  // Tasdiqlash so'rash
-  const listing = await fetch(`${API}/api/marketplace/${id}?init_data=${encodeURIComponent(tg.initData)}`).then(r=>r.json()).catch(()=>null);
+  // Avval e'lon ma'lumotini olamiz
+  let listing = null;
+  try {
+    const r = await fetch(`${API}/api/marketplace/${id}?init_data=${encodeURIComponent(tg.initData)}`);
+    if (r.status === 404) {
+      return showToast("E'lon topilmadi yoki allaqachon sotilgan", "error");
+    }
+    if (!r.ok) {
+      return showToast(`Server xatosi: ${r.status}`, "error");
+    }
+    listing = await r.json();
+  } catch(e) {
+    return showToast("Internet ulanishini tekshiring", "error");
+  }
+
   if (!listing) return showToast("E'lon topilmadi", "error");
-  
-  const price = (listing.price || 0).toLocaleString();
+
+  const price = listing.price || 0;
   const uname = listing.username || '';
-  
-  if (!confirm(`@${uname} ni ${price} so'm balansingizdan sotib olasizmi?`)) return;
-  
+
+  if (!confirm(`@${uname} ni ${price.toLocaleString()} so'm balansingizdan sotib olasizmi?`)) return;
+
+  // Tugmani lock qilamiz (double-click oldini olish)
+  const btn = document.querySelector(`[onclick="buyListing(${id})"]`);
+  const origText = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Kutilmoqda...'; }
+
   try {
     const res = await fetch(`${API}/api/marketplace/buy`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({init_data: tg.initData, listing_id: id})
     });
-    const d = await res.json();
+
+    let d;
+    try { d = await res.json(); }
+    catch(je) { return showToast(`Server javobi xato (HTTP ${res.status})`, "error"); }
+
     if(d.ok) {
-      // E'lonni ro'yxatdan o'chirish
       const card = document.getElementById(`listing-item-${id}`);
       if (card) card.remove();
-      
       showToast(`✅ @${d.username} sotib olindi! Username akkauntingizga o'tkazilmoqda...`, "success");
-      
-      // Balansni yangilash
       await loadUserData();
     } else {
       showToast(d.error || "Xatolik yuz berdi", "error");
+      if (btn) { btn.disabled = false; btn.innerHTML = origText; }
     }
-  } catch(e) { showToast("Xato yuz berdi", "error"); }
+  } catch(e) {
+    showToast("Internet ulanishini tekshiring", "error");
+    if (btn) { btn.disabled = false; btn.innerHTML = origText; }
+  }
 }
+
 
 function closeMarketBuy() {
   document.getElementById('market-buy-modal').style.display = 'none';
