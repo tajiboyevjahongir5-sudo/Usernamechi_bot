@@ -544,67 +544,104 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")   # OpenRouter yoki boshqa provider
 LLM_MODEL   = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5")
 LLM_API_URL = os.getenv("LLM_API_URL", "https://openrouter.ai/api/v1/chat/completions")
 
-CUSTOM_PROMPT = """Siz professional Telegram username generatorisiz. Foydalanuvchi bergan so'zga asoslanib, chiroyli, o'qilishi oson va tabiiy ko'rinadigan username variantlari yarating.
+def build_llm_prompt(category: str, language: str, base_word: str, theme: str, excluded_part: str) -> str:
+    """Til aniq va aralashmaslik uchun dinamik prompt quradi."""
+    # Til bo'yicha aniq ko'rsatmalar
+    if language == "uz":
+        lang_rule_custom = (
+            "MUHIM: Barcha qo'shimcha so'zlar O'ZBEKCHA bo'lishi SHART! "
+            "Inglizcha so'zlar QATIY TAQIQLANGAN. "
+            "O'zbekcha qo'shimchalar: aqlli, yulduz, usta, olov, kuchli, tezkor, ulug, botir."
+        )
+        lang_rule_styled = (
+            "MUHIM: Barcha username'lar O'ZBEKCHA so'z yoki bo'g'inlardan iborat bo'lsin! "
+            "Inglizcha so'zlar QATIY TAQIQLANGAN. "
+            "Misol o'zbek prefikslari: uz, uzb, koinot, usta, olov, botir. "
+            "Misol o'zbek emas: pro, hub, lab, neo, tech."
+        )
+        lang_rule_short = (
+            "MUHIM: Faqat O'ZBEKCHA ma'noli so'zlar bering — lotin yozuvida. "
+            "Inglizcha so'zlar MUTLAQO TAQIQLANGAN. "
+            "Misol: bulut, olov, qoplon, kamon, tezkor, botir, gulnor, yashar."
+        )
+    else:  # en
+        lang_rule_custom = (
+            "IMPORTANT: All added parts must be in ENGLISH only! "
+            "No Uzbek or other non-English words allowed. "
+            "English examples: official, world, pro, hub, zone, prime, craft, forge."
+        )
+        lang_rule_styled = (
+            "IMPORTANT: All usernames must use ENGLISH words only! "
+            "No Uzbek words allowed. "
+            "Examples: neo, dark, spark, storm, forge, swift, core, edge."
+        )
+        lang_rule_short = (
+            "IMPORTANT: English or international brand-like words ONLY! "
+            "No Uzbek words allowed. "
+            "Examples: nova, orbit, flux, ember, spark, ridge, vault, lynx."
+        )
 
-QOIDALAR:
-- Faqat lotin harflari (a-z), raqamlar va pastki chiziq (_) ishlatiladi
-- Username 5-32 belgi oralig'ida
-- Foydalanuvchi so'zi "{base_word}" albatta natijada ishtirok etishi kerak
-- Pastki chiziqni oxiriga qo'ymang, ketma-ket ikkita pastki chiziq ishlatmang
-- Raqamlarni faqat mantiqiy bo'lsa qo'shing, tasodifiy raqam ta'qiqlanadi
-- Har bir variant boshqasidan farqli uslubda bo'lsin
+    if category == "qisqa":
+        return f"""You are a professional username naming specialist. Create very SHORT (5-7 letters), MEANINGFUL, single-word usernames.
 
-TIL: {language}
-- "uz" bo'lsa: qo'shimcha qism o'zbekcha ma'noli so'z (masalan: aqlli, yulduz, usta, olov)
-- "en" bo'lsa: ingliz tilidagi mos so'z (masalan: official, world, pro, hub, zone, prime)
+STRICT RULES:
+- Exactly 5 to 7 letters — NO numbers, NO underscores at all
+- Must be a SINGLE word (not a combination of two words joined)
+- Must be easy to pronounce (CVCVC or CVCCV pattern preferred)
+- Either a real dictionary word OR a very natural brand-like new word
+- Random letter sequences are FORBIDDEN
 
-VAZIFA: "{base_word}" asosida 18 ta turli username varianti yarating.
+{lang_rule_short}
 {excluded_part}
 
-FORMAT: faqat JSON array qaytaring, boshqa hech narsa yozmang:
+TASK: Generate 20 unique, short, meaningful usernames following ALL above rules. Pick words from varied topics (nature, space, tech, feelings, action).
+
+FORMAT: Return ONLY a JSON array, nothing else:
+["word1", "word2", ...]"""
+
+    elif category == "turli":
+        return f"""You are a professional Telegram username generator. Create usernames in VARIOUS STYLES.
+
+RULES:
+- Only lowercase letters, numbers, and underscores
+- 5-32 characters
+- Each username must be in a different style
+
+STYLES (at least 3 per style):
+1. Word + topic abbreviation   (example: techno_uz, gamer_pro)
+2. Word + logical number        (example: koinot33, matrix2025)
+3. Two meaningful words merged  (example: darkmoon, silverfox)
+4. Topic + location/nationality (example: crypto_uz, music_asia)
+5. Creative brand-style new word (example: nexoria, vantix)
+
+{lang_rule_styled}
+THEME: {theme or 'general (technology, space, nature, sport, business)'}
+{excluded_part}
+
+TASK: Generate 18 usernames, at least 3 from each style above.
+
+FORMAT: Return ONLY a JSON array:
 ["variant1", "variant2", ...]"""
 
-STYLED_PROMPT = """Siz professional Telegram username generatorisiz. Vazifangiz — turli xil USLUB va KO'RINISHDA username variantlari yaratish.
+    else:  # custom
+        word = base_word or "user"
+        return f"""You are a professional Telegram username generator. Create beautiful, easy-to-read username variants based on the user's word.
 
-QOIDALAR:
-- Faqat lotin harflari, raqamlar va pastki chiziq
-- 5-32 belgi
-- Har bir variant boshqa-boshqa uslubda bo'lsin
+RULES:
+- Only lowercase letters (a-z), numbers, and underscores (_)
+- 5-32 characters total
+- The word "{word}" MUST appear in every result
+- Do NOT end with underscore or use double underscores
+- Only add numbers if logically meaningful (no random digits)
+- Each variant must have a different style (prefix only, suffix only, both, synonym swap, etc.)
 
-USLUBLAR (har biridan kamida 2-3 ta variant yarating):
-1. So'z + mavzuga oid qisqartma  (masalan: techno_uz, gamer_pro)
-2. So'z + mantiqiy son            (masalan: koinot33, matrix2025)
-3. Ikki mazmunli so'z birikmasi   (masalan: darkmoon, silverfox)
-4. Mavzu + joy/millat             (masalan: crypto_uz, music_asia)
-5. Ijodiy brend uslubidagi yangi so'z (masalan: nexoria, vantix)
+{lang_rule_custom}
 
-TIL: {language}
-MAVZU: {theme}
+TASK: Generate 18 different username variants based on "{word}".
 {excluded_part}
 
-VAZIFA: yuqoridagi 5 uslubning har biridan 3-4 tadan, jami 18 ta username generatsiya qiling.
-
-FORMAT: faqat JSON array qaytaring:
+FORMAT: Return ONLY a JSON array, nothing else:
 ["variant1", "variant2", ...]"""
-
-SHORT_UNIQUE_PROMPT = """Siz professional brendlash va nomlash mutaxassisisiz. Vazifangiz — juda QISQA (5-7 harf), MA'NOLI, BITTA SO'ZDAN iborat, noyob username'lar yaratish.
-
-QATTIY QOIDALAR:
-- Aniq 5 dan 7 gacha harf — raqam va pastki chiziq umuman YO'Q
-- Faqat BITTA so'z (ikki so'z qo'shilgan birikma emas)
-- Talaffuzi oson bo'lishi shart (CVCVC yoki CVCCV pattern)
-- Yoki haqiqiy lug'at so'zi (masalan "nova", "kamon", "orbit") YOKI juda tabiiy eshituvchi brendga o'xshash yangi so'z (masalan "vexor", "lumino")
-- Tasodifiy harf to'plami TAQIQLANADI
-
-TIL: {language}
-- "uz" bo'lsa: qisqa ma'noli o'zbekcha so'zlarni lotin alifbosida bering (masalan: quyosh, bulut, olov, kamon)
-- "en" bo'lsa: ingliz yoki xalqaro tushunarli brendga o'xshash so'zlar (masalan: nova, orbit, flux, ember)
-{excluded_part}
-
-VAZIFA: yuqoridagi qoidalarga to'liq mos 20 ta noyob, qisqa, ma'noli username taklif qiling. Turli mavzulardan so'zlar tanlang.
-
-FORMAT: faqat JSON array:
-["nova", "kamon", ...]"""
 
 
 async def llm_generate_candidates(
@@ -631,21 +668,10 @@ async def llm_generate_candidates(
     excluded_part = ""
     if excluded:
         sample = excluded[:30]  # Juda ko'p yubormaslik uchun
-        excluded_part = f"\nBU NOMLAR BAND, ULARNI TAKLIF QILMANG: {', '.join(sample)}"
+        excluded_part = f"\nDO NOT suggest these (already taken): {', '.join(sample)}"
 
-    if category == "qisqa":
-        prompt = SHORT_UNIQUE_PROMPT.format(language=language, excluded_part=excluded_part)
-    elif category == "turli":
-        prompt = STYLED_PROMPT.format(
-            language=language,
-            theme=theme or "umumiy (texnologiya, koinot, tabiat, sport, biznes)",
-            excluded_part=excluded_part
-        )
-    else:  # custom:word
-        word = base_word or category.split(":", 1)[-1] if ":" in category else base_word or "user"
-        prompt = CUSTOM_PROMPT.format(
-            language=language, base_word=word, excluded_part=excluded_part
-        )
+    # Til aniq, aralashmaslik uchun dinamik prompt
+    prompt = build_llm_prompt(category, language, base_word, theme, excluded_part)
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -3366,64 +3392,41 @@ def verify_init_data(init_data: str) -> dict | None:
 
 async def check_if_fragment_username(http_session, uname: str) -> bool:
     """
-    Tekshiradi: Username Fragment.com auksionida NFT sifatida SOTILMOQDAMI?
-    
-    MUHIM FARQ:
-    - Fragment NFT (True): username Fragment.com da narx bilan sotilmoqda — sotib bo'lmaydi
-    - Unavailable / Taken (False): Fragment sahifasi ochiladi lekin sotish yo'q —
-      bu oddiy Telegram username, nishonga qo'yish mumkin
-    """
-    # 1. t.me sahifasida "Buy on Fragment" havolasi bormi?
-    # (faqat haqiqiy Fragment NFT usernamlarida bu link bo'ladi)
-    try:
-        url = f"https://t.me/{uname}"
-        async with http_session.get(url, timeout=4.0) as resp:
-            if resp.status == 200:
-                text = await resp.text()
-                # Aniq Fragment NFT belgisi: sahifada Fragment auction havolasi
-                if 'fragment.com/username/' in text.lower() and (
-                    'buy on fragment' in text.lower() or
-                    'auction' in text.lower()
-                ):
-                    return True
-                # Agar faqat "fragment.com" bor lekin "buy on fragment" yo'q — bu NFT emas
-    except Exception:
-        pass
+    Tekshiradi: Username Fragment.com da sotuvdami (NFT/auction)?
 
-    # 2. Fragment.com sahifasida HAQIQIY auktsion elementlari bormi?
+    Qaytaradi:
+    - True  → Fragment da aktiv auktsion (Available) yoki sotilgan (Sold/Unavailable)
+              Nishonga qo'yib bo'lmaydi
+    - False → Oddiy Telegram username (Taken) yoki Telegram da bo'sh
+              Nishonga qo'yish mumkin
+
+    Mantiq:
+    - 302 Redirect  → Fragment'da sahifasi yo'q → oddiy Telegram bo'sh username → False
+    - tm-status-taken   → Telegram da band, Fragment ga tegishli emas → False
+    - tm-status-avail   → Fragment auksionida sotilmoqda              → True
+    - tm-status-unavail → Sotilgan/yaroqsiz Fragment NFT              → True
+    - Boshqa holat      → Xavfsiz yoq, False qaytaramiz
+    """
     try:
         url = f"https://fragment.com/username/{uname}"
-        async with http_session.get(url, timeout=4.0) as resp:
-            if resp.status == 200:
-                text = await resp.text()
-                text_lower = text.lower()
-                
-                # Fragment da "unavailable" yoki "taken" deb ko'rsatilgan username —
-                # bu Fragment NFT EMAS, oddiy Telegram username!
-                if 'unavailable' in text_lower or 'taken' in text_lower:
-                    return False
-                
-                # Haqiqiy Fragment NFT auktsion belgilari:
-                # narx ko'rsatuvchi elementlar, bid tugmasi, auktsion statusi
-                nft_signals = [
-                    'class="tm-value"',       # narx elementi
-                    'data-ton-price',          # TON narxi
-                    '"auction"',               # auktsion holati JSON da
-                    'class="tm-section-bid"',  # bid bo'limi
-                    'place-a-bid',             # bid qo'yish tugmasi
-                    '"status":"active"',       # faol auktsion
-                    '"status":"sold"',         # sotilgan NFT
-                    'make_bid',                # bid funksiyasi
-                ]
-                if any(sig in text for sig in nft_signals):
-                    return True
-                    
-                # Hech qanday NFT belgisi yo'q — bu Fragment sahifasida
-                # "unavailable" ko'rinishdagi oddiy Telegram username
+        async with http_session.get(url, timeout=5.0, allow_redirects=False) as resp:
+            # 302 → Fragment sahifasi yo'q → Bu Telegram'da bo'sh yoki boshqa URI
+            if resp.status in (301, 302, 303, 307, 308):
                 return False
-    except Exception:
-        pass
-    return False
+            if resp.status != 200:
+                return False
+            text = await resp.text()
+            # CSS class bilan aniq holat aniqlash
+            if 'tm-status-avail' in text:
+                return True   # Fragment da sotuvda (aktiv auktsion)
+            if 'tm-status-unavail' in text:
+                return True   # Fragment da sotilgan yoki yaroqsiz NFT
+            if 'tm-status-taken' in text:
+                return False  # Telegram da band, Fragment ga aloqasi yo'q
+            return False
+    except Exception as e:
+        logger.debug(f"check_if_fragment_username error @{uname}: {e}")
+        return False
 
 
 

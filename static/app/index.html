@@ -2888,7 +2888,7 @@ async function nextSearch() {
     // Yangi search_task yaratamiz, lekin pul yechilmaydi (refresh)
     const res = await fetch(`${API}/api/search/refresh`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({init_data: tg.initData, category: cat, paid_qty: paidQty})
+      body: JSON.stringify({init_data: tg.initData, search_id: currentSearchId, category: cat, paid_qty: paidQty})
     });
     const d = await res.json();
     if (d.ok) {
