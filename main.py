@@ -1108,7 +1108,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
 
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 Dasturni ochish", web_app=WebAppInfo(url=f"{WEB_URL}/app?v=2"))]
+        [InlineKeyboardButton(text="📱 Dasturni ochish", web_app=WebAppInfo(url=f"{WEB_URL}/app?v=3"))]
     ])
 
 # ─── ROUTER VA HANDLERLAR ─────────────────────
@@ -2053,7 +2053,7 @@ async def _start_cmd_inner(message: Message):
     start_param = args[1] if len(args) > 1 else ""
     if start_param.startswith("listing_") or start_param.startswith("market_"):
         listing_id = start_param.replace("listing_", "").replace("market_", "")
-        app_url = f"{WEB_URL}/app?v=2&tgWebAppStartParam={start_param}"
+        app_url = f"{WEB_URL}/app?v=3&tgWebAppStartParam={start_param}"
         
         # E'lon haqida qisqa ma'lumot olishga urinamiz
         info_text = f"🛒 <b>Bozor e'loniga o'tish</b>"
