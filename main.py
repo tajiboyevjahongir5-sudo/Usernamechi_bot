@@ -1605,16 +1605,22 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     f"Sotuvchi username'ni o'zgartirgan bo'lishi mumkin."
                 )
 
-            # ── 2.2: Bo'shatgandan keyin xaridorga darhol profilga o'rnatamiz ──
-            await asyncio.sleep(0.3)
+            # ── 2.2: Bo'shatgandan keyin xaridorga DARHOL profilga o'rnatamiz ──
+            # Imkon qadar tez bo'lishi kerak — release va claim orasidagi vaqtni minimumga tushiramiz
+            await asyncio.sleep(0.05)
 
             assigned = False
             last_assign_err = None
 
             logger.info(f"🔄 PROFIL usuli (birinchi): @{username} -> xaridor profili...")
-            PROF_DELAYS = [0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.0, 2.0, 3.0,
+            # Dastlab juda tez urinishlar, keyin sekinroq (backoff)
+            PROF_DELAYS = [0, 0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5,
+                           2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
+                           3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
+                           3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
+                           3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
                            3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
-            for attempt in range(20):
+            for attempt in range(60):
                 try:
                     await buyer_client(AccountUpdateUsernameRequest(username=username))
                     assigned = True
@@ -1623,13 +1629,40 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     logger.info(f"✅ @{username} xaridor PROFILIGA biriktirildi (urinish #{attempt+1})")
                     break
                 except UsernameNotModifiedError:
+                    # Username allaqachon shu foydalanuvchida — muvaffaqiyat!
                     assigned = True
                     is_personal_profile = True
                     new_channel_id = None
-                    logger.info(f"✅ @{username} profilga biriktirildi (UsernameNotModified)")
+                    logger.info(f"✅ @{username} profilga biriktirildi (UsernameNotModified - allaqachon o'rnatilgan)")
                     break
+                except UsernameOccupiedError as uoe:
+                    # Username band - bu xaridor o'zi uchun allaqachon o'rnatib bo'lganligi bo'lishi mumkin
+                    # yoki boshqa birovi olganligi. Tekshirib ko'ramiz:
+                    try:
+                        _buyer_me = await buyer_client.get_me()
+                        if _buyer_me and _buyer_me.username and _buyer_me.username.lower() == username.lower():
+                            assigned = True
+                            is_personal_profile = True
+                            new_channel_id = None
+                            logger.info(f"✅ @{username} UsernameOccupied — lekin xaridorda allaqachon o'rnatilgan! Muvaffaqiyat.")
+                            break
+                        else:
+                            logger.warning(f"⚠️ UsernameOccupied #{attempt+1}: @{username} xaridorda yo'q, boshqa birovi olgan bo'lishi mumkin.")
+                            last_assign_err = uoe
+                            # Biroz kutamiz — Telegram ba'zan kechikib bo'shatadi
+                            delay = PROF_DELAYS[min(attempt, len(PROF_DELAYS) - 1)]
+                            if delay > 0:
+                                await asyncio.sleep(delay)
+                    except Exception as check_err:
+                        logger.warning(f"UsernameOccupied tekshirishda xato: {check_err}")
+                        last_assign_err = uoe
+                        delay = PROF_DELAYS[min(attempt, len(PROF_DELAYS) - 1)]
+                        if delay > 0:
+                            await asyncio.sleep(delay)
                 except FloodWaitError as fw:
-                    await asyncio.sleep(min(fw.seconds + 1, 10))
+                    wait = min(fw.seconds + 1, 30)
+                    logger.warning(f"FloodWait {wait}s xaridor profil assign #{attempt+1}")
+                    await asyncio.sleep(wait)
                 except UsernameInvalidError as ui:
                     logger.error(f"Username format xato: {ui}")
                     last_assign_err = ui
@@ -1637,12 +1670,13 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 except Exception as ae:
                     last_assign_err = ae
                     delay = PROF_DELAYS[min(attempt, len(PROF_DELAYS) - 1)]
-                    logger.warning(f"Profil assign #{attempt+1}/20 xato ({delay}s): {type(ae).__name__}: {ae}")
-                    await asyncio.sleep(delay)
+                    logger.warning(f"Profil assign #{attempt+1}/60 xato ({delay}s): {type(ae).__name__}: {ae}")
+                    if delay > 0:
+                        await asyncio.sleep(delay)
 
             # ── 2.3: Profil bo'lmasa — kanal yaratib urinamiz ──
             if not assigned:
-                logger.info(f"⚠️ Profil usuli muvaffaqiyatsiz — KANAL usuli sinab ko'rilmoqda...")
+                logger.info(f"⚠️ Profil usuli muvaffaqiyatsiz (60 urinish) — KANAL usuli sinab ko'rilmoqda...")
                 try:
                     created = await buyer_client(CreateChannelRequest(
                         title=f"Usernamechi: @{username}",
@@ -1652,14 +1686,14 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     new_channel_entity = created.chats[0]
                     new_channel_id = new_channel_entity.id
                     logger.info(f"✅ Xaridor kanali yaratildi: {new_channel_id}")
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(1.0)
                 except Exception as ce:
                     logger.error(f"Xaridor kanali yaratishda xato: {ce}")
                     last_assign_err = ce
 
                 if new_channel_entity:
-                    CHAN_DELAYS = [0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.0, 3.0, 3.0, 3.0,
-                                   3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
+                    CHAN_DELAYS = [0, 0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5,
+                                   2.0, 2.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0,
                                    3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0]
                     for attempt in range(30):
                         try:
@@ -1670,8 +1704,22 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                         except UsernameNotModifiedError:
                             assigned = True
                             break
+                        except UsernameOccupiedError:
+                            # Kanalda ham band bo'lsa, buyer profil tekshiramiz
+                            try:
+                                _bm = await buyer_client.get_me()
+                                if _bm and _bm.username and _bm.username.lower() == username.lower():
+                                    assigned = True
+                                    is_personal_profile = True
+                                    new_channel_id = None
+                                    logger.info(f"✅ @{username} kanal assign xato bo'ldi, lekin profilda bor — Muvaffaqiyat!")
+                                    break
+                            except Exception: pass
+                            delay = CHAN_DELAYS[min(attempt, len(CHAN_DELAYS) - 1)]
+                            if delay > 0:
+                                await asyncio.sleep(delay)
                         except FloodWaitError as fw:
-                            await asyncio.sleep(min(fw.seconds + 1, 10))
+                            await asyncio.sleep(min(fw.seconds + 1, 30))
                         except UsernameInvalidError as ui:
                             logger.error(f"Username format xato (kanal): {ui}")
                             last_assign_err = ui
@@ -1680,7 +1728,8 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                             last_assign_err = ae
                             delay = CHAN_DELAYS[min(attempt, len(CHAN_DELAYS) - 1)]
                             logger.warning(f"Kanal assign #{attempt+1}/30 xato ({delay}s): {type(ae).__name__}: {ae}")
-                            await asyncio.sleep(delay)
+                            if delay > 0:
+                                await asyncio.sleep(delay)
 
         if not assigned:
             # ROLLBACK: username ni sotuvchiga qaytarishga urinamiz
