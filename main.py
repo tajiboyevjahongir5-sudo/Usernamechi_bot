@@ -1543,6 +1543,28 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 )
             logger.info(f"Buyer authorized confirmed (buyer_id={buyer_id})")
 
+            # ── 2.0.1: Xaridor jamoat kanallari (public channels) limitiga yetmaganmi? ──
+            try:
+                from telethon.tl.functions.channels import GetAdminedPublicChannelsRequest
+                admined_channels = await buyer_client(GetAdminedPublicChannelsRequest(by_location=False, check_limit=False))
+                public_count = len(admined_channels.chats)
+                
+                # Premium foydalanuvchilar uchun limit 20, oddiylar uchun 10
+                buyer_me = await buyer_client.get_me()
+                is_premium_buyer = getattr(buyer_me, 'premium', False)
+                limit = 20 if is_premium_buyer else 10
+                
+                if public_count >= limit:
+                    raise ValueError(
+                        f"Xaridor ommaviy kanallar limitiga yetgan ({public_count}/{limit}). "
+                        f"Iltimos, Telegram akkauntingizdan kamida bitta ommaviy (public) kanalni o'chiring yoki shaxsiy profilga o'tkazing, so'ng qayta urinib ko'ring."
+                    )
+                logger.info(f"✅ Xaridor jamoat kanallari soni tekshirildi: {public_count}/{limit}")
+            except Exception as le:
+                if "limit" in str(le).lower() or isinstance(le, ValueError):
+                    raise le
+                logger.warning(f"Ommaviy kanallar sonini tekshirishda kutilmagan xato: {le}")
+
             new_channel_entity = None  # kanal faqat kerak bo'lsa yaratiladi
 
             # Sotuvchidan username ni bo'shatamiz
