@@ -1439,107 +1439,77 @@ async def transfer_username(bot, seller_id, buyer_id, username):
             raise ValueError(f"@{username} sotuvchi ({seller_id}) akkauntida topilmadi! Sotuvchi username'ni o'zgartirgan bo'lishi mumkin.")
 
         # ── QADAM 1: Kanal egaligini o'tkazishga urinib ko'ramiz (Agarda username kanalda bo'lsa) ──
+        # Agar 2FA paroli bor bo'lsa — eng xavfsiz yo'l: EditCreatorRequest (username hech chiqmaydi)
+        # Agar 2FA yo'q yoki xato — 2-yo'l: release-and-claim
         ownership_transferred = False
         if target_channel:
-            try:
-                logger.info(f"👑 Kanal egaligini o'tkazish sinab ko'rilmoqda... (Kanal: {target_channel.id})")
-                from telethon.tl.functions.channels import JoinChannelRequest, EditAdminRequest, EditCreatorRequest
-                from telethon.tl.types import ChatAdminRights
-
-                # 1. Xaridorni kanalga qo'shamiz (JoinChannelRequest)
+            password = seller.get('tg_password')
+            if password:
                 try:
-                    await buyer_client(JoinChannelRequest(channel=target_channel))
-                    logger.info("✅ Xaridor kanalga qo'shildi")
-                except Exception as je:
-                    logger.warning(f"Xaridor kanalga qo'shila olmadi (ehtimol allaqachon a'zo): {je}")
+                    logger.info(f"👑 Kanal egaligini o'tkazish sinab ko'rilmoqda (2FA bor)... (Kanal: {target_channel.id})")
+                    from telethon.tl.functions.channels import JoinChannelRequest, EditAdminRequest, EditCreatorRequest
+                    from telethon.tl.types import ChatAdminRights
 
-                # 2. Xaridor entity ni seller_client keshiga kiritamiz
-                buyer_peer = None
-                try:
-                    participants = await seller_client.get_participants(target_channel)
-                    for p in participants:
-                        if p.id == buyer_id:
-                            buyer_peer = p
-                            logger.info(f"✅ Xaridor kanal a'zolari ichida topildi (ID: {buyer_id})")
-                            break
-                except Exception as pe:
-                    logger.warning(f"Kanal a'zolarini o'qishda xatolik: {pe}")
-
-                if buyer_peer is None:
+                    # 1. Xaridorni kanalga qo'shamiz
                     try:
-                        buyer_me = await buyer_client.get_me()
-                        buyer_peer = await seller_client.get_input_entity(buyer_me.username or buyer_id)
-                        logger.info(f"✅ Xaridor entity username orqali olindi")
-                    except Exception as bpe:
-                        logger.warning(f"Buyer peer resolve xatoligi: {bpe}")
-                        buyer_peer = None
+                        await buyer_client(JoinChannelRequest(channel=target_channel))
+                        logger.info("✅ Xaridor kanalga qo'shildi")
+                    except Exception as je:
+                        logger.warning(f"Xaridor kanalga qo'shila olmadi (ehtimol allaqachon a'zo): {je}")
 
-                if buyer_peer is None:
-                    raise Exception("Xaridor entity kanalda topilmadi, kanal egaligini o'tkazib bo'lmadi.")
+                    # 2. Xaridor entity olish
+                    buyer_peer = None
+                    try:
+                        participants = await seller_client.get_participants(target_channel)
+                        for p in participants:
+                            if p.id == buyer_id:
+                                buyer_peer = p
+                                logger.info(f"✅ Xaridor kanal a'zolari ichida topildi (ID: {buyer_id})")
+                                break
+                    except Exception as pe:
+                        logger.warning(f"Kanal a'zolarini o'qishda xatolik: {pe}")
 
-                # 3. Xaridorni kanalda to'liq huquqli admin qilamiz
-                admin_rights = ChatAdminRights(
-                    post_messages=True,
-                    add_admins=True,
-                    change_info=True,
-                    invite_users=True,
-                    pin_messages=True,
-                    manage_call=True,
-                    other=True,
-                    delete_messages=True,
-                    ban_users=True,
-                    edit_messages=True
-                )
+                    if buyer_peer is None:
+                        try:
+                            buyer_me = await buyer_client.get_me()
+                            buyer_peer = await seller_client.get_input_entity(buyer_me.username or buyer_id)
+                            logger.info("✅ Xaridor entity username orqali olindi")
+                        except Exception as bpe:
+                            logger.warning(f"Buyer peer resolve xatoligi: {bpe}")
 
-                await seller_client(EditAdminRequest(
-                    channel=target_channel,
-                    user_id=buyer_peer,
-                    admin_rights=admin_rights,
-                    rank="Yangi egasi"
-                ))
-                logger.info("✅ Xaridor kanalda admin qilindi")
+                    if buyer_peer is None:
+                        raise Exception("Xaridor entity topilmadi")
 
-                # 4. Sotuvchi 2FA parolini olamiz
-                password = seller.get('tg_password')
-                if password:
+                    # 3. Xaridorni admin qilish
+                    admin_rights = ChatAdminRights(
+                        post_messages=True, add_admins=True, change_info=True,
+                        invite_users=True, pin_messages=True, manage_call=True,
+                        other=True, delete_messages=True, ban_users=True, edit_messages=True
+                    )
+                    await seller_client(EditAdminRequest(
+                        channel=target_channel, user_id=buyer_peer,
+                        admin_rights=admin_rights, rank="Yangi egasi"
+                    ))
+                    logger.info("✅ Xaridor kanalda admin qilindi")
+
+                    # 4. Egalikni o'tkazamiz (EditCreatorRequest + 2FA)
                     from telethon.password import compute_check
                     from telethon.tl.functions.account import GetPasswordRequest
-
                     pass_info = await seller_client(GetPasswordRequest())
                     input_srp = compute_check(pass_info, password)
-
-                    # 5. Egaligini o'tkazamiz (EditCreatorRequest)
                     await seller_client(EditCreatorRequest(
-                        channel=target_channel,
-                        user_id=buyer_peer,
-                        password=input_srp
+                        channel=target_channel, user_id=buyer_peer, password=input_srp
                     ))
                     ownership_transferred = True
                     released = True
                     assigned = True
                     new_channel_id = target_channel.id
-                    logger.info(f"🎉 KANAL EGALIGI TO'LIQ O'TKAZILDI! @{username} endi xaridorniki. (Kanal ID: {target_channel.id})")
-                else:
-                    logger.warning("Sotuvchining 2FA paroli bazada yo'q. Egalikni o'tkazib bo'lmadi.")
-                    raise ValueError(
-                        "Sotuvchining 2FA paroli (ikki bosqichli paroli) bot bazasida kiritilmagan. "
-                        "Kanal egaligini xavfsiz o'tkazish uchun 2FA paroli talab etiladi."
-                    )
-            except Exception as ote:
-                logger.error(f"Kanal egaligini o'tkazishda xatolik yuz berdi: {ote}")
-                if isinstance(ote, ValueError):
-                    raise ote
-                else:
-                    raise ValueError(
-                        f"Kanal egaligini o'tkazishda xatolik yuz berdi ({type(ote).__name__}: {ote}). "
-                        f"Kanalni yo'qotib qo'ymaslik (xavfsizlik) maqsadida o'tkazma bekor qilindi."
-                    )
-
-            if not ownership_transferred:
-                raise ValueError(
-                    "Kanal egaligini o'tkazib bo'lmadi. Kanalni yo'qotib qo'ymaslik (xavfsizlik) "
-                    "maqsadida username'ni ommaviy bo'shatish bekor qilindi."
-                )
+                    logger.info(f"🎉 KANAL EGALIGI TO'LIQ O'TKAZILDI! @{username} endi xaridorniki.")
+                except Exception as ote:
+                    logger.warning(f"EditCreatorRequest o'xshamadi ({type(ote).__name__}: {ote}), release-and-claim ga o'tamiz...")
+                    # 2FA bilan ham o'xshamasa — release-and-claim ga o'tamiz
+            else:
+                logger.info("2FA paroli yo'q — bevosita release-and-claim usulida o'tamiz")
 
         # ── QADAM 2: Agarda egalik o'tmagan bo'lsa, bo'shatib-biriktirib o'tkazamiz ──
         if not ownership_transferred:
