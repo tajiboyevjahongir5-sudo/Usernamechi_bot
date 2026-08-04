@@ -74,6 +74,29 @@ bot: Bot = None
 # (telegram_id, username, session_string) tuple
 instant_check_queue: asyncio.Queue = None  # monitoring_loop ichida lazily init
 
+HEADERS_LIST = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
+]
+
+def is_username_occupied_html(html_text: str) -> bool:
+    """
+    HTTP javob HTML matniga qarab username band yoki bo'shligini aniqlaydi.
+    """
+    has_extra = 'tgme_page_extra' in html_text
+    has_photo = 'tgme_page_photo' in html_text
+    has_channel_info = 'tgme_channel_info' in html_text
+    on_fragment = 'fragment.com' in html_text or 'auction' in html_text
+    
+    # Bo'sh username sahifalarida har doim murojaat qilish haqida yozuv bo'ladi
+    has_free_text = any(x in html_text.lower() for x in [
+        "you can contact", "you can write to", "you can check", "can contact"
+    ])
+    
+    return bool(has_extra or has_photo or has_channel_info or on_fragment or not has_free_text)
+
 
 
 
@@ -3266,20 +3289,13 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     f"https://t.me/{uname}",
                     allow_redirects=True,
                     timeout=aiohttp.ClientTimeout(total=2.5),
-                    headers={'User-Agent': random.choice(headers_list)}
+                    headers={'User-Agent': random.choice(HEADERS_LIST)}
                 ) as resp:
                     if resp.status == 429:
                         await asyncio.sleep(0.5)
                         return 'unknown'
                     text = await resp.text()
-                    # Aniq band bo'lgan sahifalar (profil, kanal, guruh, bot, fragment auksioni)
-                    taken_markers = (
-                        'tgme_page_title', 'tgme_page_extra', 'tgme_page_photo',
-                        'tgme_page_action', 'tgme_action_button_new', 'tgme_page_icon',
-                        'fragment.com', 'tgme_page_description', 'tgme_header_title',
-                        'tgme_body_wrap', 'tgme_channel_info', 'auction'
-                    )
-                    if any(k in text for k in taken_markers):
+                    if is_username_occupied_html(text):
                         return 'taken'
                     return 'maybe_free'
             except asyncio.TimeoutError:
@@ -3332,7 +3348,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 logger.debug(f"verify_target error for {uname}: {e}")
 
         async with aiohttp.ClientSession(headers=req_headers) as http_session:
-            batch_size = 50  # Ko'proq parallel tekshiruv
+            batch_size = 15  # Rate limit (429) ga tushmaslik uchun optimal parallel soni
             for i in range(0, len(all_targets), batch_size):
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if elapsed > MAX_SECONDS:
@@ -3347,7 +3363,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 batch = all_targets[i:i+batch_size]
                 tasks = [verify_target(http_session, u) for u in batch]
                 await asyncio.gather(*tasks, return_exceptions=True)
-                await asyncio.sleep(0.02)
+                await asyncio.sleep(0.1)  # t.me serverini qiynamaslik va 429 cheklovini oldini olish uchun
 
         logger.info(f"Search {search_id} done. Total found: {found_count}")
 
@@ -3605,12 +3621,7 @@ async def monitoring_loop(bot):
     import aiohttp
     import random
 
-    headers_list = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
-        'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
-    ]
+    # headers_list o'rniga global HEADERS_LIST ishlatiladi
 
     global instant_check_queue
     instant_check_queue = asyncio.Queue()
@@ -3636,19 +3647,14 @@ async def monitoring_loop(bot):
         logger.info(f"🎯 [CLAIM START] @{uname} bo'sh joy sarlavhasi aniqlandi! Jarayon boshlanmoqda...")
         try:
             # 2-tekshiruv: HTTP orqali hali ham band ekanligini qayta tekshiramiz
-            taken_markers = (
-                'tgme_page_title', 'tgme_page_extra', 'tgme_page_photo',
-                'tgme_page_action', 'tgme_action_button_new', 'tgme_page_icon',
-                'fragment.com', 'tgme_page_description'
-            )
             try:
                 async with http_session.get(
                     f"https://t.me/{uname}", allow_redirects=True,
                     timeout=aiohttp.ClientTimeout(total=2.0),
-                    headers={'User-Agent': headers_list[hdr_idx]}
+                    headers={'User-Agent': HEADERS_LIST[hdr_idx]}
                 ) as resp2:
                     text2 = await resp2.text()
-                    if any(k in text2 for k in taken_markers):
+                    if is_username_occupied_html(text2):
                         logger.info(f"⚠️ [CLAIM CANCEL] @{uname} 2-tekshiruvda (HTTP) band.")
                         taken_usernames_cache[uname.lower()] = time.time() + 43200  # 12 soat
                         return
@@ -3977,7 +3983,7 @@ async def monitoring_loop(bot):
                     uname_map[u_lower] = []
                 uname_map[u_lower].append(dict(t))
 
-            hdr_idx = (hdr_idx + 1) % len(headers_list)
+            hdr_idx = (hdr_idx + 1) % len(HEADERS_LIST)
 
             # HTTP tekshiruv uchun parallel sonini belgilash (max 15)
             total_uniq = len(uname_map)
@@ -4037,7 +4043,7 @@ async def monitoring_loop(bot):
                         async with http_session.get(
                             f"https://t.me/{uname}", allow_redirects=True,
                             timeout=aiohttp.ClientTimeout(total=4.0),
-                            headers={'User-Agent': headers_list[hdr_idx]}
+                            headers={'User-Agent': HEADERS_LIST[hdr_idx]}
                         ) as resp:
                             if resp.status == 429:
                                 global_429_count += 1
@@ -4079,12 +4085,7 @@ async def monitoring_loop(bot):
                             dynamic_intervals[uname_lower] = new_interval
 
                             # Aniq band profil, kanal, guruh, bot yoki fragment auksioni bo'lsa — monitoring davom etadi
-                            taken_markers = (
-                                'tgme_page_title', 'tgme_page_extra', 'tgme_page_photo',
-                                'tgme_page_action', 'tgme_action_button_new', 'tgme_page_icon',
-                                'fragment.com', 'tgme_page_description'
-                            )
-                            if any(k in text for k in taken_markers):
+                            if is_username_occupied_html(text):
                                 # Band bo'lsa keshlamaymiz (CHECK_INTERVAL rate-limit bo'yicha keyinroq qayta tekshiriladi)
                                 return  # Hali band
 
