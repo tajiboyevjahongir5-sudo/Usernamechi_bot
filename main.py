@@ -5066,6 +5066,20 @@ async def api_marketplace_buy_via_admin(request: Request):
     from telethon.sessions import StringSession
     from telethon.tl.functions.messages import CreateChatRequest, ExportChatInviteRequest
 
+    # Xaridor va sotuvchi ma'lumotlarini dastlabki qismda olamiz (keyinchalik foydalanish uchun)
+    try:
+        seller_user = await get_user(seller_id)
+        buyer_user = await get_user(tid)
+        seller_name = (seller_user or {}).get('first_name', '') or ''
+        seller_uname = (seller_user or {}).get('username', '') or ''
+        buyer_name = (buyer_user or {}).get('first_name', '') or ''
+        buyer_uname = (buyer_user or {}).get('username', '') or ''
+    except Exception:
+        seller_name = seller_uname = buyer_name = buyer_uname = ''
+
+    seller_mention = f"@{seller_uname}" if seller_uname else f"<a href='tg://user?id={seller_id}'>{seller_name or 'Sotuvchi'}</a>"
+    buyer_mention  = f"@{buyer_uname}"  if buyer_uname  else f"<a href='tg://user?id={tid}'>{buyer_name or 'Xaridor'}</a>"
+
     admin_client = None
     admin_client_is_stealth = False
 
@@ -5096,7 +5110,6 @@ async def api_marketplace_buy_via_admin(request: Request):
             await admin_client.connect()
 
         # Guruhga qo'shiladigan foydalanuvchilar — get_entity() ishlatamiz
-        # (get_entity → to'liq User ob'ekti → Telethon InputUser ga avtomatik konvertatsiya qiladi)
         users_to_add = []
 
         # Xaridor
@@ -5159,8 +5172,7 @@ async def api_marketplace_buy_via_admin(request: Request):
         except Exception as ie:
             logger.error(f"Garant invite link error: {ie}")
 
-        # *** MUHIM: Botni guruhga qo'shamiz va admin qilamiz ***
-        # Aks holda bot.send_message(group_chat_id) ishlamaydi!
+        # *** Botni guruhga qo'shamiz va admin qilamiz ***
         try:
             from telethon.tl.functions.messages import AddChatUserRequest
             from telethon.tl.functions.messages import EditChatAdminRequest
@@ -5187,6 +5199,50 @@ async def api_marketplace_buy_via_admin(request: Request):
         except Exception as be:
             logger.warning(f"Garant: Botni guruhga qo'shib bo'lmadi: {be}")
 
+        # *** Admin akkauntidan guruhga chiroyli va mukammal yo'riqnomani yuboramiz va pin qilamiz ***
+        try:
+            # Username joylashgan joyni (Kanal/Profil) aniqlaymiz
+            username_location = "Profil/Kanal"
+            try:
+                entity = await admin_client.get_entity(username)
+                from telethon.tl.types import Channel, User
+                if isinstance(entity, Channel):
+                    if entity.broadcast:
+                        username_location = f"📢 Kanal (Nomi: <b>{entity.title}</b>)"
+                    else:
+                        username_location = f"👥 Guruh (Nomi: <b>{entity.title}</b>)"
+                elif isinstance(entity, User):
+                    username_location = f"👤 Profil (Foydalanuvchi: <b>{entity.first_name}</b>)"
+            except Exception:
+                username_location = f"Obyekt: @{username}"
+
+            msg_escrow = (
+                f"🤝 <b>Assalomu alaykum! Garant kelishuvi boshlandi.</b>\n\n"
+                f"👤 <b>Sotuvchi:</b> {seller_mention}\n"
+                f"👤 <b>Xaridor:</b> {buyer_mention}\n\n"
+                f"💵 <b>Bitim summasi:</b> <code>{price:,} so'm</code> (Xaridor balansi yechib olindi va bot garant hisobida xavfsiz muzlatildi 🔒)\n"
+                f"🔤 <b>Username:</b> @{username}\n"
+                f"📍 <b>Hozirgi joylashuvi:</b> {username_location}\n\n"
+                f"🚨 <b>SOTUVCHI UCHUN KO'RSATMA:</b>\n"
+                f"Iltimos, <b>@{username}</b> nomini ushbu guruhdagi xaridor {buyer_mention} ga o'tkazib bering. "
+                f"O'tkazib bo'lgach, guruhga <code>o'tkazdim</code> (yoki <code>otkazdim</code>) deb yozing.\n\n"
+                f"📥 <b>XARIDOR UCHUN KO'RSATMA:</b>\n"
+                f"Sotuvchi username'ni o'tkazib berganidan so'ng, uni o'z profilingiz yoki kanalingizga qabul qilib oling va guruhga <code>oldim</code> deb yozing.\n\n"
+                f"⚠️ <b>Bitim qoidalari:</b>\n"
+                f"Har ikki tomon ham tasdiqlagach, pul avtomatik ravishda sotuvchining balansiga o'tkaziladi. "
+                f"Ushbu guruh 1 soatdan so'ng avtomatik ravishda o'chiriladi va bitim bekor qilinadi."
+            )
+            
+            # Xabarni yuboramiz va pin qilamiz
+            sent_msg = await admin_client.send_message(chat, msg_escrow, parse_mode='html')
+            try:
+                await admin_client.pin_message(chat, sent_msg)
+            except Exception as pin_e:
+                logger.warning(f"Garant: Xabarni pin qilib bo'lmadi: {pin_e}")
+
+            logger.info("Garant: Admin akkauntidan guruhga birinchi xabar yuborildi va pin qilindi.")
+        except Exception as e_msg:
+            logger.error(f"Garant group message sending via admin error: {e_msg}")
 
     except Exception as ge:
         import traceback as _tb
@@ -5205,7 +5261,6 @@ async def api_marketplace_buy_via_admin(request: Request):
             except Exception:
                 pass
 
-
     # 6. Ma'lumotlar bazasida saqlash
     async with aiosqlite.connect(DB_PATH) as db:
         seller_user = await get_user(seller_id)
@@ -5218,50 +5273,6 @@ async def api_marketplace_buy_via_admin(request: Request):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (listing_id, group_chat_id, tid, seller_id, username, price, seller_net, time.time()))
         await db.commit()
-
-    # 7. Guruh ichiga xabarlar yuborish
-    # seller_mention va buyer_mention ni try blokidan TASHQARIDA aniqlaymiz
-    # (admin xabari uchun ham kerak, NameError oldini olish uchun)
-    try:
-        seller_user = await get_user(seller_id)
-        buyer_user = await get_user(tid)
-        seller_name = (seller_user or {}).get('first_name', '') or ''
-        seller_uname = (seller_user or {}).get('username', '') or ''
-        buyer_name = (buyer_user or {}).get('first_name', '') or ''
-        buyer_uname = (buyer_user or {}).get('username', '') or ''
-    except Exception:
-        seller_name = seller_uname = buyer_name = buyer_uname = ''
-
-    seller_mention = f"@{seller_uname}" if seller_uname else f"<a href='tg://user?id={seller_id}'>{seller_name or 'Sotuvchi'}</a>"
-    buyer_mention  = f"@{buyer_uname}"  if buyer_uname  else f"<a href='tg://user?id={tid}'>{buyer_name or 'Xaridor'}</a>"
-
-    # Guruh ichiga xabarlar
-    try:
-        msg_seller = (
-            f"🤝 <b>Assalomu alaykum, hurmatli ishtirokchilar!</b>\n\n"
-            f"👤 {seller_mention} (Sotuvchi):\n"
-            f"Iltimos, ushbu guruh a'zosi bo'lgan xaridorga <b>@{username}</b> nomining egaligini o'tkazib bering."
-        )
-        await bot.send_message(group_chat_id, msg_seller, parse_mode="HTML")
-        await asyncio.sleep(0.3)
-
-        msg_buyer = (
-            f"👤 {buyer_mention} (Xaridor):\n"
-            f"Sotuvchi username'ni o'tkazib berganidan so'ng, uni o'z profilingiz yoki kanalingizda to'liq tekshirib oling."
-        )
-        await bot.send_message(group_chat_id, msg_buyer, parse_mode="HTML")
-        await asyncio.sleep(0.3)
-
-        msg_rules = (
-            f"📢 <b>KAFOLATLANGAN BITIM QOIDALARI:</b>\n\n"
-            f"1️⃣ <b>Sotuvchi</b>: Username'ni xaridorga muvaffaqiyatli o'tkazib bo'lgach, ushbu guruhga aynan <code>o'tkazdim</code> (yoki <code>otkazdim</code>) so'zini yuboring.\n"
-            f"2️⃣ <b>Xaridor</b>: Username'ni o'z akkauntingizga qabul qilib olganingizdan so'ng, ushbu guruhga aynan <code>oldim</code> so'zini yuboring.\n\n"
-            f"⚠️ <b>Avtomatlashtirish:</b> Har ikki tomon ham tasdiqlovchi so'zlarni yuborishi bilanoq bot avtomatik ravishda bitimni yakunlaydi va to'lovni sotuvchining balansiga o'tkazadi.\n"
-            f"⏰ Ushbu guruh 1 soatdan so'ng avtomatik ravishda o'chiriladi va bitim bekor qilinadi."
-        )
-        await bot.send_message(group_chat_id, msg_rules, parse_mode="HTML")
-    except Exception as e_msg:
-        logger.error(f"Garant group message sending error: {e_msg}")
 
     # 8. Sotuvchiga shaxsiy xabar
     try:
