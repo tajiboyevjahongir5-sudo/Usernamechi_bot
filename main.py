@@ -2265,6 +2265,92 @@ async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: 
 # active_garant_verifiers: guruh chat_id → asyncio.Task (bir xil guruh uchun ikki marta task ochilishini oldini oladi)
 active_garant_verifiers: dict[int, asyncio.Task] = {}
 
+async def delete_telegram_group(group_chat_id: int):
+    """
+    Guruhni barcha foydalanuvchilar va bot uchun butunlay o'chirib yuboradi:
+    1. Admin user session orqali guruhdagi barcha a'zolarni (xaridor, sotuvchi, bot) kick qiladi (DeleteChatUserRequest).
+    2. Admin o'zi ham guruhdan chiqadi.
+    Natijada guruh hammadan butunlay yo'qoladi.
+    """
+    logger.info(f"🗑️ Guruhni butunlay o'chirish boshlandi: {group_chat_id}")
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from telethon.tl.functions.messages import DeleteChatUserRequest, GetFullChatRequest
+
+    admin_client = None
+    admin_client_is_stealth = False
+    try:
+        if not ADMIN_IDS:
+            logger.error("delete_telegram_group: ADMIN_IDS bo'sh.")
+            return
+
+        main_admin_id = ADMIN_IDS[0]
+        admin_client = stealth_clients.get(main_admin_id)
+        admin_client_is_stealth = admin_client is not None
+
+        if not admin_client:
+            async with aiosqlite.connect(DB_PATH) as _db:
+                _db.row_factory = aiosqlite.Row
+                async with _db.execute(
+                    "SELECT session_string FROM users WHERE telegram_id=?", (main_admin_id,)
+                ) as _cur:
+                    admin_row = await _cur.fetchone()
+            if not admin_row or not admin_row['session_string']:
+                logger.error(f"delete_telegram_group: Admin ({main_admin_id}) sessiyasi DB'da topilmadi.")
+                return
+            admin_client = TelegramClient(StringSession(admin_row['session_string']), API_ID, API_HASH)
+            await admin_client.connect()
+
+        chat_id_val = abs(group_chat_id)
+
+        # Guruhdagi barcha a'zolarni olish
+        participants = []
+        try:
+            full_chat = await admin_client(GetFullChatRequest(chat_id=chat_id_val))
+            if full_chat and hasattr(full_chat, 'users'):
+                participants = full_chat.users
+        except Exception as e:
+            logger.warning(f"delete_telegram_group: A'zolar ro'yxatini olib bo'lmadi: {e}")
+
+        # O'zimizning (Admin) ID
+        try:
+            me = await admin_client.get_me()
+            my_id = me.id
+        except Exception:
+            my_id = None
+
+        # Barcha boshqa a'zolarni o'chirish (kick)
+        for p in participants:
+            if my_id and p.id == my_id:
+                continue
+            try:
+                await admin_client(DeleteChatUserRequest(
+                    chat_id=chat_id_val,
+                    user_id=p.id
+                ))
+                logger.info(f"delete_telegram_group: Foydalanuvchi {p.id} guruhdan o'chirildi.")
+            except Exception as ke:
+                logger.warning(f"delete_telegram_group: Foydalanuvchi {p.id} ni o'chirishda xato: {ke}")
+
+        # Admin o'zi ham chiqib ketadi (o'zini o'chiradi)
+        try:
+            await admin_client(DeleteChatUserRequest(
+                chat_id=chat_id_val,
+                user_id='me'
+            ))
+            logger.info("delete_telegram_group: Admin guruhdan chiqdi.")
+        except Exception as le:
+            logger.warning(f"delete_telegram_group: Admin guruhdan chiqa olmadi: {le}")
+
+    except Exception as ge:
+        logger.error(f"delete_telegram_group xatolik: {ge}")
+    finally:
+        if admin_client and not admin_client_is_stealth:
+            try:
+                await admin_client.disconnect()
+            except Exception:
+                pass
+
 async def verify_username_transfer(bot, group_chat_id: int, buyer_id: int, seller_id: int,
                                    username: str, listing_id: int, price: int, seller_net: int):
     """
@@ -2411,9 +2497,19 @@ async def _complete_garant_deal(bot, group_chat_id: int, buyer_id: int, seller_i
             f"💰 Narxi: <b>{price:,} so'm</b>\n"
             f"💸 Sotuvchi hisobiga: <b>+{seller_net:,} so'm</b> o'tkazildi! ✅\n\n"
             f"🤝 Garant xizmatidan foydalanganingiz uchun rahmat.\n"
-            f"⏰ Ushbu guruh 24 soatdan so'ng avtomatik ravishda o'chiriladi."
+            f"⏰ Ushbu guruh 10 daqiqadan so'ng avtomatik ravishda butunlay o'chiriladi."
         )
         await bot.send_message(group_chat_id, success_msg, parse_mode="HTML")
+
+        # 10 daqiqadan keyin guruhni butunlay o'chirish vazifasini ishga tushiramiz
+        async def delayed_delete():
+            await asyncio.sleep(600)  # 10 daqiqa (600 soniya)
+            try:
+                await delete_telegram_group(group_chat_id)
+            except Exception as dde:
+                logger.error(f"Delayed delete group {group_chat_id} error: {dde}")
+
+        asyncio.create_task(delayed_delete())
 
         try:
             await bot.send_message(
@@ -7882,16 +7978,17 @@ async def garant_cleanup_loop(bot):
                         chat_id,
                         f"⏰ <b>Ushbu guruhning faoliyat muddati (1 soat) tugadi.</b>\n\n"
                         f"Bitim yakunlanmagan bo'lsa, xaridorning puli avtomatik qaytariladi. "
-                        f"Bot ushbu guruhni tark etmoqda.",
+                        f"Guruh butunlay o'chirilmoqda...",
                         parse_mode="HTML"
                     )
+                    await asyncio.sleep(2)  # Xabar yetkazilishi uchun 2 soniya kutamiz
                 except Exception: pass
                 
-                # 2. Bot guruhni tark etadi (leave chat)
+                # 2. Guruhni o'chirib tashlaymiz
                 try:
-                    await bot.leave_chat(chat_id)
-                except Exception as le:
-                    logger.warning(f"Bot failed to leave group {chat_id}: {le}")
+                    await delete_telegram_group(chat_id)
+                except Exception as de:
+                    logger.warning(f"Failed to delete group {chat_id} during cleanup: {de}")
                     
                 # 3. Agar bitim yakunlanmagan bo'lsa (pending_admin) — xaridorga refund
                 try:
