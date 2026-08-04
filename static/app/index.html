@@ -2152,12 +2152,12 @@ async function buyListing(id) {
   // Telegram WebApp Native Popup tanlov oynasi
   if (typeof tg.showPopup === 'function') {
     tg.showPopup({
-      title: "Sotib olish usulini tanlang",
-      message: `@${uname} nomini qanday usulda sotib olmoqchisiz?\n\nNarxi: ${price.toLocaleString()} so'm`,
+      title: "📦 Sotib olish usulini tanlang",
+      message: `@${uname} nomini qanday usulda sotib olmoqchisiz?\n\n💵 Narxi: ${price.toLocaleString()} so'm\n\n🤖 Avtomatik — bot darhol username'ni akkauntingizga o'tkazadi.\n👤 Admin (Garant) — admin nazoratida xavfsiz bitim.`,
       buttons: [
-        {id: "auto", type: "default", text: "🤖 Avtomatik bot orqali (Instant)"},
-        {id: "admin", type: "ok", text: "👤 Admin orqali (Escrow/Garant)"},
-        {id: "cancel", type: "cancel", text: "Bekor qilish"}
+        {id: "auto",   type: "default",     text: "🤖 Avtomatik bot orqali"},
+        {id: "admin",  type: "default",     text: "👤 Admin orqali (Garant)"},
+        {id: "cancel", type: "cancel",      text: "❌ Bekor qilish"}
       ]
     }, function(buttonId) {
       if (buttonId === "auto") {
