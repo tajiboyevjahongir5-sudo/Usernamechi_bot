@@ -648,21 +648,27 @@ TASK: Generate 18 usernames, at least 3 from each style above.
 FORMAT: Return ONLY a JSON array:
 ["variant1", "variant2", ...]"""
 
-    else:  # custom
+    else:  # custom / theme
         word = base_word or "user"
-        return f"""You are a professional Telegram username generator. Create beautiful, easy-to-read username variants based on the user's word.
+        return f"""You are a professional Telegram username naming expert. Generate SHORT, CREATIVE, MEANINGFUL usernames inspired by the THEME: "{word}".
 
-RULES:
+CRITICAL RULES:
 - Only lowercase letters (a-z), numbers, and underscores (_)
-- 5-32 characters total
-- The word "{word}" MUST appear in every result
+- 5-32 characters total — shorter is better (5-14 ideal)
 - Do NOT end with underscore or use double underscores
-- Only add numbers if logically meaningful (no random digits)
-- Each variant must have a different style (prefix only, suffix only, both, synonym swap, etc.)
+- The exact word "{word}" does NOT need to appear — use translations, synonyms, abbreviations, and related concepts!
+- Each username must feel natural and look like a real person's or brand's handle
+- Mix styles: some single words, some word+number, some word_suffix
 
 {lang_rule_custom}
 
-TASK: Generate 18 different username variants based on "{word}".
+EXAMPLES:
+- Theme "dasturchi" → ["codemaster", "dev_uz", "pytek77", "codejun", "hackpro"]
+- Theme "sotuvchi"  → ["sellerbek", "trade_uz", "shopking", "dealmaker"]
+- Theme "direktor"  → ["bosslife", "ceo_uz", "chiefman", "execpro"]
+- Theme "axmoq"     → ["crazyguy", "wild_one", "locobek", "madlad"]
+
+TASK: Generate 24 unique, creative usernames inspired by the theme "{word}". Use the theme as inspiration — not a literal requirement.
 {excluded_part}
 
 FORMAT: Return ONLY a JSON array, nothing else:
@@ -883,23 +889,135 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
     suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'ok', 'go', 'gg', 'co', 'ai', 'x', 'real', 'live', 'plus', 'max', 'mini', 'app', 'base']
     numbers = ['', '1', '2', '3', '4', '5', '7', '8', '9', '10', '11', '24', '25', '77', '88', '99', '100', '777', '888', '999', '2024', '2025', '2026', '007', '01', '07', '700', '900']
 
+    # ─── Semantik mavzu xaritasi: o'zbekcha so'z → qisqa ingliz kalit so'zlar ───
+    _THEME_KEYWORDS = {
+        # Kasblar / Professions
+        'dasturchi':   ['coder','dev','code','python','java','tech','hack','script','bytes','prog','build'],
+        'programmist': ['coder','dev','code','tech','hack','script','prog','build','stack'],
+        'developer':   ['dev','coder','code','build','forge','stack','bytes','techpro'],
+        'sotuvchi':    ['seller','sales','trade','shop','market','vendor','deal','offer','store','sell'],
+        'savdo':       ['trade','deal','market','shop','sales','offer','sell','merch'],
+        'direktor':    ['boss','chief','ceo','exec','leader','head','direct','manage'],
+        'rahbar':      ['boss','chief','leader','head','exec','manage','commander'],
+        'biznesmen':   ['bizman','ceo','boss','trade','deal','invest','corp','exec','capital','mogul'],
+        'tadbirkor':   ['startup','invest','build','ceo','exec','found','venture','mogul'],
+        'menejer':     ['manager','manage','team','admin','lead','head','exec'],
+        'vrach':       ['doctor','medic','health','clinic','heal','care','doc','md'],
+        'doktor':      ['doctor','medic','health','clinic','heal','care','doc','md'],
+        'oquvchi':     ['student','learn','study','campus','uni','pupil'],
+        'talaba':      ['student','learn','study','campus','uni','college','pupil'],
+        'oqutuvchi':   ['teacher','edu','tutor','learn','teach','school','mentor'],
+        'muallim':     ['teacher','edu','tutor','learn','teach','mentor','coach'],
+        'murabbiy':    ['coach','mentor','trainer','teach','guide','master'],
+        'bloger':      ['blog','vlog','media','content','creator','post','review','share'],
+        'blogger':     ['blog','vlog','media','content','creator','post','review'],
+        'youtuber':    ['youtube','vlog','content','creator','channel','video','tube'],
+        'aktyor':      ['actor','film','movie','star','scene','art','stage','cinema'],
+        'sportchi':    ['sport','athlete','fitness','gym','train','pro','team','champ'],
+        'haker':       ['hacker','dark','hack','cyber','ghost','anon','zero','void','shadow'],
+        'texno':       ['tech','digital','cyber','smart','byte','code','net','geek'],
+        'geymer':      ['gamer','game','play','gg','pro','clan','squad','noob','quest'],
+        'streamer':    ['stream','live','gaming','broadcast','content','viewer','twitch'],
+        'rassom':      ['art','artist','paint','draw','creative','sketch','visual','brush'],
+        'dizayner':    ['design','art','creative','visual','craft','pixel','studio','ux'],
+        'fotograf':    ['photo','photo','shoot','lens','capture','frame','snap','camera'],
+        'musiqachi':   ['music','audio','sound','beat','melody','studio','dj','track'],
+        'rapper':      ['rap','flow','beat','rhyme','bars','drip','trap','bars'],
+        'rejissor':    ['director','film','cinema','studio','scene','cut','creative'],
+        'jurnalist':   ['news','media','press','report','journalist','story','write'],
+        'yozuvchi':    ['writer','author','book','story','novel','pen','words','prose'],
+        'oshpaz':      ['chef','cook','food','recipe','kitchen','taste','meal','dish'],
+        'tadqiqotchi': ['research','science','lab','study','data','analyst','explore'],
+        'advokat':     ['lawyer','law','legal','court','justice','rights','counsel'],
+        'siyosatchi':  ['politic','leader','govern','power','state','party','vote'],
+        'general':     ['general','commander','military','army','force','chief','alpha'],
+        'kapitan':     ['captain','captain','leader','chief','command','naval','pilot'],
+        # Xarakter / Personality traits
+        'aqlli':       ['smart','genius','brain','clever','wise','mind','intellect','wiz'],
+        'kuchli':      ['strong','power','force','mighty','beast','bold','alpha','titan'],
+        'chiroyli':    ['beauty','pretty','glamour','style','looks','grace','glam','glow'],
+        'axmoq':       ['dumb','fool','crazy','wild','mad','joker','clown','loco','goof'],
+        'yovuz':       ['dark','evil','villain','shadow','night','void','doom','sinister'],
+        'jasur':       ['brave','bold','hero','courage','fearless','daring','valor'],
+        'mehribon':    ['kind','love','heart','warm','gentle','care','sweet','angel'],
+        'mard':        ['brave','bold','hero','manly','warrior','alpha','tough','steel'],
+        'shum':        ['tricky','sly','fox','sneaky','slick','clever','sharp'],
+        'oshna':       ['friend','buddy','bro','pal','mate','comrade','ally'],
+        # Brend / Brand
+        'brendface':   ['brand','face','model','icon','image','style','glam','trend'],
+        'model':       ['model','style','glam','photo','face','look','pose','icon'],
+        'influencer':  ['influence','brand','social','content','creator','trend','viral'],
+        'blogger':     ['blog','vlog','media','content','creator','post'],
+        # Diniy / Religious
+        'hafiz':       ['hafiz','quran','islamic','muslim','faith','deen','sacred'],
+        'imam':        ['imam','islamic','muslim','faith','quran','deen','lead'],
+        # Tabiat / Nature
+        'osmon':       ['sky','cloud','heaven','azure','celestial','above','cosmos'],
+        'daryo':       ['river','stream','flow','current','wave','aqua','water'],
+        'tog':         ['mountain','peak','summit','ridge','alpine','highland','cliff'],
+        'olov':        ['fire','flame','blaze','burn','ember','spark','ignite','heat'],
+        'shamol':      ['wind','breeze','storm','air','gale','drift','zephyr'],
+        'yulduz':      ['star','stellar','astro','nova','cosmos','galaxy','shine'],
+    }
+
     if cat.startswith('custom:'):
         cw = ''.join(c for c in cat.split(':', 1)[1].strip() if c.isalnum() or c == '_').lower()
         if not cw:
             cw = 'user'
         c_set = set()
-        if valid(cw): c_set.add(cw)
-        for p in prefixes:
-            for s in suffixes:
-                c_set.add(f'{p}{cw}{s}')
-                if p: c_set.add(f'{p}_{cw}{s}')
-                if s: c_set.add(f'{p}{cw}_{s}')
-                if p and s: c_set.add(f'{p}_{cw}_{s}')
-        for n in numbers:
-            if n:
-                c_set.add(f'{cw}{n}')
-                c_set.add(f'{cw}_{n}')
-                c_set.add(f'{n}{cw}')
+
+        # 1. Semantik mavzu so'zlari — o'zbekcha mavzudan ingliz kalit so'zlar topish
+        theme_keys = []
+        cw_norm = cw.replace("'", "").replace("'", "")
+        for t_key, t_vals in _THEME_KEYWORDS.items():
+            t_norm = t_key.replace("'", "")
+            if cw_norm == t_norm or cw_norm in t_norm or t_norm in cw_norm:
+                theme_keys = t_vals
+                break
+        if not theme_keys:
+            # Qisman moslik: birinchi 5 harf mos kelsa
+            for t_key, t_vals in _THEME_KEYWORDS.items():
+                if cw_norm[:5] == t_key[:5] and len(cw_norm) >= 4:
+                    theme_keys = t_vals
+                    break
+
+        if theme_keys:
+            # Semantik kalit so'zlardan username kombinatsiyalari
+            nice_pfx = ['real','the','my','mr','iam','pro','neo','top','vip','super','mega','dark','hot','cool']
+            nice_sfx = ['uz','uzb','pro','vip','top','bot','x','ai','go','hub','zone','bek','jan','77','99']
+            for kw in theme_keys:
+                if valid(kw): c_set.add(kw)
+                for pfx in nice_pfx[:10]:
+                    combo = f'{pfx}{kw}'
+                    if valid(combo): c_set.add(combo)
+                for sfx in nice_sfx[:10]:
+                    combo = f'{kw}{sfx}'
+                    if valid(combo): c_set.add(combo)
+                    combo2 = f'{kw}_{sfx}'
+                    if valid(combo2): c_set.add(combo2)
+                for num in ['7','77','99','2025','uz','pro']:
+                    c_set.add(f'{kw}{num}')
+                # Kalit so'z juftliklari
+                for kw2 in theme_keys:
+                    if kw2 != kw:
+                        combo = f'{kw}{kw2}'
+                        if valid(combo): c_set.add(combo)
+
+        # 2. Original so'z va uning qisqa shakli bilan kombinatsiyalar
+        short_cw = cw[:6]  # Max 6 harf — qisqa variant
+        for base in [cw, short_cw]:
+            if valid(base): c_set.add(base)
+            for p in prefixes[:20]:
+                if p:
+                    if valid(f'{p}{base}'): c_set.add(f'{p}{base}')
+                    if valid(f'{p}_{base}'): c_set.add(f'{p}_{base}')
+            for s in suffixes[:20]:
+                if s:
+                    if valid(f'{base}{s}'): c_set.add(f'{base}{s}')
+                    if valid(f'{base}_{s}'): c_set.add(f'{base}_{s}')
+            for n in numbers:
+                if n:
+                    if valid(f'{base}{n}'): c_set.add(f'{base}{n}')
         pool = list(c_set)
 
     elif cat == 'qisqa':
