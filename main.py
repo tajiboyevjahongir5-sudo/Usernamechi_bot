@@ -5159,6 +5159,35 @@ async def api_marketplace_buy_via_admin(request: Request):
         except Exception as ie:
             logger.error(f"Garant invite link error: {ie}")
 
+        # *** MUHIM: Botni guruhga qo'shamiz va admin qilamiz ***
+        # Aks holda bot.send_message(group_chat_id) ishlamaydi!
+        try:
+            from telethon.tl.functions.messages import AddChatUserRequest
+            from telethon.tl.functions.messages import EditChatAdminRequest
+
+            global bot
+            if not bot:
+                bot = Bot(token=BOT_TOKEN)
+            bot_info = await bot.get_me()
+            bot_entity = await admin_client.get_entity(bot_info.username)
+
+            # Botni guruhga qo'shamiz
+            await admin_client(AddChatUserRequest(
+                chat_id=chat.id,
+                user_id=bot_entity,
+                fwd_limit=50
+            ))
+            # Botga admin huquqi beramiz (xabar yuborish, pin, o'chirish uchun)
+            await admin_client(EditChatAdminRequest(
+                chat_id=chat.id,
+                user_id=bot_entity,
+                is_admin=True
+            ))
+            logger.info(f"Garant: Bot @{bot_info.username} guruhga admin sifatida qo'shildi.")
+        except Exception as be:
+            logger.warning(f"Garant: Botni guruhga qo'shib bo'lmadi: {be}")
+
+
     except Exception as ge:
         import traceback as _tb
         logger.error(f"Garant group creation error: {type(ge).__name__}: {ge}\n{_tb.format_exc()}")
