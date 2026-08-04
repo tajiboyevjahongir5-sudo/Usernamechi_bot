@@ -5191,18 +5191,23 @@ async def api_marketplace_buy_via_admin(request: Request):
         await db.commit()
 
     # 7. Guruh ichiga xabarlar yuborish
+    # seller_mention va buyer_mention ni try blokidan TASHQARIDA aniqlaymiz
+    # (admin xabari uchun ham kerak, NameError oldini olish uchun)
     try:
         seller_user = await get_user(seller_id)
         buyer_user = await get_user(tid)
-        
-        seller_name = seller_user.get('first_name', '') or ''
-        seller_uname = seller_user.get('username', '') or ''
-        seller_mention = f"@{seller_uname}" if seller_uname else f"<a href='tg://user?id={seller_id}'>{seller_name or 'Sotuvchi'}</a>"
-        
-        buyer_name = buyer_user.get('first_name', '') or ''
-        buyer_uname = buyer_user.get('username', '') or ''
-        buyer_mention = f"@{buyer_uname}" if buyer_uname else f"<a href='tg://user?id={tid}'>{buyer_name or 'Xaridor'}</a>"
+        seller_name = (seller_user or {}).get('first_name', '') or ''
+        seller_uname = (seller_user or {}).get('username', '') or ''
+        buyer_name = (buyer_user or {}).get('first_name', '') or ''
+        buyer_uname = (buyer_user or {}).get('username', '') or ''
+    except Exception:
+        seller_name = seller_uname = buyer_name = buyer_uname = ''
 
+    seller_mention = f"@{seller_uname}" if seller_uname else f"<a href='tg://user?id={seller_id}'>{seller_name or 'Sotuvchi'}</a>"
+    buyer_mention  = f"@{buyer_uname}"  if buyer_uname  else f"<a href='tg://user?id={tid}'>{buyer_name or 'Xaridor'}</a>"
+
+    # Guruh ichiga xabarlar
+    try:
         msg_seller = (
             f"🤝 <b>Assalomu alaykum, hurmatli ishtirokchilar!</b>\n\n"
             f"👤 {seller_mention} (Sotuvchi):\n"
@@ -5230,33 +5235,35 @@ async def api_marketplace_buy_via_admin(request: Request):
         logger.error(f"Garant group message sending error: {e_msg}")
 
     # 8. Sotuvchiga shaxsiy xabar
-    seller_private = (
-        f"🔔 <b>Sizning e'loningiz sotildi (Admin/Garant orqali)!</b>\n\n"
-        f"🔤 Username: <b>@{username}</b>\n"
-        f"💵 Narxi: <b>{price:,} so'm</b>\n\n"
-        f"🤝 Bitimni xavfsiz yakunlash uchun maxsus guruh tashkil etildi.\n"
-        f"Iltimos, guruhga a'zo bo'ling va username'ni o'tkazib bering:\n"
-        f"👉 <a href='{invite_link or ''}'>Guruhga kirish</a>"
-    )
     try:
+        seller_private = (
+            f"🔔 <b>Sizning e'loningiz sotildi (Admin/Garant orqali)!</b>\n\n"
+            f"🔤 Username: <b>@{username}</b>\n"
+            f"💵 Narxi: <b>{price:,} so'm</b>\n\n"
+            f"🤝 Bitimni xavfsiz yakunlash uchun maxsus guruh tashkil etildi.\n"
+            f"Iltimos, guruhga a'zo bo'ling va username'ni o'tkazib bering." +
+            (f"\n👉 <a href='{invite_link}'>Guruhga kirish</a>" if invite_link else "")
+        )
         await bot.send_message(seller_id, seller_private, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Failed to notify seller private: {e}")
-        
-    # Adminga shaxsiy xabar
-    admin_private = (
-        f"🚨 <b>Yangi Garant bitimi!</b>\n\n"
-        f"🔤 Username: <b>@{username}</b>\n"
-        f"👤 Sotuvchi: {seller_mention}\n"
-        f"👤 Xaridor: {buyer_mention}\n"
-        f"💵 Narxi: <b>{price:,} so'm</b>\n\n"
-        f"👉 <a href='{invite_link or ''}'>Guruhga qo'shilish (Garant)</a>"
-    )
+
+    # 9. Adminga shaxsiy xabar
     try:
+        admin_private = (
+            f"🚨 <b>Yangi Garant bitimi!</b>\n\n"
+            f"🔤 Username: <b>@{username}</b>\n"
+            f"👤 Sotuvchi: {seller_mention}\n"
+            f"👤 Xaridor: {buyer_mention}\n"
+            f"💵 Narxi: <b>{price:,} so'm</b>\n"
+            f"🏦 Guruh ID: <code>{group_chat_id}</code>" +
+            (f"\n👉 <a href='{invite_link}'>Guruhga kirish (Garant)</a>" if invite_link else "")
+        )
         for admin_id in ADMIN_IDS:
             try:
                 await bot.send_message(admin_id, admin_private, parse_mode="HTML")
-            except: pass
+            except Exception as e:
+                logger.warning(f"Admin {admin_id} ga xabar yuborilmadi: {e}")
     except Exception as e:
         logger.error(f"Failed to notify admins private: {e}")
 
