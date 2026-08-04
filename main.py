@@ -63,6 +63,10 @@ ADMIN_IDS     = [int(x) for x in os.getenv("ADMIN_IDS", "0").split(",") if x.str
 DB_PATH       = os.getenv("DB_PATH", "/app/data/usernamechi.db")
 WEB_URL       = os.getenv("WEB_URL", os.getenv("WEB_HOST", "https://your-app.railway.app"))
 
+# Server ishga tushgan vaqt — har deploy/restart da yangilanadi (kesh busting uchun)
+APP_BUILD_VERSION = str(int(time.time()))
+
+
 # Global bot instance - API endpointlardan foydalanish uchun
 bot: Bot = None
 
@@ -4004,9 +4008,27 @@ def get_admin_token(telegram_id: int) -> str:
 @app.get("/app")
 async def mini_app():
     with open("static/app/index.html", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
-        })
+        content = f.read()
+    # Server build versionini HTML ichiga inject qilamiz — Telegram WebView keshini majburiy yangilash uchun
+    inject = (
+        f'<script id="__bv__">window.__BUILD_VER__="{APP_BUILD_VERSION}";'
+        f'(function(){{'
+        f'var bv=window.__BUILD_VER__||"0";'
+        f'var stored=localStorage.getItem("__app_bv__");'
+        f'if(stored&&stored!==bv){{'
+        f'localStorage.clear();sessionStorage.clear();'
+        f'localStorage.setItem("__app_bv__",bv);'
+        f'window.location.reload(true);'
+        f'}}else if(!stored){{localStorage.setItem("__app_bv__",bv);}}'
+        f'}})();'
+        f'</script>\n</head>'
+    )
+    content = content.replace("</head>", inject, 1)
+    return HTMLResponse(content=content, headers={
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    })
 
 @app.get("/admin")
 async def admin_panel(token: str = ""):
