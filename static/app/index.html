@@ -37,8 +37,21 @@
     height: 24px !important;
     object-fit: contain !important;
     vertical-align: middle !important;
-    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.35));
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.35)) brightness(1.08) saturate(1.15);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
+  }
+  .card:hover img.icon-3d-img, .stat-card:hover img.icon-3d-img, .market-card:hover img.icon-3d-img {
+    transform: scale(1.18) translateY(-2px) rotate(6deg);
+    filter: drop-shadow(0 8px 18px rgba(139, 92, 246, 0.35)) brightness(1.12) saturate(1.22);
+  }
+  .icon-3d {
+    display: inline-block;
+    animation: waveHand 2s infinite ease-in-out;
+    transform-origin: 70% 70%;
+  }
+  @keyframes waveHand {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(15deg); }
   }
   .icon-badge {
     display: inline-flex;
@@ -898,23 +911,27 @@
   <div class="card">
     <div class="section-title"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Magic%20wand/3D/magic_wand_3d.png" class="icon-3d-img"></span> <span>Username</span> sotib olish</div>
 
-    <div class="card" id="no-session-warn" style="display:none;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.4);border-radius:16px;padding:14px;margin-bottom:14px;color:#f87171;font-size:13px;font-weight:600;">
-      ⚠️ Avval <b>Akkaunt</b> bo'limiga o'tib, Telegram akkauntingizni ulang!
+    <div class="card" id="no-session-warn" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);border-radius:18px;padding:14px 18px;margin-bottom:18px;color:#f87171;font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:10px;">
+      <i class="fa-solid fa-circle-exclamation" style="font-size:18px;"></i>
+      <span>Avval <b>Akkaunt</b> bo'limiga o'tib, Telegram akkauntingizni ulang!</span>
     </div>
 
     <div class="form-group">
       <label>🎯 Qanday username qidiramiz?</label>
       <div style="display:flex; gap:8px; margin-bottom:8px;">
-        <button id="btn-cat-custom" class="btn btn-outline" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:2px;" onclick="setCategory('custom')">
-          <span>✍️ O'zim kiritaman</span>
+        <button id="btn-cat-custom" class="btn btn-outline" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('custom')">
+          <i class="fa-solid fa-pen-nib" style="font-size:16px; color:var(--accent-light); margin-top:2px;"></i>
+          <span>O'zim kiritaman</span>
           <span style="font-size:11px; opacity:0.8; font-weight:700;">5,000 so'm</span>
         </button>
-        <button id="btn-cat-smart" class="btn btn-primary" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:2px;" onclick="setCategory('turli')">
-          <span>✨ Turli ko'rinishdagi</span>
+        <button id="btn-cat-smart" class="btn btn-primary" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('turli')">
+          <i class="fa-solid fa-wand-magic-sparkles" style="font-size:16px; color:#22d3ee; margin-top:2px;"></i>
+          <span>Turli ko'rinishdagi</span>
           <span style="font-size:11px; opacity:0.8; font-weight:700;">10,000 so'm</span>
         </button>
-        <button id="btn-cat-short" class="btn btn-outline" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:2px;" onclick="setCategory('qisqa')">
-          <span>💎 Qisqa noyob</span>
+        <button id="btn-cat-short" class="btn btn-outline" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('qisqa')">
+          <i class="fa-solid fa-gem" style="font-size:16px; color:#fbbf24; margin-top:2px;"></i>
+          <span>Qisqa noyob</span>
           <span style="font-size:11px; opacity:0.8; font-weight:700;">15,000 so'm</span>
         </button>
       </div>
@@ -945,10 +962,10 @@
       <div class="price-label">To'lanadigan summa</div>
       <div class="price-val" id="search-total-price">5,000 so'm</div>
     </div>
-    <div id="search-balance-warn" style="display:none;color:#f87171;font-size:13px;font-weight:600;margin-top:8px;text-align:center;">❌ Balans yetarli emas!</div>
+    <div id="search-balance-warn" style="display:none;color:#f87171;font-size:13px;font-weight:600;margin-top:8px;text-align:center;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:4px;"></i> Balans yetarli emas!</div>
 
-    <button class="btn btn-primary" id="search-btn" onclick="startSearch()" style="margin-top:14px;">
-      💳 To'lab qidirish
+    <button class="btn btn-primary" id="search-btn" onclick="startSearch()" style="margin-top:14px; display:flex; align-items:center; justify-content:center; gap:8px;">
+      <i class="fa-solid fa-credit-card"></i> To'lab qidirish
     </button>
   </div>
 
@@ -957,7 +974,7 @@
     <div class="section-title">Bo'sh usernamelar</div>
     
     <div style="font-size:12px; color:var(--muted); margin-bottom:12px;">
-      <span id="search-status-text">⏳ Qidirilmoqda...</span>
+      <span id="search-status-text"><i class="fa-solid fa-spinner fa-spin" style="margin-right:6px; color:var(--accent2-light);"></i> Qidirilmoqda...</span>
       <br><span id="search-must-select-hint"></span>
     </div>
 
