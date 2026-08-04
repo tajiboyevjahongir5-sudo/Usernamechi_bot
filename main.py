@@ -1740,16 +1740,16 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                     (seller_net, seller_id)
                 )
                 if listing_db_id:
-                    # Update listing status to 'sold'
                     await _db.execute(
                         "UPDATE listings SET status='sold' WHERE id=?",
                         (listing_db_id,)
                     )
-                    # Update listing_orders status to 'completed'
                     await _db.execute(
                         "UPDATE listing_orders SET status='completed' WHERE listing_id=? AND buyer_id=?",
                         (listing_db_id, buyer_id)
                     )
+                    # Kanal postini "SOTILDI" holatiga o'tkazamiz
+                    asyncio.create_task(update_channel_listing_post(listing_db_id, 'sold'))
                 await _db.commit()
                 logger.info(f"Transfer muvaffaqiyatli: {seller_net:,} so'm -> seller ({seller_id})")
         except Exception as se_err:
@@ -2247,6 +2247,9 @@ async def _complete_garant_deal(bot, group_chat_id: int, buyer_id: int, seller_i
             )
             await db.execute("DELETE FROM garant_groups WHERE group_chat_id = ?", (group_chat_id,))
             await db.commit()
+
+        # Kanal postini "SOTILDI" holatiga o'tkazamiz
+        asyncio.create_task(update_channel_listing_post(listing_id, 'sold'))
 
         detect_note = (
             "🤖 <i>(Username xaridor akkauntida avtomatik aniqlandi — ikki tomondan tasdiqlash talab qilinmadi)</i>\n\n"
@@ -4734,10 +4737,19 @@ async def api_marketplace_buy(request: Request):
         db.row_factory = aiosqlite.Row
         
         # E'lonni olish
-        async with db.execute("SELECT * FROM listings WHERE id=? AND status='active'", (listing_id,)) as c:
+        async with db.execute("SELECT * FROM listings WHERE id=?", (listing_id,)) as c:
             listing = await c.fetchone()
         if not listing:
-            return {"ok": False, "error": "E'lon topilmadi yoki allaqachon sotilgan"}
+            return {"ok": False, "error": "E'lon topilmadi"}
+            
+        if listing['status'] == 'transferring':
+            return {
+                "ok": False,
+                "error": "⚠️ Ushbu username ayni damda o'tkazish jarayonida yoki Garant kelishuvida. Agar 1 soat ichida bitim yakunlanmasa, u qayta sotuvga chiqadi va balansingizdan pul yechilmaydi."
+            }
+        elif listing['status'] != 'active':
+            return {"ok": False, "error": "E'lon allaqachon sotilgan yoki faol emas."}
+
         if listing['seller_id'] == tid:
             return {"ok": False, "error": "O'z e'loningizni sotib ololmaysiz"}
         
@@ -4770,16 +4782,16 @@ async def api_marketplace_buy(request: Request):
         if cur.rowcount == 0:
             return {"ok": False, "error": f"Balansingiz yetarli emas! Kerak: {price:,} so'm"}
 
-        # 2. E'lonni atomik 'sold' qilamiz — bir vaqtda ikki xaridor sotib ololmasin
+        # 2. E'lonni atomik 'transferring' qilamiz — bir vaqtda ikki xaridor sotib ololmasin
         cur2 = await db.execute(
-            "UPDATE listings SET status='sold' WHERE id=? AND status='active'",
+            "UPDATE listings SET status='transferring' WHERE id=? AND status='active'",
             (listing_id,)
         )
         if cur2.rowcount == 0:
             # Boshqa xaridor bir zumda sotib oldi — pulni qaytaramiz
             await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, tid))
             await db.commit()
-            return {"ok": False, "error": "E'lon allaqachon sotilgan. Pul balansingizga qaytarildi."}
+            return {"ok": False, "error": "E'lon allaqachon sotilmoqda yoki sotilgan. Pul balansingizga qaytarildi."}
 
         # 3. Tarix (status 'pending' qilinadi, chunki transfer hali yakunlanmagan)
         await db.execute(
@@ -4791,9 +4803,6 @@ async def api_marketplace_buy(request: Request):
     
     # Username transfer fonda boshlanadi
     asyncio.create_task(transfer_username(bot, seller_id, tid, username))
-
-    # Kanal postini "SOTILDI" holatiga o'tkazamiz
-    asyncio.create_task(update_channel_listing_post(listing_id, 'sold'))
     
     return {
         "ok": True, 
@@ -4820,10 +4829,19 @@ async def api_marketplace_buy_via_admin(request: Request):
         db.row_factory = aiosqlite.Row
         
         # E'lonni olish
-        async with db.execute("SELECT * FROM listings WHERE id=? AND status='active'", (listing_id,)) as c:
+        async with db.execute("SELECT * FROM listings WHERE id=?", (listing_id,)) as c:
             listing = await c.fetchone()
         if not listing:
-            return {"ok": False, "error": "E'lon topilmadi yoki allaqachon sotilgan"}
+            return {"ok": False, "error": "E'lon topilmadi"}
+            
+        if listing['status'] == 'transferring':
+            return {
+                "ok": False,
+                "error": "⚠️ Ushbu username ayni damda o'tkazish jarayonida yoki Garant kelishuvida. Agar 1 soat ichida bitim yakunlanmasa, u qayta sotuvga chiqadi va balansingizdan pul yechilmaydi."
+            }
+        elif listing['status'] != 'active':
+            return {"ok": False, "error": "E'lon allaqachon sotilgan yoki faol emas."}
+
         if listing['seller_id'] == tid:
             return {"ok": False, "error": "O'z e'loningizni sotib ololmaysiz"}
         
@@ -4849,15 +4867,15 @@ async def api_marketplace_buy_via_admin(request: Request):
         if cur.rowcount == 0:
             return {"ok": False, "error": f"Balansingiz yetarli emas! Kerak: {price:,} so'm"}
 
-        # 2. E'lonni 'sold' qilamiz
+        # 2. E'lonni 'transferring' qilamiz
         cur2 = await db.execute(
-            "UPDATE listings SET status='sold' WHERE id=? AND status='active'",
+            "UPDATE listings SET status='transferring' WHERE id=? AND status='active'",
             (listing_id,)
         )
         if cur2.rowcount == 0:
             await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, tid))
             await db.commit()
-            return {"ok": False, "error": "E'lon allaqachon sotilgan. Pul balansingizga qaytarildi."}
+            return {"ok": False, "error": "E'lon allaqachon sotilmoqda yoki sotilgan. Pul balansingizga qaytarildi."}
 
         # 3. Buyurtma yaratamiz (status='pending_admin')
         await db.execute(
@@ -4866,8 +4884,7 @@ async def api_marketplace_buy_via_admin(request: Request):
         )
         await db.commit()
 
-    # 4. Kanal postini "SOTILDI" holatiga o'tkazamiz
-    asyncio.create_task(update_channel_listing_post(listing_id, 'sold'))
+    # (Kanal postini "SOTILDI" holatiga faqat bitim yakunlangandagina o'tkazamiz)
 
     # 5. Garant guruhini Telethon orqali yaratish
     group_chat_id = None
@@ -4985,7 +5002,7 @@ async def api_marketplace_buy_via_admin(request: Request):
             f"1️⃣ <b>Sotuvchi</b>: Username'ni xaridorga muvaffaqiyatli o'tkazib bo'lgach, ushbu guruhga aynan <code>o'tkazdim</code> (yoki <code>otkazdim</code>) so'zini yuboring.\n"
             f"2️⃣ <b>Xaridor</b>: Username'ni o'z akkauntingizga qabul qilib olganingizdan so'ng, ushbu guruhga aynan <code>oldim</code> so'zini yuboring.\n\n"
             f"⚠️ <b>Avtomatlashtirish:</b> Har ikki tomon ham tasdiqlovchi so'zlarni yuborishi bilanoq bot avtomatik ravishda bitimni yakunlaydi va to'lovni sotuvchining balansiga o'tkazadi.\n"
-            f"⏰ Ushbu guruh 24 soatdan so'ng avtomatik ravishda o'chiriladi."
+            f"⏰ Ushbu guruh 1 soatdan so'ng avtomatik ravishda o'chiriladi va bitim bekor qilinadi."
         )
         await bot.send_message(group_chat_id, msg_rules, parse_mode="HTML")
     except Exception as e_msg:
@@ -7518,12 +7535,12 @@ async def bonus_notification_loop():
 
 
 async def garant_cleanup_loop(bot):
-    """Garant guruhlarini avtomatik tozalash: 24 soatdan oshgan guruhlar bazadan va Telegramdan o'chiriladi"""
+    """Garant guruhlarini avtomatik tozalash: 1 soatdan oshgan guruhlar bazadan va Telegramdan o'chiriladi"""
     logger.info("🤝 Garant cleanup loop ishga tushdi")
     while True:
         try:
             now = time.time()
-            limit_time = now - 24 * 3600
+            limit_time = now - 3600  # 1 soat (3600 soniya)
             
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
@@ -7543,7 +7560,7 @@ async def garant_cleanup_loop(bot):
                 try:
                     await bot.send_message(
                         chat_id,
-                        f"⏰ <b>Ushbu guruhning faoliyat muddati (24 soat) tugadi.</b>\n\n"
+                        f"⏰ <b>Ushbu guruhning faoliyat muddati (1 soat) tugadi.</b>\n\n"
                         f"Bitim yakunlanmagan bo'lsa, xaridorning puli avtomatik qaytariladi. "
                         f"Bot ushbu guruhni tark etmoqda.",
                         parse_mode="HTML"
@@ -7578,8 +7595,9 @@ async def garant_cleanup_loop(bot):
                             try:
                                 await bot.send_message(
                                     buyer_id,
-                                    f"⚠️ <b>@{username}</b> bo'yicha garant bitimi 24 soat ichida yakunlanmadi.\n"
-                                    f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅",
+                                    f"⚠️ <b>@{username}</b> bo'yicha garant bitimi 1 soat ichida yakunlanmadi.\n"
+                                    f"💰 Pulingiz to'liq balansingizga qaytarildi. ✅\n"
+                                    f"🛒 E'lon qaytadan sotuvga chiqarildi.",
                                     parse_mode="HTML"
                                 )
                             except: pass
@@ -7596,8 +7614,8 @@ async def garant_cleanup_loop(bot):
         except Exception as e:
             logger.error(f"garant_cleanup_loop xato: {e}")
             
-        # Keyingi tekshirishgacha 1 soat kutamiz
-        await asyncio.sleep(3600)
+        # Har 60 soniyada tekshirib turamiz
+        await asyncio.sleep(60)
 
 
 async def main():
