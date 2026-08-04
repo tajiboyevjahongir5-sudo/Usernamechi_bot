@@ -5121,22 +5121,23 @@ async def api_marketplace_buy_via_admin(request: Request):
             admin_client = TelegramClient(StringSession(admin_row['session_string']), API_ID, API_HASH)
             await admin_client.connect()
 
-        # Guruhga qo'shiladigan foydalanuvchilar — get_entity() ishlatamiz
+        # Guruhga qo'shiladigan foydalanuvchilar — get_input_entity() ishlatamiz
+        # (InputUser kerak, User emas — CreateChatRequest talabi)
         users_to_add = []
 
         # Xaridor
         try:
-            buyer_entity = await admin_client.get_entity(tid)
-            users_to_add.append(buyer_entity)
+            buyer_input = await admin_client.get_input_entity(tid)
+            users_to_add.append(buyer_input)
         except Exception as e:
-            logger.warning(f"Garant: Xaridor ({tid}) topilmadi: {e}")
+            logger.warning(f"Garant: Xaridor ({tid}) input entity topilmadi: {e}")
 
         # Sotuvchi
         try:
-            seller_entity = await admin_client.get_entity(seller_id)
-            users_to_add.append(seller_entity)
+            seller_input = await admin_client.get_input_entity(seller_id)
+            users_to_add.append(seller_input)
         except Exception as e:
-            logger.warning(f"Garant: Sotuvchi ({seller_id}) topilmadi: {e}")
+            logger.warning(f"Garant: Sotuvchi ({seller_id}) input entity topilmadi: {e}")
 
         if not users_to_add:
             raise Exception("Guruhga xaridor va sotuvchi qo'shib bo'lmadi — ikkisi ham topilmadi.")
@@ -5146,16 +5147,20 @@ async def api_marketplace_buy_via_admin(request: Request):
             users=users_to_add,
             title=f"🤝 Garant: @{username}"
         ))
+        logger.info(f"Garant: CreateChatRequest natijasi: {type(res).__name__}")
 
-        # Chat entityni olamiz
+        # Chat entityni olamiz — barcha holatlarga qarshi mustahkam parsing
         chat = None
-        if hasattr(res, 'chats') and res.chats:
-            chat = res.chats[0]
-        elif hasattr(res, 'updates'):
-            for u in res.updates:
-                if hasattr(u, 'chats') and u.chats:
-                    chat = u.chats[0]
-                    break
+        try:
+            if hasattr(res, 'chats') and res.chats:
+                chat = res.chats[0]
+            elif hasattr(res, 'updates') and isinstance(res.updates, list):
+                for u in res.updates:
+                    if hasattr(u, 'chats') and isinstance(u.chats, list) and u.chats:
+                        chat = u.chats[0]
+                        break
+        except TypeError as te:
+            logger.warning(f"Garant: res dan chat ajratishda xato: {te}")
 
         if not chat:
             # Fallback: oxirgi dialoglardan qidiramiz
