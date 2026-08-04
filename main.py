@@ -908,10 +908,40 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         else:
             all_words = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN + nouns + adjectives))
 
-        # Eng qisqa va chiroyli so'zlar (5-7 belgi, faqat harflar, son va qo'shimchalarsiz!)
+        # 1. Sof toza so'zlar (5-7 harf, faqat alifbo)
         words = [str(w).lower() for w in all_words if str(w).isalpha() and 5 <= len(str(w)) <= 7]
         random.shuffle(words)
-        pool = words
+
+        # 2. Brandable ikki bo'g'inli so'z kombinatsiyalari (CVC+CVC yoki CV+CVC uslubi)
+        # Bu eng kam topilgan, premium ko'rinishdagi short usernamalar
+        prefixes_short = ['ka','na','sa','ma','la','ra','da','ta','ba','va','za','ya',
+                          'ko','no','so','mo','lo','ro','do','to','bo','vo','zo','yo',
+                          'ki','ni','si','mi','li','ri','di','ti','bi','vi','zi','yi',
+                          'al','ar','an','ak','az','er','en','el','or','on','ul','un']
+        suffixes_short = ['yon','zor','kor','nor','bek','xon','gar','bar','far','tar',
+                          'lar','mar','nar','par','sar','var','war','dar','har','jar',
+                          'lan','ran','kan','ban','tan','van','dan','han','jan',
+                          'lux','nox','vex','rax','zax','tex','rex','vix','fox','box',
+                          'era','ora','ura','ara','ira','ova','eva','ava','iya','ura']
+        brand_pool = []
+        for pf in prefixes_short:
+            for sf in suffixes_short:
+                combo = pf + sf
+                if 5 <= len(combo) <= 7 and combo.isalpha():
+                    brand_pool.append(combo)
+        random.shuffle(brand_pool)
+
+        # 3. So'z + bitta raqam (faqat eng chiroylilari: x, 7, 1)
+        digit_pool = []
+        for w in words[:2000]:
+            if len(w) <= 6:
+                digit_pool.append(f'{w}x')
+                digit_pool.append(f'{w}7')
+                digit_pool.append(f'{w}1')
+        random.shuffle(digit_pool)
+
+        # Hammani birlashtirish: toza so'zlar oldin, keyin brandable, keyin raqamli
+        pool = words + brand_pool[:3000] + digit_pool[:2000]
 
     elif cat in ('brend', 'biznes', 'business'):
         if lang == 'uz':
@@ -2997,7 +3027,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         }
 
         start_time = asyncio.get_event_loop().time()
-        MAX_SECONDS = 100
+        MAX_SECONDS = 180  # Ko'proq vaqt = ko'proq natija
 
         found_lock = asyncio.Lock()
         found_usernames_set = set(llm_results) if llm_results else set()
@@ -3057,10 +3087,13 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 if http_result == 'taken':
                     return
 
-                # 2. Telethon API QAT'IY tasdig'i: Faqat API 'True' (bo'sh) deb bersagina muvaffaqiyatli deb olamiz
+                # 2. Telethon API tasdig'i (agar session bo'lsa)
                 is_free = False
                 if telethon_client and telethon_client.is_connected():
                     is_free = await check_via_telethon(uname)
+                elif http_result == 'maybe_free':
+                    # Telethon session yo'q — HTTP natijasiga ishonish
+                    is_free = True
 
                 if is_free:
                     async with found_lock:
@@ -3084,7 +3117,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                 logger.debug(f"verify_target error for {uname}: {e}")
 
         async with aiohttp.ClientSession(headers=req_headers) as http_session:
-            batch_size = 30
+            batch_size = 50  # Ko'proq parallel tekshiruv
             for i in range(0, len(all_targets), batch_size):
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if elapsed > MAX_SECONDS:
