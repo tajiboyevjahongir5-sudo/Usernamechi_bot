@@ -908,21 +908,10 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         else:
             all_words = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN + nouns + adjectives))
 
-        # Eng qisqa va chiroyli so'zlar (5-8 belgi, faqat harflar)
-        words = [str(w).lower() for w in all_words if str(w).isalpha() and 5 <= len(str(w)) <= 8]
+        # Eng qisqa va chiroyli so'zlar (5-7 belgi, faqat harflar, son va qo'shimchalarsiz!)
+        words = [str(w).lower() for w in all_words if str(w).isalpha() and 5 <= len(str(w)) <= 7]
         random.shuffle(words)
-
-        var_pool = list(words[:4000])  # sof so'zlar eng oldin
-
-        # Faqat oz sonli, yoqimli qo'shimchalar
-        short_sfx = ['x', '7', '0', '1', 'ai', 'go', 'me']
-        short_pfx = ['the', 'hey', 'iam', 'its', 'mr', 'dr']
-        for w in words[:600]:
-            var_pool.append(f'{w}{random.choice(short_sfx)}')
-            var_pool.append(f'{random.choice(short_pfx)}{w}')
-
-        random.shuffle(var_pool)
-        pool = var_pool
+        pool = words
 
     elif cat in ('brend', 'biznes', 'business'):
         b_words = ['store', 'shop', 'market', 'trade', 'brand', 'group', 'company', 'corp', 'studio', 'agency', 'media', 'express', 'center', 'global', 'service', 'hub', 'lab']
@@ -2884,17 +2873,18 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
 
         targets = generate_usernames(category, lang=lang, limit=5000)
 
-        # Generator nomlariga qo'shimcha kombinatsiyalar
+        # Generator nomlariga qo'shimcha kombinatsiyalar (qisqa kategoriya uchun qo'shimchalar qo'shmaymiz!)
         extra_targets = []
-        for t in targets[:300]:
-            extra_targets.extend([
-                f"{t}_uz", f"{t}_official", f"{t}_bot", f"{t}2025", f"{t}2026",
-                f"real_{t}", f"{t}_me", f"the_{t}", f"{t}_pro", f"{t}1", f"{t}7",
-                f"{t}99", f"{t}777", f"{t}_vip", f"{t}_tv", f"{t}_top",
-                f"my{t}", f"mr{t}", f"{t}hub", f"{t}lab", f"{t}hq",
-                f"go{t}", f"{t}go", f"{t}x", f"{t}ai", f"neo{t}"
-            ])
-        random.shuffle(extra_targets)
+        if cat_key_for_llm != 'qisqa':
+            for t in targets[:300]:
+                extra_targets.extend([
+                    f"{t}_uz", f"{t}_official", f"{t}_bot", f"{t}2025", f"{t}2026",
+                    f"real_{t}", f"{t}_me", f"the_{t}", f"{t}_pro", f"{t}1", f"{t}7",
+                    f"{t}99", f"{t}777", f"{t}_vip", f"{t}_tv", f"{t}_top",
+                    f"my{t}", f"mr{t}", f"{t}hub", f"{t}lab", f"{t}hq",
+                    f"go{t}", f"{t}go", f"{t}x", f"{t}ai", f"neo{t}"
+                ])
+            random.shuffle(extra_targets)
 
         # 5-32 belgili va toza Telegram username talablariga moslash
         TELEGRAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
