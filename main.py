@@ -5057,58 +5057,107 @@ async def api_marketplace_buy_via_admin(request: Request):
 
     # (Kanal postini "SOTILDI" holatiga faqat bitim yakunlangandagina o'tkazamiz)
 
-    # 5. Garant guruhini BOT ning Telethon sessiyasi orqali yaratish
-    # (Xaridor sessiyasiga bog'liq emas — ishonchli va barqaror)
+    # 5. Garant guruhini ADMIN akkauntidan yaratish
+    # (Admin — real foydalanuvchi, guruh ochishda hech qanday cheklov yo'q)
     group_chat_id = None
     invite_link = None
 
     from telethon import TelegramClient
     from telethon.sessions import StringSession
-    from telethon.tl.functions.channels import CreateChannelRequest, InviteToChannelRequest
-    from telethon.tl.functions.messages import ExportChatInviteRequest
-    from telethon.tl.types import InputChannel
+    from telethon.tl.functions.messages import CreateChatRequest, ExportChatInviteRequest
 
-    bot_tl = None
+    admin_client = None
+    admin_client_is_stealth = False
+
     try:
-        # Bot token orqali Telethon client yaratamiz (har doim mavjud)
-        bot_tl = TelegramClient(StringSession(), API_ID, API_HASH)
-        await bot_tl.start(bot_token=BOT_TOKEN)
+        # Admin ID va sessiyasini aniqlaymiz
+        if not ADMIN_IDS:
+            raise Exception("ADMIN_IDS bo'sh — .env faylida ADMIN_IDS ni to'ldiring.")
 
-        # Supergroup (megagroup) yaratamiz — CreateChannelRequest ishlatamiz
-        res = await bot_tl(CreateChannelRequest(
-            title=f"🤝 Garant: @{username}",
-            about=f"Kafolatlangan bitim guruhi. Username: @{username}. Narxi: {price:,} so'm",
-            megagroup=True
+        main_admin_id = ADMIN_IDS[0]
+
+        # Admin stealth client mavjudmi?
+        admin_client = stealth_clients.get(main_admin_id)
+        admin_client_is_stealth = admin_client is not None
+
+        if not admin_client:
+            # DB'dan admin sessiyasini olamiz
+            async with aiosqlite.connect(DB_PATH) as _db:
+                _db.row_factory = aiosqlite.Row
+                async with _db.execute(
+                    "SELECT session_string FROM users WHERE telegram_id=?", (main_admin_id,)
+                ) as _cur:
+                    admin_row = await _cur.fetchone()
+
+            if not admin_row or not admin_row['session_string']:
+                raise Exception(f"Admin ({main_admin_id}) ning sessiyasi DB'da topilmadi. Admin avval login qilishi kerak.")
+
+            admin_client = TelegramClient(StringSession(admin_row['session_string']), API_ID, API_HASH)
+            await admin_client.connect()
+
+        # Guruhga qo'shiladigan foydalanuvchilar — get_entity() ishlatamiz
+        # (get_entity → to'liq User ob'ekti → Telethon InputUser ga avtomatik konvertatsiya qiladi)
+        users_to_add = []
+
+        # Xaridor
+        try:
+            buyer_entity = await admin_client.get_entity(tid)
+            users_to_add.append(buyer_entity)
+        except Exception as e:
+            logger.warning(f"Garant: Xaridor ({tid}) topilmadi: {e}")
+
+        # Sotuvchi
+        try:
+            seller_entity = await admin_client.get_entity(seller_id)
+            users_to_add.append(seller_entity)
+        except Exception as e:
+            logger.warning(f"Garant: Sotuvchi ({seller_id}) topilmadi: {e}")
+
+        if not users_to_add:
+            raise Exception("Guruhga xaridor va sotuvchi qo'shib bo'lmadi — ikkisi ham topilmadi.")
+
+        # Admin guruh yaratadi (CreateChatRequest — asosiy guruh, oddiy chat)
+        res = await admin_client(CreateChatRequest(
+            users=users_to_add,
+            title=f"🤝 Garant: @{username}"
         ))
 
-        channel = res.chats[0]
-        channel_id = channel.id
-        channel_hash = channel.access_hash
+        # Chat entityni olamiz
+        chat = None
+        if hasattr(res, 'chats') and res.chats:
+            chat = res.chats[0]
+        elif hasattr(res, 'updates'):
+            for u in res.updates:
+                if hasattr(u, 'chats') and u.chats:
+                    chat = u.chats[0]
+                    break
 
-        # Aiogram Bot API uchun supergroup chat ID formati: -100{channel_id}
-        group_chat_id = int(f"-100{channel_id}")
-
-        # Foydalanuvchilarni (xaridor, sotuvchi) guruhga qo'shish
-        input_channel = InputChannel(channel_id=channel_id, access_hash=channel_hash)
-        for user_id_to_add in [tid, seller_id]:
+        if not chat:
+            # Fallback: oxirgi dialoglardan qidiramiz
             try:
-                user_entity = await bot_tl.get_input_entity(user_id_to_add)
-                await bot_tl(InviteToChannelRequest(
-                    channel=input_channel,
-                    users=[user_entity]
-                ))
-            except Exception as inv_e:
-                logger.warning(f"Garant group: {user_id_to_add} ni qo'shib bo'lmadi: {inv_e}")
+                dialogs = await admin_client.get_dialogs(limit=10)
+                for d in dialogs:
+                    if d.name and "Garant" in d.name and username in d.name:
+                        chat = d.entity
+                        break
+            except Exception as de:
+                logger.error(f"Garant fallback dialog search: {de}")
 
-        # Invite link olish
+        if not chat:
+            raise Exception("Guruh yaratildi lekin chat entity topilmadi.")
+
+        group_chat_id = -int(chat.id)
+
+        # Invite link olish — get_input_entity(chat) → InputPeerChat (to'g'ri tur)
         try:
-            invite_res = await bot_tl(ExportChatInviteRequest(peer=input_channel))
-            if hasattr(invite_res, 'link'):
-                invite_link = invite_res.link
-            elif hasattr(invite_res, 'invite') and hasattr(invite_res.invite, 'link'):
-                invite_link = invite_res.invite.link
+            chat_peer = await admin_client.get_input_entity(chat)
+            invite_res = await admin_client(ExportChatInviteRequest(peer=chat_peer))
+            invite_link = (
+                getattr(invite_res, 'link', None) or
+                getattr(getattr(invite_res, 'invite', None), 'link', None)
+            )
         except Exception as ie:
-            logger.error(f"Garant group invite link error: {ie}")
+            logger.error(f"Garant invite link error: {ie}")
 
     except Exception as ge:
         import traceback as _tb
@@ -5118,14 +5167,15 @@ async def api_marketplace_buy_via_admin(request: Request):
             await db.execute("UPDATE listings SET status='active' WHERE id=?", (listing_id,))
             await db.execute("DELETE FROM listing_orders WHERE listing_id=? AND buyer_id=? AND status='pending_admin'", (listing_id, tid))
             await db.commit()
-        err_detail = str(ge)[:120] if str(ge) else type(ge).__name__
+        err_detail = str(ge)[:150] if str(ge) else type(ge).__name__
         return {"ok": False, "error": f"Garant guruhini yaratishda xatolik: {type(ge).__name__}: {err_detail}. Balans qaytarildi."}
     finally:
-        if bot_tl:
+        if admin_client and not admin_client_is_stealth:
             try:
-                await bot_tl.disconnect()
+                await admin_client.disconnect()
             except Exception:
                 pass
+
 
     # 6. Ma'lumotlar bazasida saqlash
     async with aiosqlite.connect(DB_PATH) as db:
