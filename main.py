@@ -5064,11 +5064,20 @@ async def api_marketplace_buy_via_admin(request: Request):
     from telethon import TelegramClient
     from telethon.sessions import StringSession
     from telethon.tl.functions.messages import CreateChatRequest, ExportChatInviteRequest
+    from telethon.tl.types import InputUser, InputPeerUser, InputPeerChannel, InputPeerChat
     
     buyer_client = stealth_clients.get(tid)
     buyer_is_stealth = buyer_client is not None
     if not buyer_client:
         buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
+    
+    def peer_to_input_user(peer):
+        """InputPeerUser → InputUser konvertatsiya (CreateChatRequest faqat InputUser qabul qiladi)"""
+        if isinstance(peer, InputPeerUser):
+            return InputUser(user_id=peer.user_id, access_hash=peer.access_hash)
+        if isinstance(peer, InputUser):
+            return peer
+        return None
         
     try:
         if not buyer_is_stealth:
@@ -5088,33 +5097,40 @@ async def api_marketplace_buy_via_admin(request: Request):
         
         users_to_add = []
         
-        # Botni qo'shish
+        # Botni qo'shish (InputUser sifatida)
         try:
-            bot_entity = await buyer_client.get_input_entity(bot_username)
-            if bot_entity:
-                users_to_add.append(bot_entity)
+            bot_peer = await buyer_client.get_input_entity(bot_username)
+            bot_input = peer_to_input_user(bot_peer)
+            if bot_input:
+                users_to_add.append(bot_input)
         except Exception as be:
             logger.warning(f"Garant group: Bot entity topilmadi: {be}")
             
-        # Adminni qo'shish
+        # Adminni qo'shish (InputUser sifatida)
         try:
-            admin_entity = await buyer_client.get_input_entity(admin_contact)
-            if admin_entity:
-                users_to_add.append(admin_entity)
+            admin_peer = await buyer_client.get_input_entity(admin_contact)
+            admin_input = peer_to_input_user(admin_peer)
+            if admin_input:
+                users_to_add.append(admin_input)
         except Exception as ae:
             logger.warning(f"Garant group: Admin entity ({admin_contact}) topilmadi: {ae}")
             
-        # Sotuvchini qo'shish
+        # Sotuvchini qo'shish (InputUser sifatida)
         try:
-            seller_entity = await buyer_client.get_input_entity(seller_id)
-            if seller_entity:
-                users_to_add.append(seller_entity)
+            seller_peer = await buyer_client.get_input_entity(seller_id)
+            seller_input = peer_to_input_user(seller_peer)
+            if seller_input:
+                users_to_add.append(seller_input)
         except Exception as se:
             logger.warning(f"Garant group: Sotuvchi entity ({seller_id}) topilmadi: {se}")
+        
+        # Guruh yaratish uchun kamida 1 ta foydalanuvchi kerak
+        if not users_to_add:
+            raise Exception("Guruhga qo'shish uchun hech bir foydalanuvchi (bot/admin/sotuvchi) topilmadi.")
             
         res = await buyer_client(CreateChatRequest(users=users_to_add, title=f"🤝 Garant: @{username}"))
         
-        # Res chats borligini xavfsiz tekshiramiz (AttributeError oldini olish uchun)
+        # Res chats borligini xavfsiz tekshiramiz
         chat = None
         if res and hasattr(res, 'chats') and res.chats:
             chat = res.chats[0]
@@ -5125,7 +5141,6 @@ async def api_marketplace_buy_via_admin(request: Request):
                     break
                     
         if not chat:
-            # Fallback: agar res o'zida chats bo'lmasa, dialoglar ro'yxatidan qidiramiz
             try:
                 dialogs = await buyer_client.get_dialogs(limit=5)
                 for d in dialogs:
@@ -5136,13 +5151,14 @@ async def api_marketplace_buy_via_admin(request: Request):
                 logger.error(f"Garant group fallback dialog search error: {de}")
                 
         if not chat:
-            raise Exception("Telegram guruhni yaratdi, lekin uning ma'lumotlarini (chat entity) olishda xatolik yuz berdi.")
+            raise Exception("Telegram guruhni yaratdi, lekin uning ma'lumotlarini olishda xatolik yuz berdi.")
             
         group_chat_id = -int(chat.id)
         
+        # Invite link olish (InputPeerChat yordamida, integer emas)
         try:
-            invite_res = await buyer_client(ExportChatInviteRequest(peer=chat.id))
-            # invite_res.link yoki invite_res.invite.link ni xavfsiz olish (AttributeError oldini olish uchun)
+            chat_input_peer = await buyer_client.get_input_entity(chat)
+            invite_res = await buyer_client(ExportChatInviteRequest(peer=chat_input_peer))
             if hasattr(invite_res, 'link'):
                 invite_link = invite_res.link
             elif hasattr(invite_res, 'invite') and hasattr(invite_res.invite, 'link'):
