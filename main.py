@@ -5176,7 +5176,11 @@ async def api_marketplace_buy_via_admin(request: Request):
         if not chat:
             raise Exception("Guruh yaratildi lekin chat entity topilmadi.")
 
-        group_chat_id = -int(chat.id)
+        # Oddiy guruh (basic chat) uchun Aiogram chat ID = -abs(chat.id)
+        # chat.id Telethon dan musbat keladi, Aiogram uchun manfiy bo'lishi kerak
+        raw_chat_id = chat.id
+        group_chat_id = -abs(int(raw_chat_id))
+        logger.info(f"Garant: Guruh yaratildi, raw_id={raw_chat_id}, group_chat_id={group_chat_id}")
 
         # Invite link olish — get_input_entity(chat) → InputPeerChat (to'g'ri tur)
         try:
@@ -5198,18 +5202,19 @@ async def api_marketplace_buy_via_admin(request: Request):
             if not bot:
                 bot = Bot(token=BOT_TOKEN)
             bot_info = await bot.get_me()
-            bot_entity = await admin_client.get_entity(bot_info.username)
+            # get_input_entity → InputUser (AddChatUserRequest talabi)
+            bot_input = await admin_client.get_input_entity(bot_info.username)
 
             # Botni guruhga qo'shamiz
             await admin_client(AddChatUserRequest(
-                chat_id=chat.id,
-                user_id=bot_entity,
+                chat_id=abs(raw_chat_id),   # basic chat uchun musbat ID
+                user_id=bot_input,
                 fwd_limit=50
             ))
             # Botga admin huquqi beramiz (xabar yuborish, pin, o'chirish uchun)
             await admin_client(EditChatAdminRequest(
-                chat_id=chat.id,
-                user_id=bot_entity,
+                chat_id=abs(raw_chat_id),   # basic chat uchun musbat ID
+                user_id=bot_input,
                 is_admin=True
             ))
             logger.info(f"Garant: Bot @{bot_info.username} guruhga admin sifatida qo'shildi.")
@@ -5280,16 +5285,27 @@ async def api_marketplace_buy_via_admin(request: Request):
 
     # 6. Ma'lumotlar bazasida saqlash
     async with aiosqlite.connect(DB_PATH) as db:
-        seller_user = await get_user(seller_id)
-        is_premium_seller = seller_user.get('is_premium', 0) if seller_user else 0
+        seller_user_db = await get_user(seller_id)
+        is_premium_seller = (seller_user_db or {}).get('is_premium', 0)
         fee_percent = 0.05 if is_premium_seller else 0.10
         seller_net = int(price * (1 - fee_percent))
-        
+
         await db.execute("""
             INSERT INTO garant_groups (listing_id, group_chat_id, buyer_id, seller_id, username, price, seller_net, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (listing_id, group_chat_id, tid, seller_id, username, price, seller_net, time.time()))
         await db.commit()
+
+    # 6b. Username o'tkazilishini darhol monitoring qilishni boshlash
+    if group_chat_id and group_chat_id not in active_garant_verifiers:
+        verify_task = asyncio.create_task(
+            verify_username_transfer(
+                bot, group_chat_id, tid, seller_id,
+                username, listing_id, price, seller_net
+            )
+        )
+        active_garant_verifiers[group_chat_id] = verify_task
+        logger.info(f"Garant: verify_username_transfer task boshlandi (group_chat_id={group_chat_id})")
 
     # 8. Sotuvchiga shaxsiy xabar
     try:
