@@ -5169,14 +5169,18 @@ async def api_marketplace_buy_via_admin(request: Request):
             logger.error(f"Garant group invite link export error: {ie}")
             
     except Exception as ge:
-        logger.error(f"Garant group creation error: {ge}")
+        import traceback as _tb
+        _full_trace = _tb.format_exc()
+        logger.error(f"Garant group creation error: {type(ge).__name__}: {ge}\n{_full_trace}")
         # Muammo bo'lsa, pulni qaytarib active qilamiz
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, tid))
             await db.execute("UPDATE listings SET status='active' WHERE id=?", (listing_id,))
             await db.execute("DELETE FROM listing_orders WHERE listing_id=? AND buyer_id=? AND status='pending_admin'", (listing_id, tid))
             await db.commit()
-        return {"ok": False, "error": f"Garant guruhini yaratishda xatolik: {type(ge).__name__}. Balans qaytarildi."}
+        # Xatolikning to'liq matnini ko'rsatamiz (debugging uchun)
+        err_detail = str(ge)[:120] if str(ge) else type(ge).__name__
+        return {"ok": False, "error": f"Garant yaratishda xatolik: {type(ge).__name__}: {err_detail}. Balans qaytarildi."}
     finally:
         if not buyer_is_stealth:
             try: await buyer_client.disconnect()
