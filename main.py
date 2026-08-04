@@ -5057,134 +5057,75 @@ async def api_marketplace_buy_via_admin(request: Request):
 
     # (Kanal postini "SOTILDI" holatiga faqat bitim yakunlangandagina o'tkazamiz)
 
-    # 5. Garant guruhini Telethon orqali yaratish
+    # 5. Garant guruhini BOT ning Telethon sessiyasi orqali yaratish
+    # (Xaridor sessiyasiga bog'liq emas — ishonchli va barqaror)
     group_chat_id = None
     invite_link = None
-    
+
     from telethon import TelegramClient
     from telethon.sessions import StringSession
-    from telethon.tl.functions.messages import CreateChatRequest, ExportChatInviteRequest
-    from telethon.tl.types import InputUser, InputPeerUser, InputPeerChannel, InputPeerChat
-    
-    buyer_client = stealth_clients.get(tid)
-    buyer_is_stealth = buyer_client is not None
-    if not buyer_client:
-        buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
-    
-    def peer_to_input_user(peer):
-        """InputPeerUser → InputUser konvertatsiya (CreateChatRequest faqat InputUser qabul qiladi)"""
-        if isinstance(peer, InputPeerUser):
-            return InputUser(user_id=peer.user_id, access_hash=peer.access_hash)
-        if isinstance(peer, InputUser):
-            return peer
-        return None
-        
+    from telethon.tl.functions.channels import CreateChannelRequest, InviteToChannelRequest
+    from telethon.tl.functions.messages import ExportChatInviteRequest
+    from telethon.tl.types import InputChannel
+
+    bot_tl = None
     try:
-        if not buyer_is_stealth:
-            await buyer_client.connect()
-            
-        global bot
-        if not bot:
-            bot = Bot(token=BOT_TOKEN)
-            
-        bot_me = await bot.get_me()
-        bot_username = bot_me.username
-        
-        admin_contact = await get_setting("admin_username", "admin")
-        if not admin_contact:
-            admin_contact = "admin"
-        admin_contact = str(admin_contact).strip().replace("@", "")
-        
-        users_to_add = []
-        
-        # Botni qo'shish (InputUser sifatida)
-        try:
-            bot_peer = await buyer_client.get_input_entity(bot_username)
-            bot_input = peer_to_input_user(bot_peer)
-            if bot_input:
-                users_to_add.append(bot_input)
-        except Exception as be:
-            logger.warning(f"Garant group: Bot entity topilmadi: {be}")
-            
-        # Adminni qo'shish (InputUser sifatida)
-        try:
-            admin_peer = await buyer_client.get_input_entity(admin_contact)
-            admin_input = peer_to_input_user(admin_peer)
-            if admin_input:
-                users_to_add.append(admin_input)
-        except Exception as ae:
-            logger.warning(f"Garant group: Admin entity ({admin_contact}) topilmadi: {ae}")
-            
-        # Sotuvchini qo'shish (InputUser sifatida)
-        try:
-            seller_peer = await buyer_client.get_input_entity(seller_id)
-            seller_input = peer_to_input_user(seller_peer)
-            if seller_input:
-                users_to_add.append(seller_input)
-        except Exception as se:
-            logger.warning(f"Garant group: Sotuvchi entity ({seller_id}) topilmadi: {se}")
-        
-        # Guruh yaratish uchun kamida 1 ta foydalanuvchi kerak
-        if not users_to_add:
-            raise Exception("Guruhga qo'shish uchun hech bir foydalanuvchi (bot/admin/sotuvchi) topilmadi.")
-            
-        res = await buyer_client(CreateChatRequest(users=users_to_add, title=f"🤝 Garant: @{username}"))
-        
-        # Res chats borligini xavfsiz tekshiramiz
-        chat = None
-        if res and hasattr(res, 'chats') and res.chats:
-            chat = res.chats[0]
-        elif res and hasattr(res, 'updates'):
-            for u in res.updates:
-                if hasattr(u, 'chats') and u.chats:
-                    chat = u.chats[0]
-                    break
-                    
-        if not chat:
+        # Bot token orqali Telethon client yaratamiz (har doim mavjud)
+        bot_tl = TelegramClient(StringSession(), API_ID, API_HASH)
+        await bot_tl.start(bot_token=BOT_TOKEN)
+
+        # Supergroup (megagroup) yaratamiz — CreateChannelRequest ishlatamiz
+        res = await bot_tl(CreateChannelRequest(
+            title=f"🤝 Garant: @{username}",
+            about=f"Kafolatlangan bitim guruhi. Username: @{username}. Narxi: {price:,} so'm",
+            megagroup=True
+        ))
+
+        channel = res.chats[0]
+        channel_id = channel.id
+        channel_hash = channel.access_hash
+
+        # Aiogram Bot API uchun supergroup chat ID formati: -100{channel_id}
+        group_chat_id = int(f"-100{channel_id}")
+
+        # Foydalanuvchilarni (xaridor, sotuvchi) guruhga qo'shish
+        input_channel = InputChannel(channel_id=channel_id, access_hash=channel_hash)
+        for user_id_to_add in [tid, seller_id]:
             try:
-                dialogs = await buyer_client.get_dialogs(limit=5)
-                for d in dialogs:
-                    if d.name == f"🤝 Garant: @{username}":
-                        chat = d.entity
-                        break
-            except Exception as de:
-                logger.error(f"Garant group fallback dialog search error: {de}")
-                
-        if not chat:
-            raise Exception("Telegram guruhni yaratdi, lekin uning ma'lumotlarini olishda xatolik yuz berdi.")
-            
-        group_chat_id = -int(chat.id)
-        
-        # Invite link olish (InputPeerChat yordamida, integer emas)
+                user_entity = await bot_tl.get_input_entity(user_id_to_add)
+                await bot_tl(InviteToChannelRequest(
+                    channel=input_channel,
+                    users=[user_entity]
+                ))
+            except Exception as inv_e:
+                logger.warning(f"Garant group: {user_id_to_add} ni qo'shib bo'lmadi: {inv_e}")
+
+        # Invite link olish
         try:
-            chat_input_peer = await buyer_client.get_input_entity(chat)
-            invite_res = await buyer_client(ExportChatInviteRequest(peer=chat_input_peer))
+            invite_res = await bot_tl(ExportChatInviteRequest(peer=input_channel))
             if hasattr(invite_res, 'link'):
                 invite_link = invite_res.link
             elif hasattr(invite_res, 'invite') and hasattr(invite_res.invite, 'link'):
                 invite_link = invite_res.invite.link
-            else:
-                invite_link = getattr(invite_res, 'link', None)
         except Exception as ie:
-            logger.error(f"Garant group invite link export error: {ie}")
-            
+            logger.error(f"Garant group invite link error: {ie}")
+
     except Exception as ge:
         import traceback as _tb
-        _full_trace = _tb.format_exc()
-        logger.error(f"Garant group creation error: {type(ge).__name__}: {ge}\n{_full_trace}")
-        # Muammo bo'lsa, pulni qaytarib active qilamiz
+        logger.error(f"Garant group creation error: {type(ge).__name__}: {ge}\n{_tb.format_exc()}")
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, tid))
             await db.execute("UPDATE listings SET status='active' WHERE id=?", (listing_id,))
             await db.execute("DELETE FROM listing_orders WHERE listing_id=? AND buyer_id=? AND status='pending_admin'", (listing_id, tid))
             await db.commit()
-        # Xatolikning to'liq matnini ko'rsatamiz (debugging uchun)
         err_detail = str(ge)[:120] if str(ge) else type(ge).__name__
-        return {"ok": False, "error": f"Garant yaratishda xatolik: {type(ge).__name__}: {err_detail}. Balans qaytarildi."}
+        return {"ok": False, "error": f"Garant guruhini yaratishda xatolik: {type(ge).__name__}: {err_detail}. Balans qaytarildi."}
     finally:
-        if not buyer_is_stealth:
-            try: await buyer_client.disconnect()
-            except: pass
+        if bot_tl:
+            try:
+                await bot_tl.disconnect()
+            except Exception:
+                pass
 
     # 6. Ma'lumotlar bazasida saqlash
     async with aiosqlite.connect(DB_PATH) as db:
