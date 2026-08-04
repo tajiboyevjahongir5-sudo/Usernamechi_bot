@@ -5121,30 +5121,34 @@ async def api_marketplace_buy_via_admin(request: Request):
             admin_client = TelegramClient(StringSession(admin_row['session_string']), API_ID, API_HASH)
             await admin_client.connect()
 
-        # Guruhga qo'shiladigan foydalanuvchilar — get_input_entity() ishlatamiz
-        # (InputUser kerak, User emas — CreateChatRequest talabi)
-        users_to_add = []
+        # Guruhga qo'shiladigan foydalanuvchilar — kamida sotuvchi bo'lishi kerak
+        seller_input = None
+        buyer_input = None
 
-        # Xaridor
-        try:
-            buyer_input = await admin_client.get_input_entity(tid)
-            users_to_add.append(buyer_input)
-        except Exception as e:
-            logger.warning(f"Garant: Xaridor ({tid}) input entity topilmadi: {e}")
-
-        # Sotuvchi
         try:
             seller_input = await admin_client.get_input_entity(seller_id)
-            users_to_add.append(seller_input)
         except Exception as e:
             logger.warning(f"Garant: Sotuvchi ({seller_id}) input entity topilmadi: {e}")
 
-        if not users_to_add:
-            raise Exception("Guruhga xaridor va sotuvchi qo'shib bo'lmadi — ikkisi ham topilmadi.")
+        try:
+            buyer_input = await admin_client.get_input_entity(tid)
+        except Exception as e:
+            logger.warning(f"Garant: Xaridor ({tid}) input entity topilmadi: {e}")
+
+        # CreateChatRequest uchun kamida 1 ta foydalanuvchi kerak
+        # Avval faqat sotuvchi bilan guruh ochamiz, xaridorni keyinroq qo'shamiz
+        initial_users = []
+        if seller_input:
+            initial_users.append(seller_input)
+        if buyer_input and not seller_input:
+            initial_users.append(buyer_input)  # fallback
+
+        if not initial_users:
+            raise Exception("Guruh uchun hech qanday foydalanuvchi topilmadi (sotuvchi ham, xaridor ham).")
 
         # Admin guruh yaratadi (CreateChatRequest — asosiy guruh, oddiy chat)
         res = await admin_client(CreateChatRequest(
-            users=users_to_add,
+            users=initial_users,
             title=f"🤝 Garant: @{username}"
         ))
         logger.info(f"Garant: CreateChatRequest natijasi: {type(res).__name__}")
@@ -5220,6 +5224,21 @@ async def api_marketplace_buy_via_admin(request: Request):
             logger.info(f"Garant: Bot @{bot_info.username} guruhga admin sifatida qo'shildi.")
         except Exception as be:
             logger.warning(f"Garant: Botni guruhga qo'shib bo'lmadi: {be}")
+
+        # *** XABARDAN OLDIN: Xaridorni to'g'ridan-to'g'ri guruhga qo'shamiz ***
+        # Bu juda muhim! Xaridor xabar yuborilgunga qadar guruhda bo'lishi kerak,
+        # aks holda invite link orqali kirganda eski xabarlarni ko'rmaydi.
+        if buyer_input:
+            try:
+                from telethon.tl.functions.messages import AddChatUserRequest as _AddBuyer
+                await admin_client(_AddBuyer(
+                    chat_id=abs(raw_chat_id),
+                    user_id=buyer_input,
+                    fwd_limit=50
+                ))
+                logger.info(f"Garant: Xaridor ({tid}) guruhga to'g'ridan-to'g'ri qo'shildi ✅")
+            except Exception as buyer_add_err:
+                logger.warning(f"Garant: Xaridorni ({tid}) guruhga qo'shib bo'lmadi: {buyer_add_err}. Invite link yuboriladi.")
 
         # *** Admin akkauntidan guruhga chiroyli va mukammal yo'riqnomani yuboramiz va pin qilamiz ***
         try:
