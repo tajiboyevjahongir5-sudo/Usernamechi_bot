@@ -5074,42 +5074,81 @@ async def api_marketplace_buy_via_admin(request: Request):
         if not buyer_is_stealth:
             await buyer_client.connect()
             
+        global bot
+        if not bot:
+            bot = Bot(token=BOT_TOKEN)
+            
         bot_me = await bot.get_me()
         bot_username = bot_me.username
         
         admin_contact = await get_setting("admin_username", "admin")
-        admin_contact = admin_contact.strip().replace("@", "")
+        if not admin_contact:
+            admin_contact = "admin"
+        admin_contact = str(admin_contact).strip().replace("@", "")
         
         users_to_add = []
         
         # Botni qo'shish
         try:
             bot_entity = await buyer_client.get_input_entity(bot_username)
-            users_to_add.append(bot_entity)
+            if bot_entity:
+                users_to_add.append(bot_entity)
         except Exception as be:
             logger.warning(f"Garant group: Bot entity topilmadi: {be}")
             
         # Adminni qo'shish
         try:
             admin_entity = await buyer_client.get_input_entity(admin_contact)
-            users_to_add.append(admin_entity)
+            if admin_entity:
+                users_to_add.append(admin_entity)
         except Exception as ae:
             logger.warning(f"Garant group: Admin entity ({admin_contact}) topilmadi: {ae}")
             
         # Sotuvchini qo'shish
         try:
             seller_entity = await buyer_client.get_input_entity(seller_id)
-            users_to_add.append(seller_entity)
+            if seller_entity:
+                users_to_add.append(seller_entity)
         except Exception as se:
             logger.warning(f"Garant group: Sotuvchi entity ({seller_id}) topilmadi: {se}")
             
         res = await buyer_client(CreateChatRequest(users=users_to_add, title=f"🤝 Garant: @{username}"))
-        chat = res.chats[0]
+        
+        # Res chats borligini xavfsiz tekshiramiz (AttributeError oldini olish uchun)
+        chat = None
+        if res and hasattr(res, 'chats') and res.chats:
+            chat = res.chats[0]
+        elif res and hasattr(res, 'updates'):
+            for u in res.updates:
+                if hasattr(u, 'chats') and u.chats:
+                    chat = u.chats[0]
+                    break
+                    
+        if not chat:
+            # Fallback: agar res o'zida chats bo'lmasa, dialoglar ro'yxatidan qidiramiz
+            try:
+                dialogs = await buyer_client.get_dialogs(limit=5)
+                for d in dialogs:
+                    if d.name == f"🤝 Garant: @{username}":
+                        chat = d.entity
+                        break
+            except Exception as de:
+                logger.error(f"Garant group fallback dialog search error: {de}")
+                
+        if not chat:
+            raise Exception("Telegram guruhni yaratdi, lekin uning ma'lumotlarini (chat entity) olishda xatolik yuz berdi.")
+            
         group_chat_id = -int(chat.id)
         
         try:
             invite_res = await buyer_client(ExportChatInviteRequest(peer=chat.id))
-            invite_link = invite_res.link
+            # invite_res.link yoki invite_res.invite.link ni xavfsiz olish (AttributeError oldini olish uchun)
+            if hasattr(invite_res, 'link'):
+                invite_link = invite_res.link
+            elif hasattr(invite_res, 'invite') and hasattr(invite_res.invite, 'link'):
+                invite_link = invite_res.invite.link
+            else:
+                invite_link = getattr(invite_res, 'link', None)
         except Exception as ie:
             logger.error(f"Garant group invite link export error: {ie}")
             
