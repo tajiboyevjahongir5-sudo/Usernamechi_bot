@@ -914,10 +914,11 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         pool = words
 
     elif cat in ('brend', 'biznes', 'business'):
-        b_words = ['store', 'shop', 'market', 'trade', 'brand', 'group', 'company', 'corp', 'studio', 'agency', 'media', 'express', 'center', 'global', 'service', 'hub', 'lab']
         if lang == 'uz':
+            b_words = ['savdo', 'bozor', 'dokon', 'market', 'servis', 'uz', 'tijorat', 'group', 'media', 'studio', 'express']
             bases = list(set(UZ_WORDS_CLEAN + uz_dict))
         else:
+            b_words = ['store', 'shop', 'market', 'trade', 'brand', 'group', 'company', 'corp', 'studio', 'agency', 'media', 'express', 'center', 'global', 'service', 'hub', 'lab']
             bases = list(set(nouns + EN_COOL_CLEAN))
         bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 10]
         random.shuffle(bases)
@@ -1046,12 +1047,22 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         # 1. Sof curated so'zlar — eng tabiiy va ma'noli
         var_pool.extend(base_words[:2000])
 
-        # 2. Ism + mavzu kombinatsiyasi (masalan: alexstorm, davefire)
-        themes = ['wolf','fox','hawk','storm','fire','blade','peak','forge',
-                  'river','cloud','stone','spark','flame','swift','echo',
-                  'nova','void','dawn','frost','shade','solar','lunar',
-                  'eagle','tiger','lion','bear','raven','arrow','crown',
-                  'byte','core','flow','code','mind','path','dark','star']
+        # 2. Ism + mavzu kombinatsiyasi
+        if lang == 'uz':
+            themes = ['arslon','qoplon','lochin','burgut','yulduz','nur','koinot',
+                      'shamol','daryo','tog','kuch','shox','jon','bek','xon','gul']
+            nice_prefixes = ['real', 'mega', 'super', 'vip', 'iam', 'top', 'mr']
+            nice_suffixes = ['uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'media', 'tv', 'bek', 'xon']
+        else:
+            themes = ['wolf','fox','hawk','storm','fire','blade','peak','forge',
+                      'river','cloud','stone','spark','flame','swift','echo',
+                      'nova','void','dawn','frost','shade','solar','lunar',
+                      'eagle','tiger','lion','bear','raven','arrow','crown',
+                      'byte','core','flow','code','mind','path','dark','star']
+            nice_prefixes = ['the', 'real', 'hey', 'iam', 'mr', 'dr', 'pro', 'its']
+            nice_suffixes = ['official', 'real', 'live', 'pro', 'hub', 'zone',
+                             'world', 'life', 'works', 'craft', 'base', 'place']
+
         names_short = [w for w in base_words if 4 <= len(w) <= 7]
         random.shuffle(names_short)
         for name in names_short[:300]:
@@ -1074,15 +1085,12 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                     var_pool.append(combo)
 
         # 4. Ma'noli prefix + curated so'z
-        nice_prefixes = ['the', 'real', 'hey', 'iam', 'mr', 'dr', 'pro', 'its']
         for w in base_words[:500]:
             if 5 <= len(w) <= 9:
                 pfx = random.choice(nice_prefixes)
                 var_pool.append(f'{pfx}{w}')
 
         # 5. Curated so'z + ma'noli suffix
-        nice_suffixes = ['official', 'real', 'live', 'pro', 'hub', 'zone',
-                         'world', 'life', 'works', 'craft', 'base', 'place']
         for w in base_words[:400]:
             if 4 <= len(w) <= 7:
                 sfx = random.choice(nice_suffixes)
