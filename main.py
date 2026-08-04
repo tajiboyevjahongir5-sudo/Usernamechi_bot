@@ -3123,6 +3123,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                         if orow:
                             paid_qty = orow[0] or 1
 
+        cat_key_for_llm = category.split(':')[0] if ':' in category else category
         targets = generate_usernames(category, lang=lang, limit=5000)
 
         # Generator nomlariga qo'shimcha kombinatsiyalar (qisqa kategoriya uchun qo'shimchalar qo'shmaymiz!)
