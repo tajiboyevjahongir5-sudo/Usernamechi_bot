@@ -147,13 +147,14 @@
       radial-gradient(circle at 50% 50%, rgba(244, 63, 94, 0.04) 0%, transparent 50%),
       radial-gradient(circle at 80% 10%, rgba(236, 72, 153, 0.05) 0%, transparent 45%);
     pointer-events: none; z-index: 0;
+    will-change: transform;
     animation: ambientMovement 24s ease-in-out infinite alternate;
   }
   @keyframes ambientMovement {
-    0% { transform: scale(1) translate(0px, 0px) rotate(0deg); }
-    33% { transform: scale(1.08) translate(30px, -20px) rotate(2deg); }
-    66% { transform: scale(1.04) translate(-20px, 40px) rotate(-1deg); }
-    100% { transform: scale(1.1) translate(10px, -10px) rotate(1deg); }
+    0% { transform: translate3d(0px, 0px, 0); }
+    33% { transform: translate3d(20px, -15px, 0); }
+    66% { transform: translate3d(-15px, 25px, 0); }
+    100% { transform: translate3d(10px, -10px, 0); }
   }
 
   /* Hide floating bottom nav when keyboard is active or input is focused */
@@ -172,8 +173,8 @@
     transform: translateX(-50%);
     width: min(92%, 420px);
     background: rgba(14, 14, 25, 0.85);
-    backdrop-filter: blur(28px) saturate(220%);
-    -webkit-backdrop-filter: blur(28px) saturate(220%);
+    backdrop-filter: blur(10px) saturate(140%);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
     border-radius: 40px;
     display: flex;
     align-items: center;
@@ -256,8 +257,8 @@
   /* PREMIUM GLASSMORPHISM CARDS */
   .card {
     background: var(--card);
-    backdrop-filter: blur(24px) saturate(170%);
-    -webkit-backdrop-filter: blur(24px) saturate(170%);
+    backdrop-filter: blur(8px) saturate(130%);
+    -webkit-backdrop-filter: blur(8px) saturate(130%);
     border: 1px solid var(--border);
     border-radius: 24px;
     padding: 22px;
@@ -353,7 +354,7 @@
   .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
   .stat-card {
     background: var(--card);
-    backdrop-filter: blur(20px);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--border);
     border-radius: 20px;
     padding: 18px 14px;
@@ -416,7 +417,7 @@
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border);
     color: var(--text); margin-bottom: 12px;
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(4px);
   }
   .btn-outline:hover {
     border-color: var(--accent-light);
@@ -464,7 +465,7 @@
   /* ORDER / LISTING ITEM */
   .order-item {
     background: var(--card);
-    backdrop-filter: blur(20px);
+    backdrop-filter: blur(8px);
     border: 1px solid var(--border);
     border-radius: 20px;
     padding: 18px;
@@ -663,8 +664,8 @@
   .toast {
     position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
     background: rgba(18, 18, 28, 0.93); 
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(8px) saturate(130%);
+    -webkit-backdrop-filter: blur(8px) saturate(130%);
     border: 1px solid var(--border);
     border-radius: 16px; padding: 14px 24px;
     font-size: 14px; font-weight: 600;
@@ -762,7 +763,7 @@
       /* --- Force Subscription Modal (Telegram Premium Style) --- */
       #force-sub-overlay {
         position: fixed; top:0; left:0; width:100%; height:100%;
-        background: rgba(0,0,0,0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
         z-index: 999999; display: none; align-items: center; justify-content: center;
         opacity: 0; transition: opacity 0.3s ease;
       }
@@ -2702,7 +2703,7 @@ window.addEventListener('scroll', () => {
       }
     }
   }
-});
+}, { passive: true });
 
 async function loadMonitors(isLoadMore = false) {
   if (monitorLoading) return;
