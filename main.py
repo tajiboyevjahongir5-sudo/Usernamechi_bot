@@ -84,18 +84,42 @@ HEADERS_LIST = [
 def is_username_occupied_html(html_text: str) -> bool:
     """
     HTTP javob HTML matniga qarab username band yoki bo'shligini aniqlaydi.
+    KONSERVATIV yondashuv: faqat aniq 'bo'sh' signali bo'lsa False (bo'sh) qaytaradi.
+    Barcha noaniq holatlarda True (band) qaytaradi — false-positive oldini olish uchun.
     """
-    has_extra = 'tgme_page_extra' in html_text
-    has_photo = 'tgme_page_photo' in html_text
-    has_channel_info = 'tgme_channel_info' in html_text
-    on_fragment = 'fragment.com' in html_text or 'auction' in html_text
-    
-    # Bo'sh username sahifalarida har doim murojaat qilish haqida yozuv bo'ladi
-    has_free_text = any(x in html_text.lower() for x in [
-        "you can contact", "you can write to", "you can check", "can contact"
-    ])
-    
-    return bool(has_extra or has_photo or has_channel_info or on_fragment or not has_free_text)
+    # === ANIQ BAND SIGNALLARI ===
+    occupied_signals = [
+        'tgme_page_extra',        # Kanal/guruh subscriber/member soni
+        'tgme_page_photo',        # Profil rasmi bor
+        'tgme_channel_info',      # Kanal info bloki
+        'fragment.com/username',  # Fragment auksionida
+        'tgme_page_icon_channel', # Kanal ikonkasi
+        'tgme_page_icon_user',    # Foydalanuvchi ikonkasi
+        'tgme_page_icon_bot',     # Bot ikonkasi
+        'tgme_page_title',        # Sarlavha (real profil)
+        'tg://resolve',           # Telegram deep link (real profil)
+        't.me/joinchat',          # Guruh havolasi
+    ]
+    for signal in occupied_signals:
+        if signal in html_text:
+            return True  # Aniq BAND
+
+    # === ANIQ BO'SH SIGNALI ===
+    # Telegram bo'sh username uchun DOIM quyidagi matnni ko'rsatadi:
+    free_signals = [
+        "you can contact @",
+        "you can write to @",
+        "can contact @",
+    ]
+    html_lower = html_text.lower()
+    for sig in free_signals:
+        if sig in html_lower:
+            return False  # Aniq BO'SH
+
+    # === NOANIQ — konservativ: BAND deb hisoblash ===
+    # (Masalan: timeout, redirect, bo'sh HTML, noma'lum format)
+    return True
+
 
 
 
@@ -3658,7 +3682,7 @@ async def monitoring_loop(bot):
         if uname in claiming_now:
             return
         claiming_now.add(uname)
-        logger.info(f"🎯 [CLAIM START] @{uname} bo'sh joy sarlavhasi aniqlandi! Jarayon boshlanmoqda...")
+        logger.info(f"🎯 [CLAIM START] @{uname} HTTP bo'sh ko’rindi — Telethon API orqali tasdiqlanmoqda...")
         try:
             # 2-tekshiruv: HTTP orqali hali ham band ekanligini qayta tekshiramiz
             try:
@@ -3693,7 +3717,9 @@ async def monitoring_loop(bot):
                         logger.info(f"✅ [API CONFIRM] @{uname} Telethon API bo'shligini tasdiqladi — kanal ochilmoqda...")
                     else:
                         logger.info(f"⚠️ [CLAIM CANCEL] @{uname} Telethon API bo'sh emas (False).")
-                        taken_usernames_cache[uname.lower()] = time.time() + 43200
+                        # Telethon "band" dedi — 2 soat keshga olish (12 emas, chunki
+                        # kanal sozlamalari o'zgarsa tezroq qayta tekshirilsin)
+                        taken_usernames_cache[uname.lower()] = time.time() + 7200  # 2 soat
                         return
             except (UsernamePurchaseAvailableError,):
                 logger.info(f"💰 [CLAIM CANCEL] @{uname} Fragment auksionida.")
