@@ -156,6 +156,14 @@
     100% { transform: scale(1.1) translate(10px, -10px) rotate(1deg); }
   }
 
+  /* Hide floating bottom nav when keyboard is active or input is focused */
+  body.keyboard-open nav {
+    display: none !important;
+  }
+  body:has(input:focus, textarea:focus) nav {
+    display: none !important;
+  }
+
   /* FLOATING PILL NAV BAR */
   nav {
     position: fixed;
@@ -2562,6 +2570,18 @@ function initNavDragPhysics() {
 
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(initNavDragPhysics, 100);
+  
+  // Keyboard detection: hide bottom nav when inputs are focused to prevent overlaying
+  document.addEventListener('focusin', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+      document.body.classList.add('keyboard-open');
+    }
+  });
+  document.addEventListener('focusout', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+      document.body.classList.remove('keyboard-open');
+    }
+  });
 });
 
 // Nishon auto-refresh uchun global timer
