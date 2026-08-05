@@ -909,7 +909,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
     pool = []
 
     prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'iam', 'official', 'go', 'get', 'one', 'club', 'hub', 'app', 'new', 'hot', 'cool', 'fast', 'king', 'boss', 'dark', 'neo', 'ultra', 'max']
-    suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'box', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'ok', 'go', 'gg', 'co', 'ai', 'x', 'real', 'live', 'plus', 'max', 'mini', 'app', 'base']
+    suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'real', 'live', 'plus', 'max', 'mini', 'app', 'base']
     numbers = ['', '1', '2', '3', '4', '5', '7', '8', '9', '10', '11', '24', '25', '77', '88', '99', '100', '777', '888', '999', '2024', '2025', '2026', '007', '01', '07', '700', '900']
 
     # ─── Semantik mavzu xaritasi: o'zbekcha so'z → qisqa ingliz kalit so'zlar ───
@@ -1007,7 +1007,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         if theme_keys:
             # Semantik kalit so'zlardan username kombinatsiyalari
             nice_pfx = ['real','the','my','mr','iam','pro','neo','top','vip','super','mega','dark','hot','cool']
-            nice_sfx = ['uz','uzb','pro','vip','top','bot','x','ai','go','hub','zone','bek','jan','77','99']
+            nice_sfx = ['uz','uzb','pro','vip','top','bot','ai','go','hub','zone','bek','jan','official','online']
             for kw in theme_keys:
                 if valid(kw): c_set.add(kw)
                 for pfx in nice_pfx[:10]:
@@ -1018,8 +1018,8 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                     if valid(combo): c_set.add(combo)
                     combo2 = f'{kw}_{sfx}'
                     if valid(combo2): c_set.add(combo2)
-                for num in ['7','77','99','2025','uz','pro']:
-                    c_set.add(f'{kw}{num}')
+                for sfx2 in ['uz', 'pro', 'official', 'online']:
+                    if valid(f'{kw}{sfx2}'): c_set.add(f'{kw}{sfx2}')
                 # Kalit so'z juftliklari
                 for kw2 in theme_keys:
                     if kw2 != kw:
@@ -1038,51 +1038,30 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                 if s:
                     if valid(f'{base}{s}'): c_set.add(f'{base}{s}')
                     if valid(f'{base}_{s}'): c_set.add(f'{base}_{s}')
-            for n in numbers:
-                if n:
-                    if valid(f'{base}{n}'): c_set.add(f'{base}{n}')
+            # Raqamli qo'shimchalar OLIB TASHLANDI — piyodax, piyoda7 kabi nomlar yo'q
+            # Faqat ma'noli so'z kombinatsiyalari saqlanadi
         pool = list(c_set)
 
     elif cat == 'qisqa':
+        # ─── FAQAT HAQIQIY LUG'AT SO'ZLARI ─────────────────────────────────────
+        # Tasodifiy qo'shimchalar (x, 7, 1) va bo'g'in kombinatsiyalari YO'Q.
+        # Faqat ma'noli, Telegram username sifatida chiroyli ko'rinadigan so'zlar.
         if lang == 'uz':
-            all_words = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES + UZ_WORDS_CLEAN + uz_dict))
+            all_words = list(set(
+                UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES +
+                UZ_WORDS_CLEAN + uz_dict
+            ))
         else:
-            all_words = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN + NATURE_CLEAN + EN_COOL_CLEAN + nouns + adjectives))
+            all_words = list(set(
+                EN_MALE_NAMES + EN_FEMALE_NAMES + ANIMALS_CLEAN +
+                NATURE_CLEAN + EN_COOL_CLEAN + nouns + adjectives
+            ))
 
-        # 1. Sof toza so'zlar (5-7 harf, faqat alifbo)
-        words = [str(w).lower() for w in all_words if str(w).isalpha() and 5 <= len(str(w)) <= 7]
+        # Faqat 5-7 harfli, faqat alifbodan iborat, haqiqiy so'zlar
+        words = [str(w).lower() for w in all_words
+                 if str(w).isalpha() and 5 <= len(str(w)) <= 7]
         random.shuffle(words)
-
-        # 2. Brandable ikki bo'g'inli so'z kombinatsiyalari (CVC+CVC yoki CV+CVC uslubi)
-        # Bu eng kam topilgan, premium ko'rinishdagi short usernamalar
-        prefixes_short = ['ka','na','sa','ma','la','ra','da','ta','ba','va','za','ya',
-                          'ko','no','so','mo','lo','ro','do','to','bo','vo','zo','yo',
-                          'ki','ni','si','mi','li','ri','di','ti','bi','vi','zi','yi',
-                          'al','ar','an','ak','az','er','en','el','or','on','ul','un']
-        suffixes_short = ['yon','zor','kor','nor','bek','xon','gar','bar','far','tar',
-                          'lar','mar','nar','par','sar','var','war','dar','har','jar',
-                          'lan','ran','kan','ban','tan','van','dan','han','jan',
-                          'lux','nox','vex','rax','zax','tex','rex','vix','fox','box',
-                          'era','ora','ura','ara','ira','ova','eva','ava','iya','ura']
-        brand_pool = []
-        for pf in prefixes_short:
-            for sf in suffixes_short:
-                combo = pf + sf
-                if 5 <= len(combo) <= 7 and combo.isalpha():
-                    brand_pool.append(combo)
-        random.shuffle(brand_pool)
-
-        # 3. So'z + bitta raqam (faqat eng chiroylilari: x, 7, 1)
-        digit_pool = []
-        for w in words[:2000]:
-            if len(w) <= 6:
-                digit_pool.append(f'{w}x')
-                digit_pool.append(f'{w}7')
-                digit_pool.append(f'{w}1')
-        random.shuffle(digit_pool)
-
-        # Hammani birlashtirish: toza so'zlar oldin, keyin brandable, keyin raqamli
-        pool = words + brand_pool[:3000] + digit_pool[:2000]
+        pool = words
 
     elif cat in ('brend', 'biznes', 'business'):
         if lang == 'uz':
@@ -3231,10 +3210,22 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     theme=""
                 )
                 
-                # LLM natijalarini DB ga yozish
+                # LLM natijalarini DB ga yozish (kategoriya filtri bilan)
+                def _llm_cat_filter(u: str, cat: str) -> bool:
+                    ckey = cat.split(':')[0].strip().lower() if ':' in cat else cat.strip().lower()
+                    if ckey == 'qisqa':
+                        return u.isalpha() and 5 <= len(u) <= 7
+                    elif ckey == 'turli':
+                        return 6 <= len(u) <= 14
+                    elif ckey == 'custom':
+                        base = cat.split(':', 1)[1].strip().lower() if ':' in cat else ''
+                        return not base or base in u or u.startswith(base[:4])
+                    return True
+
                 if llm_results:
+                    filtered_llm = [u for u in llm_results if _llm_cat_filter(u, category)]
                     async with aiosqlite.connect(DB_PATH) as _llm_db:
-                        for _uname in llm_results:
+                        for _uname in filtered_llm:
                             try:
                                 await _llm_db.execute(
                                     "INSERT OR IGNORE INTO search_results (search_id, username) VALUES (?,?)",
@@ -3243,8 +3234,8 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                             except Exception:
                                 pass
                         await _llm_db.commit()
-                    found_count += len(llm_results)
-                    logger.info(f"🤖 LLM {len(llm_results)} ta natija DB ga yozildi")
+                    found_count += len(filtered_llm)
+                    logger.info(f"🤖 LLM {len(filtered_llm)} ta natija DB ga yozildi (cat={category})")
                 
                 # LLM yetarli topsa — statik qidiruvni butunlay o'tkazib yuboramiz
                 if found_count >= paid_qty:
@@ -3303,6 +3294,23 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             except Exception:
                 return 'unknown'
 
+        def _matches_category(uname: str, cat: str) -> bool:
+            """Username kategoriyaga mos kelishini tekshirish."""
+            cat_key = cat.split(':')[0].strip().lower() if ':' in cat else cat.strip().lower()
+            if cat_key == 'qisqa':
+                # Qisqa noyob: faqat 5-7 harf, hech qanday raqam va pastki chiziq yo'q
+                return uname.isalpha() and 5 <= len(uname) <= 7
+            elif cat_key == 'turli':
+                # Turli ko'rinishdagi: 6-14 belgi, chiroyli kombinatsiyalar
+                return 6 <= len(uname) <= 14
+            elif cat_key == 'custom':
+                # O'zim kiritaman: so'zning o'zi yoki unga tegishli kombinatsiya
+                base = cat.split(':', 1)[1].strip().lower() if ':' in cat else ''
+                if not base:
+                    return True  # base yo'q bo'lsa — hammani qabul qilish
+                return base in uname or uname.startswith(base[:4])
+            return True  # Boshqa kategoriyalar uchun filtr yo'q
+
         async def verify_target(http_session, uname: str):
             nonlocal found_count
 
@@ -3311,6 +3319,10 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     return
                 if uname in found_usernames_set:
                     return
+
+            # ─── KATEGORIYA FILTRI ────────────────────────────────────────
+            if not _matches_category(uname, category):
+                return
 
             try:
                 # 1. HTTP dastlabki süzgich: Aniq band bo'lsa darhol rad etish
