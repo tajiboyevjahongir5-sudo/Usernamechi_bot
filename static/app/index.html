@@ -826,6 +826,11 @@
 </head>
 <body>
 
+  <!-- GLOBAL KEYBOARD CLOSE BUTTON -->
+  <div id="keyboard-done-btn" onclick="document.activeElement.blur()" style="display:none; position:fixed; right:16px; top:16px; z-index:99999; background:rgba(124, 58, 237, 0.95); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); color:white; padding:8px 16px; border-radius:20px; font-size:12px; font-weight:700; box-shadow:0 6px 20px rgba(124, 58, 237, 0.4); border:1px solid rgba(255,255,255,0.15); align-items:center; gap:6px; cursor:pointer;">
+    <i class="fa-solid fa-keyboard" style="font-size:11px;"></i> Yopish
+  </div>
+
   <!-- FORCE SUBSCRIPTION MODAL -->
   <div id="force-sub-overlay">
     <div class="force-sub-modal">
@@ -2575,11 +2580,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('focusin', (e) => {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
       document.body.classList.add('keyboard-open');
+      const closeBtn = document.getElementById('keyboard-done-btn');
+      if (closeBtn) closeBtn.style.display = 'flex';
     }
   });
   document.addEventListener('focusout', (e) => {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
       document.body.classList.remove('keyboard-open');
+      const closeBtn = document.getElementById('keyboard-done-btn');
+      if (closeBtn) closeBtn.style.display = 'none';
     }
   });
 });
