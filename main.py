@@ -7196,32 +7196,10 @@ async def session_checker_loop():
                             await _notify_session_expired(tid)
                     except Exception:
                         pass
-                else:
-                    try:
-                        c = TelegramClient(StringSession(session_str), API_ID, API_HASH)
-                        await asyncio.wait_for(c.connect(), timeout=15)
-                        authorized = await c.is_user_authorized()
-                        if authorized:
-                            me = await c.get_me()
-                            if me and me.phone and not row['phone']:
-                                async with aiosqlite.connect(DB_PATH) as db:
-                                    await db.execute("UPDATE users SET phone=? WHERE telegram_id=?", (me.phone, tid))
-                                    await db.commit()
-                        else:
-                            await save_session(tid, None)
-                            logger.info(f"🔴 Seans uzilganligi aniqlandi: {tid}")
-                            await _notify_session_expired(tid)
-                        await c.disconnect()
-                    except Exception as e:
-                        err_str = str(e).lower()
-                        if "unregistered" in err_str or "revoked" in err_str or "deactivated" in err_str:
-                            await save_session(tid, None)
-                            logger.info(f"🔴 Seans bekor qilinganligi aniqlandi ({tid}): {e}")
-                            await _notify_session_expired(tid)
-                await asyncio.sleep(3)
+                await asyncio.sleep(0.5)
         except Exception as e:
             logger.error(f"session_checker_loop xatosi: {e}")
-        await asyncio.sleep(120)  # Har 2 daqiqada tekshirib turadi
+        await asyncio.sleep(600)  # Har 10 daqiqada tekshirib turadi
 
 @app.post("/api/admin/refresh_phones")
 async def admin_refresh_phones(x_admin_token: str = Header(default="")):
