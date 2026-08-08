@@ -4525,7 +4525,7 @@ async def _update_profile_clock_now(session_string, enable=True):
         me = await client.get_me()
         if me:
             first_name = me.first_name or ""
-            base_name = re.sub(r'\s*\|\s*(?:🕒\s*)?\d{2}:\d{2}', '', first_name)
+            base_name = re.sub(r'\s*\|\s*(?:[\U0001F550-\U0001F567\U0000231A\U0000231B\u23F0\u23F1\u23F2\u23F3\u23F8-\u23FA\u2600-\u27BF][\uFE0F]?\s*)?\d{2}:\d{2}', '', first_name).strip()
             base_name = base_name[:50]
             
             if enable:
@@ -4563,7 +4563,7 @@ async def api_toggle_clock(request: Request):
         await db.execute("UPDATE users SET clock_enabled=? WHERE telegram_id=?", (new_val, tid))
         await db.commit()
     
-    asyncio.create_task(_update_profile_clock_now(row['session_string'], new_val == 1))
+    await _update_profile_clock_now(row['session_string'], new_val == 1)
         
     return {"ok": True, "clock_enabled": new_val}
 
