@@ -8189,60 +8189,61 @@ async def profile_clock_loop(bot):
     from telethon import TelegramClient
     from telethon.sessions import StringSession
     from telethon.tl.functions.account import UpdateProfileRequest
+    import re
     
     uzb_tz = datetime.timezone(datetime.timedelta(hours=5))
-    
+    # API chaqiruvi qancha vaqt olishini taxminan bilamiz (~3-4 soniya)
+    # Shuning uchun daqiqa boshlanishidan shu qadar oldin boshlaymiz
+    API_LEAD_SECONDS = 4
+
     while True:
         try:
-            # UZB vaqtida keyingi daqiqa 00-soniyasiga aniq sinxronlashtiramiz
             now_uzb = datetime.datetime.now(uzb_tz)
-            sleep_time = 60 - now_uzb.second - (now_uzb.microsecond / 1_000_000)
-            await asyncio.sleep(sleep_time)
-            
-            # Yangi daqiqa UZB vaqtida
-            current_time_str = datetime.datetime.now(uzb_tz).strftime("%H:%M")
-            
+
+            # Keyingi daqiqaning boshlanish vaqtini aniqlaymiz
+            next_minute = (now_uzb + datetime.timedelta(minutes=1)).replace(second=0, microsecond=0)
+            next_time_str = next_minute.strftime("%H:%M")
+
+            # API ni aynan shu vaqtda boshlash kerak (4 soniya oldin)
+            start_at = next_minute - datetime.timedelta(seconds=API_LEAD_SECONDS)
+            wait_sec = (start_at - datetime.datetime.now(uzb_tz)).total_seconds()
+            if wait_sec > 0:
+                await asyncio.sleep(wait_sec)
+
+            # Foydalanuvchilarni olamiz
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT telegram_id, session_string, clock_base_name FROM users WHERE clock_enabled = 1") as c:
                     users = await c.fetchall()
-            
-            for u in users:
-                if not u['session_string']: continue
+
+            # Har bir foydalanuvchi uchun PARALLEL yangilaymiz (ketma-ket emas!)
+            async def _update_one(u):
+                if not u['session_string']:
+                    return
                 base_name = (u['clock_base_name'] or '').strip()
-                
+                client = None
                 try:
                     client = TelegramClient(StringSession(u['session_string']), API_ID, API_HASH)
                     await client.connect()
-                    
-                    if base_name:
-                        # Bazada ism bor — get_me() yo'q = 2x tez!
-                        # last_name uchun bir marta get_me lazim (propagatsiya uchun muhim)
-                        me = await client.get_me()
-                        last_name = (me.last_name or '') if me else ''
-                        new_first_name = f"{base_name} | {current_time_str}"
-                        await client(UpdateProfileRequest(first_name=new_first_name, last_name=last_name))
-                        await asyncio.sleep(0.3)
-                    else:
-                        # Bazada ism yo'q — bir marta get_me() qilamiz va saqlaymiz
-                        import re
-                        me = await client.get_me()
-                        if me:
+                    me = await client.get_me()
+                    if me:
+                        if not base_name:
                             first_name = me.first_name or ""
                             base_name = re.sub(r'\s*\|\s*(?:[\U0001F550-\U0001F567][\uFE0F]?\s*)?\d{2}:\d{2}', '', first_name).strip()[:50]
-                            last_name = me.last_name or ''
                             async with aiosqlite.connect(DB_PATH) as db:
                                 await db.execute("UPDATE users SET clock_base_name=? WHERE telegram_id=?", (base_name, u['telegram_id']))
                                 await db.commit()
-                            new_first_name = f"{base_name} | {current_time_str}"
-                            await client(UpdateProfileRequest(first_name=new_first_name, last_name=last_name))
-                            await asyncio.sleep(0.3)
-                            
+                        last_name = me.last_name or ''
+                        new_first_name = f"{base_name} | {next_time_str}"
+                        await client(UpdateProfileRequest(first_name=new_first_name, last_name=last_name))
                 except Exception as e:
                     logger.warning(f"Clock update error for {u['telegram_id']}: {e}")
                 finally:
-                    if 'client' in locals() and client.is_connected():
+                    if client and client.is_connected():
                         await client.disconnect()
+
+            # Hammasini bir vaqtda ishga tushiramiz
+            await asyncio.gather(*[_update_one(u) for u in users], return_exceptions=True)
                         
         except asyncio.CancelledError:
             break
