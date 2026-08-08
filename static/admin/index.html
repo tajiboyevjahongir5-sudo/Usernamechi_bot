@@ -865,17 +865,32 @@ async function checkAuth() {
     history.replaceState({}, '', '/admin');
   }
 
-  const loginEl = document.getElementById('login-screen');
-  if (loginEl) loginEl.style.display = 'none';
+  let isAuthed = false;
 
   // 1. Telegram WebApp initData bo'lsa token olamiz
   if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
-    await attemptWebAuth();
+    isAuthed = await attemptWebAuth();
   }
 
-  // 2. Token olingandan keyin ma'lumotlarni yuklaymiz (faqat bir marta)
-  initNavDragPhysics();
-  loadDashboard();
+  // 2. Agar avtomatik auth bo'lmagan bo'lsa, mavjud token yaroqliligini tekshiramiz
+  if (!isAuthed && ADMIN_TOKEN) {
+    try {
+      const res = await fetch('/api/admin/check', { headers: headers() });
+      if (res.ok) {
+        isAuthed = true;
+      }
+    } catch(e) {}
+  }
+
+  const loginEl = document.getElementById('login-screen');
+  if (isAuthed) {
+    if (loginEl) loginEl.style.display = 'none';
+    initNavDragPhysics();
+    loadDashboard();
+  } else {
+    // Tizimga kirmagan — login oynasini majburiy ko'rsatamiz
+    if (loginEl) loginEl.style.display = 'flex';
+  }
 }
 
 function switchTab(tabId, btn) {
