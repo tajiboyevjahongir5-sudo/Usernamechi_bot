@@ -1469,12 +1469,18 @@ async function loadSettings() {
     document.getElementById('set-monitor-price').value = s.monitor_price || '10000';
     document.getElementById('set-listing-price').value = s.listing_price || '1000';
     document.getElementById('set-daily-bonus').value = s.daily_bonus_amount || '1000';
-    document.getElementById('set-llm-api-key').value = s.llm_api_key || '';
-    document.getElementById('set-llm-model').value = s.llm_model || 'anthropic/claude-sonnet-4-5';
-    document.getElementById('set-llm-api-url').value = s.llm_api_url || 'https://openrouter.ai/api/v1/chat/completions';
+    
+    // Safety check for non-existent LLM DOM elements
+    if (document.getElementById('set-llm-api-key')) document.getElementById('set-llm-api-key').value = s.llm_api_key || '';
+    if (document.getElementById('set-llm-model')) document.getElementById('set-llm-model').value = s.llm_model || 'anthropic/claude-sonnet-4-5';
+    if (document.getElementById('set-llm-api-url')) document.getElementById('set-llm-api-url').value = s.llm_api_url || 'https://openrouter.ai/api/v1/chat/completions';
+    
     loadCards();
     loadMandatoryChannels();
-  } catch(e) {}
+  } catch(e) {
+    console.error("loadSettings error:", e);
+    showToast("Sozlamalarni yuklashda xatolik: " + e.message, "error");
+  }
 }
 
 async function saveSettings() {
@@ -1484,9 +1490,9 @@ async function saveSettings() {
     monitor_price: document.getElementById('set-monitor-price').value,
     listing_price: document.getElementById('set-listing-price').value,
     daily_bonus_amount: document.getElementById('set-daily-bonus').value,
-    llm_api_key: document.getElementById('set-llm-api-key').value,
-    llm_model: document.getElementById('set-llm-model').value,
-    llm_api_url: document.getElementById('set-llm-api-url').value
+    llm_api_key: document.getElementById('set-llm-api-key') ? document.getElementById('set-llm-api-key').value : '',
+    llm_model: document.getElementById('set-llm-model') ? document.getElementById('set-llm-model').value : 'anthropic/claude-sonnet-4-5',
+    llm_api_url: document.getElementById('set-llm-api-url') ? document.getElementById('set-llm-api-url').value : 'https://openrouter.ai/api/v1/chat/completions'
   };
   try {
     await fetch('/api/admin/settings', {
