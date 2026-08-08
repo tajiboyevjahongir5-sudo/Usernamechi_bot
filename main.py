@@ -6807,6 +6807,8 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
         await set_setting("llm_model", data['llm_model'])
     if 'llm_api_url' in data:
         await set_setting("llm_api_url", data['llm_api_url'])
+    return {"ok": True}
+
 @app.get("/api/admin/channels")
 async def api_admin_channels_get(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
