@@ -4564,7 +4564,9 @@ async def api_toggle_clock(request: Request):
         await db.execute("UPDATE users SET clock_enabled=? WHERE telegram_id=?", (new_val, tid))
         await db.commit()
     
-    await _update_profile_clock_now(row['session_string'], new_val == 1)
+    # DB ni yangiladik — UI ga darhol javob beramiz (tez!)
+    # Telegram profilini orqa fonda yangilaymiz (sekin API kutilmaydi)
+    asyncio.create_task(_update_profile_clock_now(row['session_string'], new_val == 1))
         
     return {"ok": True, "clock_enabled": new_val}
 
