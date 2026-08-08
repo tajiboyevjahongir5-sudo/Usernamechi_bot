@@ -4529,7 +4529,8 @@ async def _update_profile_clock_now(session_string, enable=True):
             base_name = base_name[:50]
             
             if enable:
-                current_time = datetime.datetime.now().strftime("%H:%M")
+                uzb_tz = datetime.timezone(datetime.timedelta(hours=5))
+                current_time = datetime.datetime.now(uzb_tz).strftime("%H:%M")
                 new_first_name = f"{base_name} | {current_time}"
             else:
                 new_first_name = base_name
@@ -8182,7 +8183,8 @@ async def profile_clock_loop(bot):
             await asyncio.sleep(sleep_time)
             
             # Yangi daqiqa boshlandi
-            current_time_str = datetime.datetime.now().strftime("%H:%M")
+            uzb_tz = datetime.timezone(datetime.timedelta(hours=5))
+            current_time_str = datetime.datetime.now(uzb_tz).strftime("%H:%M")
             
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
