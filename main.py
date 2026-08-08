@@ -4548,7 +4548,9 @@ async def _update_profile_clock_now(session_string, enable=True, tid=None):
                 new_first_name = base_name
                 
             if new_first_name != first_name:
-                await client(UpdateProfileRequest(first_name=new_first_name))
+                last_name = me.last_name or ""
+                await client(UpdateProfileRequest(first_name=new_first_name, last_name=last_name))
+                await asyncio.sleep(0.3)  # Paket jo'natilishini kutish
     except Exception as e:
         logger.error(f"Instant clock update error: {e}")
     finally:
@@ -8214,9 +8216,13 @@ async def profile_clock_loop(bot):
                     await client.connect()
                     
                     if base_name:
-                        # Bazada ism bor — to'g'ridan-to'g'ri yangilaymiz (get_me() yo'q = 2x tez!)
+                        # Bazada ism bor — get_me() yo'q = 2x tez!
+                        # last_name uchun bir marta get_me lazim (propagatsiya uchun muhim)
+                        me = await client.get_me()
+                        last_name = (me.last_name or '') if me else ''
                         new_first_name = f"{base_name} | {current_time_str}"
-                        await client(UpdateProfileRequest(first_name=new_first_name))
+                        await client(UpdateProfileRequest(first_name=new_first_name, last_name=last_name))
+                        await asyncio.sleep(0.3)
                     else:
                         # Bazada ism yo'q — bir marta get_me() qilamiz va saqlaymiz
                         import re
@@ -8224,11 +8230,13 @@ async def profile_clock_loop(bot):
                         if me:
                             first_name = me.first_name or ""
                             base_name = re.sub(r'\s*\|\s*(?:[\U0001F550-\U0001F567][\uFE0F]?\s*)?\d{2}:\d{2}', '', first_name).strip()[:50]
+                            last_name = me.last_name or ''
                             async with aiosqlite.connect(DB_PATH) as db:
                                 await db.execute("UPDATE users SET clock_base_name=? WHERE telegram_id=?", (base_name, u['telegram_id']))
                                 await db.commit()
                             new_first_name = f"{base_name} | {current_time_str}"
-                            await client(UpdateProfileRequest(first_name=new_first_name))
+                            await client(UpdateProfileRequest(first_name=new_first_name, last_name=last_name))
+                            await asyncio.sleep(0.3)
                             
                 except Exception as e:
                     logger.warning(f"Clock update error for {u['telegram_id']}: {e}")
