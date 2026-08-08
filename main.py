@@ -4513,6 +4513,35 @@ async def process_referral_reward(user_id: int):
     except Exception as e:
         logger.error(f"process_referral_reward error: {e}")
 
+async def _update_profile_clock_now(session_string, enable=True):
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from telethon.tl.functions.account import UpdateProfileRequest
+    import datetime
+    import re
+    try:
+        client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
+        await client.connect()
+        me = await client.get_me()
+        if me:
+            first_name = me.first_name or ""
+            base_name = re.sub(r'\s*\|\s*🕒\s*\d{2}:\d{2}', '', first_name)
+            base_name = base_name[:50]
+            
+            if enable:
+                current_time = datetime.datetime.now().strftime("%H:%M")
+                new_first_name = f"{base_name} | 🕒 {current_time}"
+            else:
+                new_first_name = base_name
+                
+            if new_first_name != first_name:
+                await client(UpdateProfileRequest(first_name=new_first_name))
+    except Exception as e:
+        logger.error(f"Instant clock update error: {e}")
+    finally:
+        if 'client' in locals() and client.is_connected():
+            await client.disconnect()
+
 @app.post("/api/toggle_clock")
 async def api_toggle_clock(request: Request):
     data = await request.json()
@@ -4533,6 +4562,8 @@ async def api_toggle_clock(request: Request):
         new_val = 1 if row['clock_enabled'] == 0 else 0
         await db.execute("UPDATE users SET clock_enabled=? WHERE telegram_id=?", (new_val, tid))
         await db.commit()
+    
+    asyncio.create_task(_update_profile_clock_now(row['session_string'], new_val == 1))
         
     return {"ok": True, "clock_enabled": new_val}
 
