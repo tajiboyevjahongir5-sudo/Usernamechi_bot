@@ -8335,6 +8335,77 @@ async def garant_cleanup_loop(bot):
         await asyncio.sleep(60)
 
 
+async def debug_find_databases(bot):
+    import os
+    import sqlite3
+    import datetime
+    
+    # Keshlanib qolishini oldini olish uchun biroz kutamiz
+    await asyncio.sleep(5)
+    
+    if not ADMIN_IDS:
+        logger.warning("Qidirish uchun ADMIN_IDS topilmadi")
+        return
+    
+    admin_id = ADMIN_IDS[0]
+    report = "🔍 **Baza fayllarini qidirish hisoboti:**\n\n"
+    
+    # Qidiriladigan papkalar
+    search_dirs = [".", "/app", "/app/data", "/app/database"]
+    found_files = []
+    
+    for d in search_dirs:
+        if not os.path.exists(d):
+            continue
+        try:
+            for f in os.listdir(d):
+                if f.endswith('.db') or f.endswith('.sqlite') or 'usernamechi' in f:
+                    path = os.path.join(d, f)
+                    if os.path.isfile(path) and path not in [x['path'] for x in found_files]:
+                        try:
+                            size = os.path.getsize(path)
+                            mtime = os.path.getmtime(path)
+                            date_str = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            # Jadval va ma'lumotlarni tekshirish
+                            tables_info = []
+                            conn = sqlite3.connect(path)
+                            cur = conn.cursor()
+                            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                            tables = [r[0] for r in cur.fetchall()]
+                            for t in ['users', 'payment_cards', 'mandatory_channels', 'settings']:
+                                if t in tables:
+                                    cur.execute(f"SELECT COUNT(*) FROM {t}")
+                                    count = cur.fetchone()[0]
+                                    tables_info.append(f"{t}({count})")
+                            conn.close()
+                                
+                            found_files.append({
+                                'path': path,
+                                'size': size,
+                                'date': date_str,
+                                'tables': ", ".join(tables_info) if tables_info else "Bo'sh/Jadvalsiz"
+                            })
+                        except Exception as inner_e:
+                            logger.error(f"Error reading file info {path}: {inner_e}")
+        except Exception as dir_e:
+            logger.error(f"Error listing dir {d}: {dir_e}")
+                    
+    if not found_files:
+        report += "❌ Hech qanday .db yoki .sqlite fayl topilmadi!"
+    else:
+        for idx, ff in enumerate(found_files):
+            report += f"{idx+1}. `{ff['path']}`\n"
+            report += f"   Hajmi: {ff['size']:,} bayt\n"
+            report += f"   Sana: {ff['date']}\n"
+            report += f"   Tarkibi: {ff['tables']}\n\n"
+            
+    try:
+        await bot.send_message(admin_id, report, parse_mode="HTML" if "<" in report else None)
+    except Exception as e:
+        logger.error(f"Send debug report error: {e}")
+
+
 async def main():
     import signal
 
@@ -8344,6 +8415,7 @@ async def main():
     await init_db()
 
     bot = Bot(token=BOT_TOKEN)
+    asyncio.create_task(debug_find_databases(bot))
     dp  = Dispatcher()
 
 
