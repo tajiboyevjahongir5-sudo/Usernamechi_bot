@@ -8420,7 +8420,6 @@ async def main():
     await init_db()
 
     bot = Bot(token=BOT_TOKEN)
-    asyncio.create_task(debug_find_databases(bot))
     dp  = Dispatcher()
 
 
