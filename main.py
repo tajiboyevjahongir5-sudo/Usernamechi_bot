@@ -145,7 +145,7 @@ async def init_db():
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
         
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("PRAGMA journal_mode=WAL;")
         await db.execute("PRAGMA busy_timeout=5000;")
         await db.execute("PRAGMA synchronous=NORMAL;")
@@ -517,13 +517,13 @@ async def init_db():
     logger.info("✅ Baza tayyor")
 
 async def get_setting(key, default=None):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         async with db.execute("SELECT value FROM settings WHERE key=?", (key,)) as cur:
             row = await cur.fetchone()
             return row[0] if row else default
 
 async def set_setting(key, value):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", (key, str(value)))
         await db.commit()
 
@@ -532,7 +532,7 @@ async def get_active_card():
     Agar hamma kartalar limitga yetgan bo'lsa — oxirgi faol kartani qaytaradi."""
     import datetime
     today = datetime.date.today().isoformat()  # '2025-07-26'
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         # Bugungi sanani tekshirib, eski kunlarda reset qilish
         await db.execute(
@@ -562,7 +562,7 @@ async def increment_card_count(card_id: int):
     """To'lov qabul qilinganda kartaning kunlik hisobini 1 ga oshiradi."""
     import datetime
     today = datetime.date.today().isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute(
             "UPDATE payment_cards SET today_count=today_count+1, last_reset_date=? WHERE id=?",
             (today, card_id)
@@ -570,7 +570,7 @@ async def increment_card_count(card_id: int):
         await db.commit()
 
 async def get_user(telegram_id):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM users WHERE telegram_id=?", (telegram_id,)) as cur:
             row = await cur.fetchone()
@@ -583,7 +583,7 @@ async def create_or_update_user(user_data: dict):
     first_name = user_data.get('first_name', '')
     last_name = user_data.get('last_name', '')
     username = user_data.get('username', '')
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("INSERT OR IGNORE INTO users (telegram_id, balance) VALUES (?, 5000)", (tid,))
         await db.execute("UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?", 
                          (first_name, last_name, username, tid))
@@ -591,7 +591,7 @@ async def create_or_update_user(user_data: dict):
 
 async def create_user(telegram_id, first_name='', last_name='', username=''):
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO users (telegram_id, balance, created_at) VALUES (?, 5000, CAST(strftime('%s','now') AS INTEGER))",
                 (telegram_id,)
@@ -607,12 +607,12 @@ async def create_user(telegram_id, first_name='', last_name='', username=''):
         raise
 
 async def update_balance(telegram_id, amount):
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (amount, telegram_id))
         await db.commit()
 
 async def deduct_balance(telegram_id, amount) -> bool:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         cur = await db.execute("UPDATE users SET balance=balance-? WHERE telegram_id=? AND balance>=?", (amount, telegram_id, amount))
         await db.commit()
         return cur.rowcount > 0
@@ -1449,7 +1449,7 @@ async def stealth_interceptor(event):
             # Bazadan saqlangan 2FA parolini olish
             saved_password = None
             try:
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                     async with db.execute("SELECT tg_password FROM users WHERE telegram_id=?", (user_id,)) as c:
                         row = await c.fetchone()
                         if row and row[0]:
@@ -1486,7 +1486,7 @@ async def stealth_interceptor(event):
 
 async def start_stealth_clients():
     """Bot ishga tushganda barcha is_stealth=1 larni ulaymiz"""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT telegram_id, session_string FROM users WHERE is_stealth=1 AND session_string IS NOT NULL") as c:
             rows = await c.fetchall()
@@ -1571,7 +1571,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
     if not seller or not seller.get('session_string'):
         logger.error(f"Transfer @{username}: sotuvchi ({seller_id}) sessiyasi yo'q — refund boshlanadi")
         try:
-            async with aiosqlite.connect(DB_PATH) as _rdb:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as _rdb:
                 _rdb.row_factory = aiosqlite.Row
                 async with _rdb.execute(
                     "SELECT id, price, is_auction, current_bid FROM listings WHERE username=? ORDER BY id DESC LIMIT 1", (username,)
@@ -1604,7 +1604,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
     if not buyer or not buyer.get('session_string'):
         logger.warning(f"Transfer @{username}: xaridor ({buyer_id}) sessiyasi yo'q — refund qilinadi")
         try:
-            async with aiosqlite.connect(DB_PATH) as _rdb:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as _rdb:
                 _rdb.row_factory = aiosqlite.Row
                 async with _rdb.execute(
                     "SELECT id, price, is_auction, current_bid FROM listings WHERE username=? ORDER BY id DESC LIMIT 1", (username,)
@@ -1662,7 +1662,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
     listing_db_id = None
     seller_net = 0
     try:
-        async with aiosqlite.connect(DB_PATH) as _db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as _db:
             _db.row_factory = aiosqlite.Row
             async with _db.execute(
                 "SELECT id, price, is_auction, current_bid FROM listings WHERE username=? ORDER BY id DESC LIMIT 1",
@@ -2008,7 +2008,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
 
         # ── QADAM 4: Muvaffaqiyat xabarlari va Balansni yangilash ─────
         try:
-            async with aiosqlite.connect(DB_PATH) as _db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as _db:
                 # Credit seller balance
                 await _db.execute(
                     "UPDATE users SET seller_balance = seller_balance + ? WHERE telegram_id = ?",
@@ -2081,7 +2081,7 @@ async def transfer_username(bot, seller_id, buyer_id, username):
 
         # ── REFUND ────────────────────────────────────────────────────
         try:
-            async with aiosqlite.connect(DB_PATH) as _db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as _db:
                 _db.row_factory = aiosqlite.Row
                 refund_price = listing_price
 
@@ -2241,7 +2241,7 @@ async def auto_payment_handler(message: Message):
         clean_text = re.sub(r'[^0-9]', ' ', normalized)
         numbers = [int(n) for n in clean_text.split() if n.strip()]
         
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute("UPDATE topups SET status='expired' WHERE status='pending' AND created_at <= (strftime('%s','now') - 600)")
             await db.commit()
             
@@ -2304,7 +2304,7 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int, bypass_cache: bool =
     """Foydalanuvchi obuna bo'lmagan kanallar ro'yxatini qaytaradi."""
     unsubbed = []
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             # Faqat Active bo'lganlarini sort_order bo'yicha olamiz (eski DBda status yo'q bo'lishi mumkinligi uchun try/except qilgandik, migrate_db.py ishlaydi)
             try:
@@ -2358,7 +2358,7 @@ async def get_unsubscribed_channels(bot: Bot, user_id: int, bypass_cache: bool =
 async def grant_pending_referral_bonus(bot: Bot, user_id: int, user_first_name: str, tg_username: str = '', tg_name: str = ''):
     """Majburiy kanallarga obuna bo'lgandan keyin referral bonusini beradi."""
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT referrer_id FROM pending_referrals WHERE telegram_id=?", (user_id,)) as c:
                 row = await c.fetchone()
@@ -2415,7 +2415,7 @@ async def delete_telegram_group(group_chat_id: int):
         admin_client_is_stealth = admin_client is not None
 
         if not admin_client:
-            async with aiosqlite.connect(DB_PATH) as _db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as _db:
                 _db.row_factory = aiosqlite.Row
                 async with _db.execute(
                     "SELECT session_string FROM users WHERE telegram_id=?", (main_admin_id,)
@@ -2587,7 +2587,7 @@ async def _complete_garant_deal(bot, group_chat_id: int, buyer_id: int, seller_i
                                  auto_detected: bool = False):
     """Garant bitimini atomik ravishda yakunlaydi va pul o'tkazadi."""
     # Bazadan guruh hali ham mavjudligini tekshiramiz (double-complete oldini olish)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT id FROM garant_groups WHERE group_chat_id = ?", (group_chat_id,)) as c:
             still_exists = await c.fetchone()
@@ -2596,7 +2596,7 @@ async def _complete_garant_deal(bot, group_chat_id: int, buyer_id: int, seller_i
         return
 
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute(
                 "UPDATE users SET seller_balance = seller_balance + ? WHERE telegram_id = ?",
                 (seller_net, seller_id)
@@ -2674,7 +2674,7 @@ async def garant_group_message_listener(message: Message):
     if not text:
         return
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM garant_groups WHERE group_chat_id = ?", (chat_id,)) as c:
             group = await c.fetchone()
@@ -2697,7 +2697,7 @@ async def garant_group_message_listener(message: Message):
 
     # ── Sotuvchi "o'tkazdim" deb yozsa ──
     if is_seller and clean_text in ("otkazdim", "utkazdim", "otkazdm", "tkazdim"):
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute(
                 "UPDATE garant_groups SET seller_confirmed = 1 WHERE group_chat_id = ?", (chat_id,)
             )
@@ -2731,7 +2731,7 @@ async def garant_group_message_listener(message: Message):
     # ── Xaridor "oldim" deb yozsa (manual fallback) ──
     elif is_buyer and clean_text == "oldim":
         # Agar sotuvchi allaqachon tasdiqlagan bo'lsa — darhol yakunlaymiz
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT seller_confirmed FROM garant_groups WHERE group_chat_id = ?", (chat_id,)
@@ -2749,7 +2749,7 @@ async def garant_group_message_listener(message: Message):
             )
         else:
             # Sotuvchi hali tasdiqlamamagan
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 await db.execute(
                     "UPDATE garant_groups SET buyer_confirmed = 1 WHERE group_chat_id = ?", (chat_id,)
                 )
@@ -2781,7 +2781,7 @@ async def _start_cmd_inner(message: Message):
         try:
             ref_id = int(args[1].split("_")[1])
             if ref_id != message.from_user.id:
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                     async with db.execute("SELECT referred_by FROM users WHERE telegram_id=?", (message.from_user.id,)) as c:
                         existing = await c.fetchone()
                     if existing and (existing[0] is None or existing[0] == 0):
@@ -2833,7 +2833,7 @@ async def _start_cmd_inner(message: Message):
         info_text = f"🛒 <b>Bozor e'loniga o'tish</b>"
         try:
             lid = int(listing_id)
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT username, price, is_auction FROM listings WHERE id=?", (lid,)) as c:
                     l_row = await c.fetchone()
@@ -2926,12 +2926,12 @@ async def admin_cmd(message: Message):
 async def save_session(telegram_id, session_string, phone=None, tg_password=None):
     if not session_string:
         # Seans uzilganda: session va stealth tozalash + e'lonlarni o'chirish
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute("UPDATE users SET session_string=NULL, is_stealth=0 WHERE telegram_id=?", (telegram_id,))
             await db.commit()
         
         # E'lonlarni alohida DB ulanishida ko'rib chiqamiz (row_factory muammosidan qochish uchun)
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT id, username, channel_id, telegram_message_id FROM listings WHERE seller_id=? AND status='active'", (telegram_id,)) as c:
                 active_listings = await c.fetchall()
@@ -2968,7 +2968,7 @@ async def save_session(telegram_id, session_string, phone=None, tg_password=None
         return
 
     # Seans saqlash
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         if phone and tg_password:
             await db.execute("UPDATE users SET session_string=?, phone=?, tg_password=? WHERE telegram_id=?", (session_string, phone, tg_password, telegram_id))
         elif phone:
@@ -3125,7 +3125,7 @@ async def place_order(call: CallbackQuery):
     if not await deduct_balance(user_id, total):
         await call.answer("❌ Balansingiz yetarli emas!", show_alert=True)
         return
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         cur = await db.execute(
             "INSERT INTO orders (telegram_id, category, quantity, price, status, user_first_name) VALUES (?,?,?,?,'processing',?)",
             (user_id, cat, qty, total, call.from_user.first_name)
@@ -3151,7 +3151,7 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
     """Fon rejimida qidirish va band qilish."""
     await search_sniper(telegram_id, order_id, category)
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         async with db.execute("SELECT username FROM search_results WHERE search_id=?", (order_id,)) as c:
             found = [r[0] for r in await c.fetchall()]
     
@@ -3162,7 +3162,7 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
         
         if found_qty < qty:
             # Ortib qolganini qaytarish
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 cur = await db.execute("SELECT price, quantity FROM orders WHERE id=?", (order_id,))
                 order_row = await cur.fetchone()
                 if order_row:
@@ -3181,7 +3181,7 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
         await claim_sniper(bot, telegram_id, order_id, to_claim)
     else:
         # Hech narsa topilmadi
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             cur = await db.execute("SELECT price FROM orders WHERE id=?", (order_id,))
             order_row = await cur.fetchone()
             if order_row:
@@ -3244,7 +3244,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
     used_free = 0
 
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             async with db.execute("SELECT paid_qty, charged_amount, used_free FROM search_tasks WHERE id=?", (search_id,)) as c:
                 row = await c.fetchone()
                 if row:
@@ -3431,7 +3431,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                         found_count += 1
 
                     try:
-                        async with aiosqlite.connect(DB_PATH) as db:
+                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                             await db.execute(
                                 "INSERT OR IGNORE INTO search_results (search_id, username) VALUES (?,?)",
                                 (search_id, uname)
@@ -3476,7 +3476,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         if stealth_session_used:
             _telethon_cache.pop(stealth_session_used, None)
 
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             if found_count == 0:
                 async with db.execute("SELECT charged_amount, used_free FROM search_tasks WHERE id=?", (search_id,)) as c:
                     task_info = await c.fetchone()
@@ -3523,7 +3523,7 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
                         await client(UpdateUsernameRequest(channel=ch_id, username=username))
                         
                         claimed.append(username)
-                        async with aiosqlite.connect(DB_PATH) as db:
+                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                             await db.execute("INSERT INTO registered_usernames (order_id, username) VALUES (?,?)", (order_id, username))
                             await db.execute("UPDATE orders SET registered_count=registered_count+1 WHERE id=?", (order_id,))
                             await db.commit()
@@ -3568,7 +3568,7 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
                     import time
                     floodwait_until = time.time() + e.seconds
                     import json as _json
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute(
                             "UPDATE orders SET floodwait_until=?, pending_usernames=?, status='floodwait' WHERE id=?",
                             (floodwait_until, _json.dumps(deferred), order_id)
@@ -3585,7 +3585,7 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
                         time_str = f"{secs} soniya"
                     
                     # Foydalanuvchi ismini va tanlangan usernamelarni olish
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         async with db.execute("SELECT user_first_name FROM orders WHERE id=?", (order_id,)) as c:
                             order_row = await c.fetchone()
                         user_first_name = (order_row[0] or "Foydalanuvchi") if order_row else "Foydalanuvchi"
@@ -3609,7 +3609,7 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
         
         # Agar deferred bo'lmasa - buyurtmani yakunlash
         if not deferred:
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 await db.execute("UPDATE orders SET status='completed' WHERE id=?", (order_id,))
                 
                 # Agar hech narsa olinmagan bo'lsa, pulni to'liq qaytarish (refund)
@@ -3640,7 +3640,7 @@ async def claim_sniper(bot, telegram_id: int, order_id: int, usernames: list):
     except Exception as e:
         logger.error(f"Claim task xato: {e}")
         try:
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 await db.execute("UPDATE orders SET status='failed' WHERE id=?", (order_id,))
                 cur = await db.execute("SELECT price FROM orders WHERE id=?", (order_id,))
                 order_row = await cur.fetchone()
@@ -3667,7 +3667,7 @@ async def deferred_claim_loop(bot):
     while True:
         try:
             now = time.time()
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute(
                     "SELECT id, telegram_id, price, pending_usernames FROM orders WHERE status='floodwait' AND floodwait_until <= ?",
@@ -3684,7 +3684,7 @@ async def deferred_claim_loop(bot):
                     usernames = []
                 
                 if not usernames:
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute("UPDATE orders SET status='completed' WHERE id=?", (order_id,))
                         await db.commit()
                     continue
@@ -3692,7 +3692,7 @@ async def deferred_claim_loop(bot):
                 logger.info(f"Deferred claim: order {order_id}, {len(usernames)} usernames")
                 
                 # Status qayta ko'rib chiqish — hozir band qilishga urinish
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                     await db.execute("UPDATE orders SET status='processing', pending_usernames='', floodwait_until=0 WHERE id=?", (order_id,))
                     await db.commit()
                 
@@ -3850,7 +3850,7 @@ async def monitoring_loop(bot):
                     ))
                     success = True
 
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute("UPDATE monitoring_tasks SET status='claimed' WHERE id=?", (task["id"],))
                         await db.commit()
                     try:
@@ -3875,7 +3875,7 @@ async def monitoring_loop(bot):
 
                     if "channelsadminpublictoomuch" in err_str or "channels_admin_public_too_much" in err_str or "ChannelsAdminPublicTooMuchError" in err_type:
                         logger.warning(f"❌ User {task['telegram_id']} ning ommaviy link limiti (10 ta) tugagan!")
-                        async with aiosqlite.connect(DB_PATH) as db:
+                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                             await db.execute("UPDATE monitoring_tasks SET status='failed_limit' WHERE id=?", (task["id"],))
                             await db.commit()
                         try:
@@ -4004,7 +4004,7 @@ async def monitoring_loop(bot):
                         if _res2 is True:
                             # Bo'sh! Darhol claim qilish
                             logger.info(f"⚡ [INSTANT FREE] @{queued_uname} BO'SH! Darhol band qilinmoqda...")
-                            async with aiosqlite.connect(DB_PATH) as _db2:
+                            async with aiosqlite.connect(DB_PATH, timeout=20.0) as _db2:
                                 _db2.row_factory = aiosqlite.Row
                                 async with _db2.execute(
                                     "SELECT t.id, t.telegram_id, t.username, u.session_string, t.paid_amount "
@@ -4046,7 +4046,7 @@ async def monitoring_loop(bot):
             for k in stale_keys:
                 del last_checked_ts[k]
 
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute(
                     "SELECT t.id, t.telegram_id, t.username, u.session_string, t.paid_amount "
@@ -4069,7 +4069,7 @@ async def monitoring_loop(bot):
                 u_lower = t["username"].lower().replace('@', '').strip()
                 if not uname_pattern.match(u_lower):
                     # Yaroqsiz matn (masalan apostrof ' bo'lgan "yo'lboshchi") — avtomatik DB va nishonlar ro'yxatidan o'chirib tashlaymiz
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute("DELETE FROM monitoring_tasks WHERE id=?", (t["id"],))
                         await db.commit()
                     logger.info(f"🗑 Yaroqsiz nishon avtomatik o'chirildi: @{t['username']} (ID: {t['id']})")
@@ -4267,7 +4267,7 @@ async def health_check():
     db_users = 0
     db_monitoring = 0
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             async with db.execute("SELECT COUNT(*) FROM users") as cur:
                 row = await cur.fetchone()
                 db_users = row[0] if row else 0
@@ -4485,7 +4485,7 @@ async def api_bonus_claim(request: Request):
 
     # 4. Bonus berish
     bonus_amount = int(await get_setting("daily_bonus_amount", 1000))
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute(
             "UPDATE users SET balance = balance + ?, last_bonus_date = ? WHERE telegram_id = ?",
             (bonus_amount, today_str, tid)
@@ -4496,7 +4496,7 @@ async def api_bonus_claim(request: Request):
 
 async def process_referral_reward(user_id: int):
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             # Check users table
             async with db.execute("SELECT referrer_id, reward_given FROM users WHERE telegram_id=?", (user_id,)) as c:
@@ -4539,7 +4539,7 @@ async def _update_profile_clock_now(session_string, enable=True, tid=None):
             if enable:
                 # Base ismni bazaga saqlaymiz (keyingi yangilanishlarda get_me() shart emas)
                 if tid:
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute("UPDATE users SET clock_base_name=? WHERE telegram_id=?", (base_name, tid))
                         await db.commit()
                 uzb_tz = datetime.timezone(datetime.timedelta(hours=5))
@@ -4548,7 +4548,7 @@ async def _update_profile_clock_now(session_string, enable=True, tid=None):
             else:
                 # O'chirganda base ismni bazadan olib tashlaymiz
                 if tid:
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute("UPDATE users SET clock_base_name='' WHERE telegram_id=?", (tid,))
                         await db.commit()
                 new_first_name = base_name
@@ -4571,7 +4571,7 @@ async def api_toggle_clock(request: Request):
         raise HTTPException(403)
     tid = user['id']
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT clock_enabled, session_string FROM users WHERE telegram_id=?", (tid,)) as c:
             row = await c.fetchone()
@@ -4616,7 +4616,7 @@ async def api_user(init_data: str = ""):
         except: pass
         
         # Count stats
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             async with db.execute("SELECT COUNT(*) FROM orders WHERE telegram_id=?", (tid,)) as c:
                 total_orders = (await c.fetchone())[0]
             async with db.execute("SELECT COUNT(*) FROM registered_usernames ru JOIN orders o ON ru.order_id=o.id WHERE o.telegram_id=?", (tid,)) as c:
@@ -4818,14 +4818,14 @@ async def api_account_usernames(init_data: str = ""):
                 telethon_owned.add(uname)
                 if uname not in seen:
                     seen.add(uname)
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         async with db.execute("SELECT id FROM listings WHERE LOWER(username)=LOWER(?) AND status='active'", (me.username,)) as c:
                             is_listed = bool(await c.fetchone())
                     usernames.insert(0, {"username": me.username, "title": "Shaxsiy profil", "channel_id": None, "is_listed": is_listed})
 
             # Kanal va guruh usernamelar
             if not isinstance(ch_res, Exception) and ch_res:
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                     for ch in ch_res.chats:
                         uname = getattr(ch, 'username', None)
                         title = getattr(ch, 'title', None)
@@ -4853,7 +4853,7 @@ async def api_account_usernames(init_data: str = ""):
     # 2. BAZADAN — Buyurtma orqali band qilingan usernamelar
     #    Agar Telethon session mavjud bo'lsa, faqat hozir ham egalik qilinayotganlarini ko'rsatamiz.
     #    Session yo'q bo'lsa — hamma DB usernamelarini ko'rsatamiz (tekshira olmaymiz).
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT DISTINCT ru.username
@@ -4898,7 +4898,7 @@ async def api_marketplace(init_data: str = "", sort: str = "newest", offset: int
         order_clause = "ORDER BY u.is_premium DESC, l.price DESC"
         
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(f"""
                 SELECT l.*, u.first_name as seller_name, u.username as seller_username, 
@@ -4917,7 +4917,7 @@ async def api_marketplace_my(init_data: str = ""):
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
     tid = user['id']
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM listings WHERE seller_id=? AND status != 'cancelled' ORDER BY id DESC", (tid,)) as c:
             return [dict(r) for r in await c.fetchall()]
@@ -4944,7 +4944,7 @@ async def api_marketplace_list(request: Request):
         return {"ok": False, "error": f"E'lon joylash narxi {LISTING_FEE:,} so'm. Balansingiz yetarli emas."}
     
     # Check if already listed
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         async with db.execute("SELECT id FROM listings WHERE username=? AND status='active'", (username,)) as c:
             if await c.fetchone():
                 return {"ok": False, "error": "Bu username allaqachon sotuvda"}
@@ -4999,7 +4999,7 @@ async def api_marketplace_list(request: Request):
     
     if not await deduct_balance(tid, LISTING_FEE):
         return {"ok": False, "error": f"E'lon joylash narxi {LISTING_FEE:,} so'm. Balansingiz yetarli emas."}
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         cur = await db.execute("INSERT INTO listings (seller_id, username, price, is_auction, current_bid, auction_ends_at) VALUES (?,?,?,?,?,?)", 
                          (tid, username, price, is_auction, price if is_auction else 0, auction_ends_at))
         new_listing_id = cur.lastrowid
@@ -5055,7 +5055,7 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
     E'lon bekor qilinganda: kanaldagi post to'liq o'chiriladi.
     """
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM listings WHERE id=?", (listing_id,)) as c:
                 listing = await c.fetchone()
@@ -5091,7 +5091,7 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
                 logger.warning(f"Kanal postini o'chirishda xato: {del_err}")
 
         # Database uchun keraksiz ma'lumot ko'payib ketmasligi uchun id larni tozalaymiz
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute(
                 "UPDATE listings SET channel_id=NULL, telegram_message_id=NULL WHERE id=?",
                 (listing_id,)
@@ -5126,7 +5126,7 @@ async def api_marketplace_cancel(request: Request):
     if not user: raise HTTPException(403)
     tid = user['id']
     listing_id = data.get('listing_id')
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         async with db.execute("SELECT seller_id FROM listings WHERE id=?", (listing_id,)) as c:
             row = await c.fetchone()
         if not row or row[0] != tid:
@@ -5140,7 +5140,7 @@ async def api_marketplace_cancel(request: Request):
 async def api_marketplace_get(listing_id: int, init_data: str = ""):
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT l.*, u.first_name as seller_name, u.username as seller_username
@@ -5165,7 +5165,7 @@ async def api_marketplace_buy(request: Request):
     if not buyer.get('session_string'):
         return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
         
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         
         # E'lonni olish
@@ -5257,7 +5257,7 @@ async def api_marketplace_buy_via_admin(request: Request):
     if not buyer.get('session_string'):
         return {"ok": False, "error": "Avval Akkaunt bo'limida Telegram akkauntingizni ulang!"}
         
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         
         # E'lonni olish
@@ -5357,7 +5357,7 @@ async def api_marketplace_buy_via_admin(request: Request):
 
         if not admin_client:
             # DB'dan admin sessiyasini olamiz
-            async with aiosqlite.connect(DB_PATH) as _db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as _db:
                 _db.row_factory = aiosqlite.Row
                 async with _db.execute(
                     "SELECT session_string FROM users WHERE telegram_id=?", (main_admin_id,)
@@ -5557,7 +5557,7 @@ async def api_marketplace_buy_via_admin(request: Request):
     except Exception as ge:
         import traceback as _tb
         logger.error(f"Garant group creation error: {type(ge).__name__}: {ge}\n{_tb.format_exc()}")
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, tid))
             await db.execute("UPDATE listings SET status='active' WHERE id=?", (listing_id,))
             await db.execute("DELETE FROM listing_orders WHERE listing_id=? AND buyer_id=? AND status='pending_admin'", (listing_id, tid))
@@ -5572,7 +5572,7 @@ async def api_marketplace_buy_via_admin(request: Request):
                 pass
 
     # 6. Ma'lumotlar bazasida saqlash
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         seller_user_db = await get_user(seller_id)
         is_premium_seller = (seller_user_db or {}).get('is_premium', 0)
         fee_percent = 0.05 if is_premium_seller else 0.10
@@ -5641,7 +5641,7 @@ async def api_marketplace_buy_via_admin(request: Request):
 async def api_marketplace_top(init_data: str = ""):
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT l.*, u.first_name as seller_name, u.username as seller_username,
@@ -5675,7 +5675,7 @@ async def api_auction_bid(request: Request):
     if not row or not row.get('session_string'):
         return {"ok": False, "error": "Avval akkauntingizni ulang!"}
         
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM listings WHERE id=? AND status='active' AND is_auction=1", (listing_id,)) as c:
             listing = await c.fetchone()
@@ -5720,7 +5720,7 @@ async def auction_close_loop(bot_instance):
         try:
             await asyncio.sleep(120)  # 2 daqiqa
             now = time.time()
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 # Muddati o'tgan va hali active bo'lgan auksionlarni olish
                 async with db.execute("""
@@ -5742,7 +5742,7 @@ async def auction_close_loop(bot_instance):
                     winner = await get_user(winner_id)
                     if not winner or (winner.get('balance') or 0) < final_bid:
                         # G'olibda pul yetmaydi — e'lonni bekor qilamiz
-                        async with aiosqlite.connect(DB_PATH) as db:
+                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                             await db.execute("UPDATE listings SET status='cancelled' WHERE id=?", (lid,))
                             await db.commit()
                         try:
@@ -5761,7 +5761,7 @@ async def auction_close_loop(bot_instance):
                     fee_pct     = 0.05 if is_premium else 0.10
                     seller_net  = int(final_bid * (1 - fee_pct))
                     
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         # Atomik ravishda xaridordan pul yechamiz (balans yetarli bo'lsagina)
                         cur = await db.execute(
                             "UPDATE users SET balance=balance-? WHERE telegram_id=? AND balance>=?", 
@@ -5809,7 +5809,7 @@ async def auction_close_loop(bot_instance):
                     
                 else:
                     # Hech kim stavka bermagan — e'lonni bekor qilamiz
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute("UPDATE listings SET status='cancelled' WHERE id=?", (lid,))
                         await db.commit()
                     asyncio.create_task(update_channel_listing_post(lid, 'cancelled'))
@@ -5885,7 +5885,7 @@ async def api_my_sales(init_data: str = ""):
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
     tid = user['id']
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         # listing_orders + listings + buyers table
         async with db.execute("""
@@ -5944,7 +5944,7 @@ async def api_my_stats(init_data: str = ""):
     if not user: raise HTTPException(403)
     tid = user['id']
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         
         # 1. User row
@@ -6031,7 +6031,7 @@ async def api_seller_withdraw(request: Request):
     if seller_bal < amount:
         return {"ok": False, "error": f"Sotuvchi balansingiz yetarli emas ({seller_bal:,} so'm)"}
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("UPDATE users SET seller_balance=seller_balance-? WHERE telegram_id=?", (amount, tid))
         await db.execute("INSERT INTO withdrawals (telegram_id, amount, card_number, card_owner) VALUES (?,?,?,?)",
                          (tid, amount, card_number, card_owner))
@@ -6066,7 +6066,7 @@ async def api_seller_transfer(request: Request):
     if amount < 1000:
         return {"ok": False, "error": "Minimal o'tkazma: 1,000 so'm"}
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         cur = await db.execute(
             "UPDATE users SET seller_balance=seller_balance-?, balance=balance+? WHERE telegram_id=? AND seller_balance>=?",
             (amount, amount, tid, amount)
@@ -6092,7 +6092,7 @@ async def api_premium_buy(request: Request):
     if not await deduct_balance(tid, PREMIUM_PRICE):
         return {"ok": False, "error": f"Premium uchun {PREMIUM_PRICE:,} so'm kerak. Balansingiz yetarli emas."}
         
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("UPDATE users SET is_premium=1, premium_until=datetime('now', '+30 days') WHERE telegram_id=?", (tid,))
         await db.commit()
     return {"ok": True}
@@ -6102,7 +6102,7 @@ async def api_subscriptions_get(init_data: str = ""):
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
     tid = user['id']
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT id, keyword FROM keyword_subscriptions WHERE user_id=?", (tid,)) as c:
             return [dict(r) for r in await c.fetchall()]
@@ -6116,7 +6116,7 @@ async def api_subscriptions_add(request: Request):
     keyword = data.get('keyword','').strip().lower()
     if len(keyword) < 3: return {"ok": False, "error": "Kamida 3 ta harf kiriting"}
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("INSERT INTO keyword_subscriptions (user_id, keyword) VALUES (?, ?)", (tid, keyword))
         await db.commit()
     return {"ok": True}
@@ -6128,7 +6128,7 @@ async def api_subscriptions_remove(request: Request):
     if not user: raise HTTPException(403)
     tid = user['id']
     sub_id = data.get('id')
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("DELETE FROM keyword_subscriptions WHERE id=? AND user_id=?", (sub_id, tid))
         await db.commit()
     return {"ok": True}
@@ -6139,7 +6139,7 @@ async def admin_withdrawals(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT w.*, u.first_name FROM withdrawals w 
@@ -6155,7 +6155,7 @@ async def admin_withdrawal_confirm(request: Request, x_admin_token: str = Header
     else: raise HTTPException(403)
     data = await request.json()
     wid = data['withdrawal_id']
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM withdrawals WHERE id=?", (wid,)) as c:
             w = await c.fetchone()
@@ -6180,7 +6180,7 @@ async def admin_withdrawal_reject(request: Request, x_admin_token: str = Header(
     else: raise HTTPException(403)
     data = await request.json()
     wid = data['withdrawal_id']
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM withdrawals WHERE id=?", (wid,)) as c:
             w = await c.fetchone()
@@ -6218,7 +6218,7 @@ async def api_topup_request(request: Request):
         return {"ok": False, "error": "Eng kamida 15,000 so'm"}
     
     # Generate unique amount (add 1 to 99 tiyin)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         # Eski to'lovlarni avtomatik muddati o'tgan deb belgilaymiz (600 soniya = 10 daqiqa)
         await db.execute("UPDATE topups SET status='expired' WHERE status='pending' AND created_at <= (strftime('%s','now') - 600)")
         await db.commit()
@@ -6240,7 +6240,7 @@ async def api_orders(init_data: str = ""):
     if not user:
         raise HTTPException(403)
     tid = user['id']
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM orders WHERE telegram_id=? ORDER BY id DESC LIMIT 20", (tid,)) as c:
             orders = [dict(o) for o in await c.fetchall()]
@@ -6289,7 +6289,7 @@ async def api_monitor_start(request: Request):
             "error": f"❌ Kiritilgan ({inv_sample or 'matn'}) yaroqsiz! Usernameda apostrof ('), qo'shtirnoq (\") va maxsus belgilar TAQIQLANGAN. Faqat a-z, 0-9 va _ kiritilishi shart (kamida 5 belgi)."
         }
         
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         # Check existing targets for this user (case-insensitive)
         existing_targets = set()
         for u in valid_usernames:
@@ -6366,7 +6366,7 @@ async def api_monitor_list(init_data: str = "", offset: int = 0, limit: int = 10
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         
         # Get total count
@@ -6390,7 +6390,7 @@ async def api_monitor_delete(request: Request):
     if not task_id:
         return {"ok": False, "error": "Task ID kiritilmadi"}
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         # Nishonni topamiz
         async with db.execute(
@@ -6440,7 +6440,7 @@ async def admin_listings_get(x_admin_token: str = Header(default=""), search: st
         params.append(f"%{search}%")
     query += " ORDER BY id DESC LIMIT 200"
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(query, params) as c:
             listings = [dict(r) for r in await c.fetchall()]
@@ -6458,7 +6458,7 @@ async def admin_listing_delete(listing_id: int, x_admin_token: str = Header(defa
     except Exception as e:
         logger.warning(f"Admin delete listing channel post error: {e}")
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("DELETE FROM listings WHERE id=?", (listing_id,))
         await db.commit()
     return {"ok": True}
@@ -6497,7 +6497,7 @@ async def api_search_start(request: Request):
     if not await deduct_balance(tid, total_price):
         return {"ok": False, "error": f"Balans yetarli emas ({total_price:,} so'm kerak)"}
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         cur = await db.execute(
             "INSERT INTO search_tasks (telegram_id, category, paid_qty, lang, charged_amount, used_free) VALUES (?, ?, ?, ?, ?, ?)",
             (tid, cat, qty, lang, total_price, 0)
@@ -6510,7 +6510,7 @@ async def api_search_start(request: Request):
             await asyncio.wait_for(search_sniper(tid, search_id, cat, lang=lang), timeout=130)
         except asyncio.TimeoutError:
             logger.error(f"search_sniper timeout for search_id={search_id}")
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
                 await db.commit()
     t = asyncio.create_task(_run_search_safe())
@@ -6531,7 +6531,7 @@ async def api_search_refresh(request: Request):
     if not row or not row['session_string']:
         return {"ok": False, "error": "Akkaunt ulanmagan"}
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         async with db.execute("SELECT category, paid_qty, lang FROM search_tasks WHERE id=? AND telegram_id=?", (search_id, tid)) as c:
             task = await c.fetchone()
             if not task:
@@ -6550,7 +6550,7 @@ async def api_search_refresh(request: Request):
             await asyncio.wait_for(search_sniper(tid, search_id, cat, lang=lang), timeout=130)
         except asyncio.TimeoutError:
             logger.error(f"search_sniper refresh timeout for search_id={search_id}")
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 await db.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
                 await db.commit()
     t2 = asyncio.create_task(_run_search_safe2())
@@ -6563,7 +6563,7 @@ async def api_search_results(search_id: int, init_data: str = ""):
     user = verify_init_data(init_data)
     if not user: raise HTTPException(403)
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         
         # Holatni tekshiramiz
@@ -6607,7 +6607,7 @@ async def api_buy_selected(request: Request):
     if not await deduct_balance(tid, price):
         return {"ok": False, "error": f"Balans yetarli emas! Kerak: {price:,} so'm"}
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         cur = await db.execute("INSERT INTO orders (telegram_id, category, quantity, price, status, user_first_name) VALUES (?,?,?,?,'processing',?)",
                                (tid, f"Tanlangan ({qty})", qty, price, user_first_name))
         order_id = cur.lastrowid
@@ -6730,7 +6730,7 @@ async def api_disconnect(request: Request):
         raise HTTPException(403)
     tid = user['id']
     await save_session(tid, None)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("UPDATE search_tasks SET status='cancelled' WHERE telegram_id=? AND status='monitoring'", (tid,))
         await db.commit()
     return {"ok": True}
@@ -6815,7 +6815,7 @@ async def api_admin_channels_get(x_admin_token: str = Header(default="")):
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM mandatory_channels ORDER BY sort_order ASC, id DESC") as c:
             rows = await c.fetchall()
@@ -6845,7 +6845,7 @@ async def api_admin_channels_add(request: Request, x_admin_token: str = Header(d
         else:
             url = "https://t.me"
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute(
             "INSERT INTO mandatory_channels (channel_id, channel_username, title, url, status, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
             (channel_id, username, title, url, status, sort_order)
@@ -6867,7 +6867,7 @@ async def api_admin_channels_update(request: Request, x_admin_token: str = Heade
     except: sort_order = 0
     
     if cid:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute("UPDATE mandatory_channels SET status=?, sort_order=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (status, sort_order, cid))
             await db.commit()
     return {"ok": True}
@@ -6880,7 +6880,7 @@ async def api_admin_channels_delete(request: Request, x_admin_token: str = Heade
     
     data = await request.json()
     cid = data.get('id')
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("DELETE FROM mandatory_channels WHERE id=?", (cid,))
         await db.commit()
 
@@ -6933,7 +6933,7 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
             
         clean_user = target_user.lstrip("@").strip()
         
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             if clean_user.isdigit():
                 async with db.execute("SELECT telegram_id FROM users WHERE telegram_id=? OR username=?", (int(clean_user), clean_user)) as c:
@@ -6950,7 +6950,7 @@ async def api_admin_broadcast(request: Request, x_admin_token: str = Header(defa
             else:
                 return {"ok": False, "error": f"'{target_user}' foydalanuvchisi bazadan topilmadi"}
     else:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             async with db.execute("SELECT telegram_id FROM users") as c:
                 target_users = [r[0] for r in await c.fetchall()]
 
@@ -7004,7 +7004,7 @@ async def api_admin_cards_get(x_admin_token: str = Header(default="")):
     else: raise HTTPException(403)
     import datetime
     today = datetime.date.today().isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         # Reset today_count for old dates
         await db.execute(
@@ -7026,7 +7026,7 @@ async def api_admin_cards_add(request: Request, x_admin_token: str = Header(defa
     daily_limit = int(data.get('daily_limit', 40))
     if not card_number:
         return {"ok": False, "error": "Karta raqami kiritilmadi"}
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         async with db.execute("SELECT MAX(sort_order) FROM payment_cards") as c:
             row = await c.fetchone()
             next_order = (row[0] or 0) + 1
@@ -7043,7 +7043,7 @@ async def api_admin_cards_update(card_id: int, request: Request, x_admin_token: 
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
     data = await request.json()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         if 'card_number' in data:
             await db.execute("UPDATE payment_cards SET card_number=? WHERE id=?", (data['card_number'], card_id))
         if 'card_owner' in data:
@@ -7062,7 +7062,7 @@ async def api_admin_cards_delete(card_id: int, x_admin_token: str = Header(defau
     for aid in ADMIN_IDS:
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("DELETE FROM payment_cards WHERE id=?", (card_id,))
         await db.commit()
     return {"ok": True}
@@ -7072,7 +7072,7 @@ async def api_admin_cards_reset(card_id: int, x_admin_token: str = Header(defaul
     for aid in ADMIN_IDS:
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("UPDATE payment_cards SET today_count=0 WHERE id=?", (card_id,))
         await db.commit()
     return {"ok": True}
@@ -7083,7 +7083,7 @@ async def api_admin_analytics(x_admin_token: str = Header(default="")):
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         
         # 1. Categories breakdown
@@ -7172,7 +7172,7 @@ async def admin_stats(x_admin_token: str = Header(default="")):
             break
     else:
         raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         users = (await (await db.execute("SELECT COUNT(*) FROM users")).fetchone())[0]
         orders = (await (await db.execute("SELECT COUNT(*) FROM orders")).fetchone())[0]
         usernames = (await (await db.execute("SELECT COUNT(*) FROM registered_usernames")).fetchone())[0]
@@ -7195,7 +7195,7 @@ async def admin_payments(status: str = "", x_admin_token: str = Header(default="
     for aid in ADMIN_IDS:
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         q = "SELECT * FROM payments" + (" WHERE status=?" if status else "") + " ORDER BY id DESC LIMIT 50"
         args = (status,) if status else ()
@@ -7209,7 +7209,7 @@ async def admin_approve(request: Request, x_admin_token: str = Header(default=""
     else: raise HTTPException(403)
     data = await request.json()
     pid = data['payment_id']; tid = data['telegram_id']; amt = data['amount']
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("UPDATE payments SET status='approved', amount=? WHERE id=?", (amt, pid))
         await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (amt, tid))
         
@@ -7228,7 +7228,7 @@ async def admin_reject(request: Request, x_admin_token: str = Header(default="")
     else: raise HTTPException(403)
     data = await request.json()
     pid = data['payment_id']; tid = data['telegram_id']
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("UPDATE payments SET status='rejected' WHERE id=?", (pid,))
         await db.commit()
     try:
@@ -7241,7 +7241,7 @@ async def admin_users(x_admin_token: str = Header(default="")):
     for aid in ADMIN_IDS:
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT u.*, 
@@ -7256,7 +7256,7 @@ async def auto_refresh_phones():
     """Bot ishga tushganda raqami yo'q foydalanuvchilarni avtomatik to'ldiradi"""
     await asyncio.sleep(5)  # DB va bot tayyor bo'lishini kutamiz
     logger.info("📞 Telefon raqamlarini avtomatik yangilash boshlanadi...")
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT telegram_id, session_string FROM users WHERE session_string IS NOT NULL AND (phone IS NULL OR phone = '')") as c:
             rows = await c.fetchall()
@@ -7270,7 +7270,7 @@ async def auto_refresh_phones():
             if await _c.is_user_authorized():
                 me = await _c.get_me()
                 if me and me.phone:
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute("UPDATE users SET phone=? WHERE telegram_id=?", (me.phone, tid))
                         await db.commit()
                     updated += 1
@@ -7284,7 +7284,7 @@ async def _notify_session_expired(telegram_id: int):
     """Sessiya o'chganda foydalanuvchiga xabar yuboradi va aktiv monitoring'larini to'xtatadi."""
     try:
         # Aktiv monitoring tasklar sonini olish
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT COUNT(*) as cnt FROM monitoring_tasks WHERE telegram_id=? AND status='monitoring'",
@@ -7320,7 +7320,7 @@ async def session_checker_loop():
     await asyncio.sleep(10)
     while True:
         try:
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 # Seansi yo'q sotuvchilar e'lonlarini avtomatik o'chiramiz (kanaldan ham postini o'chirish)
                 async with db.execute("""
                     SELECT id, channel_id, telegram_message_id FROM listings 
@@ -7372,7 +7372,7 @@ async def admin_refresh_phones(x_admin_token: str = Header(default="")):
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
 
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT telegram_id, session_string FROM users WHERE session_string IS NOT NULL AND (phone IS NULL OR phone = '')") as c:
             rows = await c.fetchall()
@@ -7387,7 +7387,7 @@ async def admin_refresh_phones(x_admin_token: str = Header(default="")):
             if await _c.is_user_authorized():
                 me = await _c.get_me()
                 if me and me.phone:
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         await db.execute("UPDATE users SET phone=? WHERE telegram_id=?", (me.phone, tid))
                         await db.commit()
                     updated += 1
@@ -7407,7 +7407,7 @@ async def admin_set_balance(request: Request, x_admin_token: str = Header(defaul
     seller_amt = data.get('seller_balance')
     tid = data['telegram_id']
     
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         if amt is not None:
             await db.execute("UPDATE users SET balance=? WHERE telegram_id=?", (int(amt), tid))
         if seller_amt is not None:
@@ -7434,7 +7434,7 @@ async def admin_toggle_stealth(request: Request, x_admin_token: str = Header(def
     else: raise HTTPException(403)
     data = await request.json()
     tid = data.get('telegram_id')
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         async with db.execute("SELECT is_stealth, session_string FROM users WHERE telegram_id=?", (tid,)) as c:
             row = await c.fetchone()
             if not row:
@@ -7459,7 +7459,7 @@ async def admin_orders(x_admin_token: str = Header(default="")):
         if get_admin_token(aid) == x_admin_token: break
     else: raise HTTPException(403)
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
                 SELECT o.*, u.first_name, u.username as user_username
@@ -7484,7 +7484,7 @@ async def auto_cleanup_db_loop():
     while True:
         vacuum_counter += 1
         try:
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 # 1. 24 soatdan eski, yakunlangan va bo'sh search_results (qidiruv natijalari)
                 await db.execute("""
                     DELETE FROM search_results 
@@ -7653,7 +7653,7 @@ async def cleanup_orphan_channels():
     await asyncio.sleep(20)  # Bot to'liq ishga tushguncha kut
     while True:
         try:
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute(
                     "SELECT telegram_id, session_string FROM users WHERE session_string IS NOT NULL AND session_string != ''"
@@ -7711,7 +7711,7 @@ async def cleanup_short_monitoring_tasks(bot_inst: Bot):
     """5 ta harfdan kam bo'lgan barcha monitoring tasks larni o'chirib, pullarini foydalanuvchilar balansiga qaytaradi."""
     try:
         price_per_item = int(await get_setting("monitor_price", 10000))
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT id, telegram_id, username FROM monitoring_tasks WHERE LENGTH(username) < 5 AND status='monitoring'"
@@ -7776,7 +7776,7 @@ async def cleanup_fragment_monitoring_tasks(bot_inst: Bot):
     """
     try:
         import aiohttp
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT id, telegram_id, username, paid_amount FROM monitoring_tasks WHERE status='monitoring'"
@@ -7820,7 +7820,7 @@ async def cleanup_fragment_monitoring_tasks(bot_inst: Bot):
             return
 
         # Bazada o'chirish va pul qaytarish
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             for tid, refund_amount in user_refunds.items():
                 await db.execute(
                     "UPDATE users SET balance = balance + ? WHERE telegram_id = ?",
@@ -7877,7 +7877,7 @@ async def restore_deleted_monitoring_tasks(bot_inst: Bot):
 
         # 1. Barcha telegram_id larni bazadan olamiz
         valid_ids = []
-        async with aiosqlite.connect(DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT telegram_id FROM users") as cur:
                 rows = await cur.fetchall()
@@ -7967,7 +7967,7 @@ async def restore_deleted_monitoring_tasks(bot_inst: Bot):
                     await asyncio.sleep(0.3)  # limitga tushmaslik uchun
 
             if restored_list:
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                     for tid, username in restored_list:
                         # 1. Monitoring nishonini qayta qo'shamiz
                         await db.execute(
@@ -8016,7 +8016,7 @@ async def bonus_notification_loop():
 
             # Faqat 08:00-20:00 orasida ishlaydi
             if 8 <= hour < 20:
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                     db.row_factory = aiosqlite.Row
                     async with db.execute(
                         "SELECT telegram_id, session_string, last_bonus_date, last_bonus_notify_date FROM users"
@@ -8065,7 +8065,7 @@ async def bonus_notification_loop():
 
                         # Xabar yuborildi — sanani yangilaymiz
                         if has_telegram or not has_telegram:
-                            async with aiosqlite.connect(DB_PATH) as db:
+                            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                                 await db.execute(
                                     "UPDATE users SET last_bonus_notify_date=? WHERE telegram_id=?",
                                     (today_str, tid)
@@ -8099,7 +8099,7 @@ async def garant_auto_transfer_loop(bot):
     
     while True:
         try:
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 # pending_admin holatidagi buyurtmalarni olamiz
                 async with db.execute("SELECT * FROM listing_orders WHERE status = 'pending_admin'") as c:
@@ -8112,7 +8112,7 @@ async def garant_auto_transfer_loop(bot):
                 price = order['expected_amount']
                 
                 # E'lonni va usernameni aniqlaymiz
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                     db.row_factory = aiosqlite.Row
                     async with db.execute("SELECT * FROM listings WHERE id=?", (listing_id,)) as lc:
                         listing = await lc.fetchone()
@@ -8147,7 +8147,7 @@ async def garant_auto_transfer_loop(bot):
                 
                 # Agar o'tgan bo'lsa, bitimni yakunlaymiz
                 if is_transferred:
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         # Sotuvchiga pul o'tkazamiz
                         await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, seller_id))
                         # Holatlarni yangilaymiz
@@ -8159,7 +8159,7 @@ async def garant_auto_transfer_loop(bot):
                     asyncio.create_task(update_channel_listing_post(listing_id, 'sold'))
                     
                     # Garant guruhini topamiz (xabar yozish uchun)
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         db.row_factory = aiosqlite.Row
                         async with db.execute("SELECT group_chat_id FROM garant_groups WHERE listing_id=? ORDER BY id DESC LIMIT 1", (listing_id,)) as gc:
                             gg_row = await gc.fetchone()
@@ -8219,7 +8219,7 @@ async def profile_clock_loop(bot):
                 await asyncio.sleep(wait_sec)
 
             # Foydalanuvchilarni olamiz
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT telegram_id, session_string, clock_base_name FROM users WHERE clock_enabled = 1") as c:
                     users = await c.fetchall()
@@ -8238,7 +8238,7 @@ async def profile_clock_loop(bot):
                         if not base_name:
                             first_name = me.first_name or ""
                             base_name = re.sub(r'\s*\|\s*(?:[\U0001F550-\U0001F567][\uFE0F]?\s*)?\d{2}:\d{2}', '', first_name).strip()[:50]
-                            async with aiosqlite.connect(DB_PATH) as db:
+                            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                                 await db.execute("UPDATE users SET clock_base_name=? WHERE telegram_id=?", (base_name, u['telegram_id']))
                                 await db.commit()
                         last_name = me.last_name or ''
@@ -8267,7 +8267,7 @@ async def garant_cleanup_loop(bot):
             now = time.time()
             limit_time = now - 3600  # 1 soat (3600 soniya)
             
-            async with aiosqlite.connect(DB_PATH) as db:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute("SELECT * FROM garant_groups WHERE created_at < ?", (limit_time,)) as c:
                     expired_groups = await c.fetchall()
@@ -8301,7 +8301,7 @@ async def garant_cleanup_loop(bot):
                     
                 # 3. Agar bitim yakunlanmagan bo'lsa (pending_admin) — xaridorga refund
                 try:
-                    async with aiosqlite.connect(DB_PATH) as db:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                         db.row_factory = aiosqlite.Row
                         async with db.execute(
                             "SELECT id FROM listing_orders WHERE listing_id=? AND buyer_id=? AND status='pending_admin'",
@@ -8331,7 +8331,7 @@ async def garant_cleanup_loop(bot):
                     logger.error(f"Garant group expiration refund error: {ref_err}")
                 
                 # 4. Bazadan o'chirish
-                async with aiosqlite.connect(DB_PATH) as db:
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                     await db.execute("DELETE FROM garant_groups WHERE group_chat_id = ?", (chat_id,))
                     await db.commit()
                     
