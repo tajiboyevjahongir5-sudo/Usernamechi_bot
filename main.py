@@ -4525,12 +4525,12 @@ async def _update_profile_clock_now(session_string, enable=True):
         me = await client.get_me()
         if me:
             first_name = me.first_name or ""
-            base_name = re.sub(r'\s*\|\s*🕒\s*\d{2}:\d{2}', '', first_name)
+            base_name = re.sub(r'\s*\|\s*(?:🕒\s*)?\d{2}:\d{2}', '', first_name)
             base_name = base_name[:50]
             
             if enable:
                 current_time = datetime.datetime.now().strftime("%H:%M")
-                new_first_name = f"{base_name} | 🕒 {current_time}"
+                new_first_name = f"{base_name} | {current_time}"
             else:
                 new_first_name = base_name
                 
@@ -8198,13 +8198,13 @@ async def profile_clock_loop(bot):
                     me = await client.get_me()
                     if me:
                         first_name = me.first_name or ""
-                        # Agar ism ichida eski soat bo'lsa (masalan ' | 🕒 14:30'), olib tashlaymiz
-                        base_name = re.sub(r'\s*\|\s*🕒\s*\d{2}:\d{2}', '', first_name)
+                        # Agar ism ichida eski soat bo'lsa (stikerli yoki stikersiz), olib tashlaymiz
+                        base_name = re.sub(r'\s*\|\s*(?:🕒\s*)?\d{2}:\d{2}', '', first_name)
                         # Uzunlik tekshiruvi (Telegram ism max 64 belgi)
                         base_name = base_name[:50]
                         
                         # Yangi soatni biriktiramiz
-                        new_first_name = f"{base_name} | 🕒 {current_time_str}"
+                        new_first_name = f"{base_name} | {current_time_str}"
                         
                         # Agar o'zgargan bo'lsa yangilaymiz
                         if new_first_name != first_name:
