@@ -199,6 +199,13 @@ UZ_WORDS_ALL = [
     "shisha","yog'och","tosh","beton","g'isht","qovoq","qozon",
     "galaba","zafar","g'alaba","yutuq","mag'lubiyat","bahona",
     "ezgu","olijanob","sharaf","or-nomus","vijdon","himmat",
+    # Yangi kiritilgan: fel-atvor, kasb, brend, mashhur ism/mansab, va hajviy
+    "halol", "mehnatkash", "sabrli", "jasur", "irodali", "odil", "samimiy", "fidoyi", "chaqqon", "zukko",
+    "quruvchi", "muhandis", "tadbirkor", "rahbar", "usta", "sotuvchi", "shifokor", "dasturchi", "hunarmand",
+    "reklama", "sifat", "kiyim", "avto", "mebel", "xizmat", "brend", "savdo", "bozor",
+    "quvnoq", "kulgili", "antiqa", "zo'r", "super", "hajviy", "ajoyib", "qiziqarli",
+    "vazir", "hokim", "rais", "direktor", "boshliq", "general", "kapitan", "lider",
+    "yoldosh", "beruniy", "navoiy", "temur", "bobur", "mirzo", "sulton", "amir"
 ]
 
 # ════════════════════════════════════════════════════════

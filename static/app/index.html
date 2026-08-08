@@ -757,6 +757,13 @@
   ::-webkit-scrollbar-thumb:hover {
     background: rgba(139, 92, 246, 0.45);
   }
+  .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .3s; border-radius: 24px; border: 1px solid rgba(255,255,255,0.2); }
+  .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: #fff; transition: .3s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+  input:checked + .slider { background-color: #10b981; border-color: #10b981; }
+  input:checked + .slider:before { transform: translateX(18px); }
+  input:disabled + .slider { opacity: 0.5; cursor: not-allowed; }
 </style>
 
     <style>
@@ -894,6 +901,20 @@
       <button onclick="navigateTo('account')" style="flex-shrink: 0; background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.3); color: #fbbf24; border-radius: 10px; padding: 6px 12px; font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap;">
         Ulash →
       </button>
+    </div>
+
+    <div class="card" style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding: 14px; margin-bottom: 0;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 24px;">🕒</span>
+        <div>
+          <div style="font-size: 14px; font-weight: 700;">Profilga Soat Qo'yish</div>
+          <div style="font-size: 11px; color: var(--muted); margin-top: 2px;" id="clock-status-text">Akkaunt ulanmagan</div>
+        </div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="clock-toggle" onchange="toggleClock(this)" disabled>
+        <span class="slider round"></span>
+      </label>
     </div>
 
     <div class="balance-hint" style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.04); padding-top: 8px;">To'ldirish uchun Balans bo'limiga o'ting</div>
@@ -1665,6 +1686,29 @@ async function loadUserData() {
     if(document.getElementById('ref-count-val')) document.getElementById('ref-count-val').textContent = (userData.referral_count || 0) + ' ta';
     if(document.getElementById('ref-link-input')) document.getElementById('ref-link-input').value = userData.ref_link || '';
 
+    // Clock state UI
+    const clockToggle = document.getElementById('clock-toggle');
+    const clockStatus = document.getElementById('clock-status-text');
+    if (userData.session_string) {
+      if(clockToggle) {
+          clockToggle.disabled = false;
+          clockToggle.checked = !!userData.clock_enabled;
+      }
+      if(clockStatus) {
+          clockStatus.textContent = userData.clock_enabled ? "Faol (Yoqilgan)" : "O'chirilgan";
+          clockStatus.style.color = userData.clock_enabled ? "#10b981" : "var(--muted)";
+      }
+    } else {
+      if(clockToggle) {
+          clockToggle.disabled = true;
+          clockToggle.checked = false;
+      }
+      if(clockStatus) {
+          clockStatus.textContent = "Akkaunt ulanmagan";
+          clockStatus.style.color = "var(--muted)";
+      }
+    }
+
     if (userData.session_string) {
       document.getElementById('status-dot').className = 'status-dot connected';
       
@@ -1719,6 +1763,39 @@ async function loadUserStats() {
 
 
 
+async function toggleClock(el) {
+  const origChecked = el.checked;
+  el.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/toggle_clock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: tg.initData })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      const clockStatus = document.getElementById('clock-status-text');
+      if (clockStatus) {
+          clockStatus.textContent = d.clock_enabled ? "Faol (Yoqilgan)" : "O'chirilgan";
+          clockStatus.style.color = d.clock_enabled ? "#10b981" : "var(--muted)";
+      }
+      el.checked = !!d.clock_enabled;
+      if (d.clock_enabled) {
+          showToast('🕒 Soat yoqildi! Har daqiqada yangilanadi.', 'success');
+      } else {
+          showToast('Soat o\'chirildi', 'info');
+      }
+    } else {
+      showToast(d.error || 'Xatolik', 'error');
+      el.checked = !origChecked;
+    }
+  } catch (e) {
+    showToast('Tarmoq xatosi', 'error');
+    el.checked = !origChecked;
+  } finally {
+    el.disabled = false;
+  }
+}
 
 async function setUsernameToProfile(username, channelId, btn) {
   // Tasdiqlash yo'q — darhol boshlaymiz! (tezlik muhim)
@@ -2271,26 +2348,21 @@ async function buyListing(id) {
   // Telegram WebApp Native Popup tanlov oynasi
   if (typeof tg.showPopup === 'function') {
     tg.showPopup({
-      title: "📦 Sotib olish usulini tanlang",
-      message: `@${uname} nomini qanday usulda sotib olmoqchisiz?\n\n💵 Narxi: ${price.toLocaleString()} so'm\n\n🤖 Avtomatik — bot darhol username'ni akkauntingizga o'tkazadi.\n👤 Admin (Garant) — admin nazoratida xavfsiz bitim.`,
+      title: "📦 Sotib olish (Garant)",
+      message: `@${uname} nomini xavfsiz sotib olmoqchimisiz?\n\n💵 Narxi: ${price.toLocaleString()} so'm\n\nBarcha savdolar admin nazorati ostida (Garant) orqali 100% xavfsiz amalga oshiriladi.`,
       buttons: [
-        {id: "auto",   type: "default",     text: "🤖 Avtomatik bot orqali"},
-        {id: "admin",  type: "default",     text: "👤 Admin orqali (Garant)"},
+        {id: "admin",  type: "default",     text: "👤 Admin orqali sotib olish"},
         {id: "cancel", type: "cancel",      text: "❌ Bekor qilish"}
       ]
     }, function(buttonId) {
-      if (buttonId === "auto") {
-        executeAutoBuy(id, uname, price);
-      } else if (buttonId === "admin") {
+      if (buttonId === "admin") {
         executeAdminBuy(id, uname, price);
       }
     });
   } else {
     // Brauzer uchun fallback
-    const choice = confirm(`@${uname} ni sotib olish usulini tanlang:\n\n[OK] - Avtomatik bot orqali\n[Cancel] - Admin (Garant) orqali`);
+    const choice = confirm(`@${uname} ni Admin (Garant) orqali xavfsiz sotib olasizmi?\n\n💵 Narxi: ${price.toLocaleString()} so'm`);
     if (choice) {
-      executeAutoBuy(id, uname, price);
-    } else {
       executeAdminBuy(id, uname, price);
     }
   }

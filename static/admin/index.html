@@ -558,18 +558,7 @@ body::before {
           <label class="form-label">🎁 Kunlik Bonus Miqdori (so'm)</label>
           <input type="number" id="set-daily-bonus" class="form-input" placeholder="1000">
         </div>
-        <div class="form-group">
-          <label class="form-label">🔑 LLM API Key (OpenRouter, Gemini, OpenAI va h.k.)</label>
-          <input type="password" id="set-llm-api-key" class="form-input" placeholder="sk-or-v1-...">
-        </div>
-        <div class="form-group">
-          <label class="form-label">🤖 LLM Model</label>
-          <input type="text" id="set-llm-model" class="form-input" placeholder="anthropic/claude-sonnet-4-5">
-        </div>
-        <div class="form-group">
-          <label class="form-label">🌐 LLM API URL</label>
-          <input type="text" id="set-llm-api-url" class="form-input" placeholder="https://openrouter.ai/api/v1/chat/completions">
-        </div>
+
         <button class="action-btn btn-primary" style="padding:14px 28px; width:100%; justify-content:center; margin-top:10px;" onclick="saveSettings()">💾 Saqlash</button>
       </div>
     </div>
@@ -1230,6 +1219,7 @@ function renderUsers() {
             💬 Profil
           </a>
           <button class="action-btn btn-emerald" onclick="openDirectMessage('${u.username || u.telegram_id}')">📩 Xabar</button>
+          <button class="action-btn btn-secondary" onclick="alert('💰 Balans Tarixi:\\n\\n💳 Karta orqali: ' + (u.total_topups || 0).toLocaleString() + ' so\\'m\\n🎁 Referallardan: ' + (u.total_referral_earnings || 0).toLocaleString() + ' so\\'m')">📊 Tarix</button>
           <button class="action-btn btn-secondary" onclick="openBalanceModal(${u.telegram_id}, ${u.balance||0}, ${u.seller_balance||0})">✏️ Balans</button>
           <button class="action-btn ${u.is_stealth ? 'btn-rose' : 'btn-emerald'}" onclick="toggleStealth(${u.telegram_id})">
             ${u.is_stealth ? '🔓 Off' : '🕵️ On'}

@@ -106,6 +106,12 @@ def is_username_occupied_html(html_text: str) -> bool:
     KONSERVATIV yondashuv: faqat aniq 'bo'sh' signali bo'lsa False (bo'sh) qaytaradi.
     Barcha noaniq holatlarda True (band) qaytaradi — false-positive oldini olish uchun.
     """
+    # === ANIQ BO'SH SIGNALI ===
+    # Telegram bo'sh username uchun "you can contact @username right away" matnini chiqaradi (HTML teglar bilan)
+    html_lower = html_text.lower()
+    if "you can contact" in html_lower and "right away" in html_lower:
+        return False  # Aniq BO'SH
+
     # === ANIQ BAND SIGNALLARI ===
     occupied_signals = [
         'tgme_page_extra',        # Kanal/guruh subscriber/member soni
@@ -113,27 +119,13 @@ def is_username_occupied_html(html_text: str) -> bool:
         'tgme_channel_info',      # Kanal info bloki
         'fragment.com/username',  # Fragment auksionida
         'tgme_page_icon_channel', # Kanal ikonkasi
-        'tgme_page_icon_user',    # Foydalanuvchi ikonkasi
         'tgme_page_icon_bot',     # Bot ikonkasi
         'tgme_page_title',        # Sarlavha (real profil)
-        'tg://resolve',           # Telegram deep link (real profil)
         't.me/joinchat',          # Guruh havolasi
     ]
     for signal in occupied_signals:
         if signal in html_text:
             return True  # Aniq BAND
-
-    # === ANIQ BO'SH SIGNALI ===
-    # Telegram bo'sh username uchun DOIM quyidagi matnni ko'rsatadi:
-    free_signals = [
-        "you can contact @",
-        "you can write to @",
-        "can contact @",
-    ]
-    html_lower = html_text.lower()
-    for sig in free_signals:
-        if sig in html_lower:
-            return False  # Aniq BO'SH
 
     # === NOANIQ — konservativ: BAND deb hisoblash ===
     # (Masalan: timeout, redirect, bo'sh HTML, noma'lum format)
@@ -174,6 +166,7 @@ async def init_db():
                 is_premium INTEGER DEFAULT 0,
                 premium_until TEXT,
                 referred_by INTEGER DEFAULT 0,
+                clock_enabled INTEGER DEFAULT 0,
                 referrer_id INTEGER DEFAULT 0,
                 reward_given INTEGER DEFAULT 0,
                 last_bonus_date TEXT,
@@ -430,6 +423,8 @@ async def init_db():
         try: await db.execute("ALTER TABLE users ADD COLUMN subscription_verified INTEGER DEFAULT 0")
         except: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN reward_given INTEGER DEFAULT 0")
+        except: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN clock_enabled INTEGER DEFAULT 0")
         except: pass
         
         # Balansi 0 bo'lgan foydalanuvchilarga boshlang'ich 5000 so'm berish (tiklash)
@@ -953,13 +948,20 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
 
     pool = []
 
-    prefixes = ['', 'the', 'real', 'my', 'mr', 'mrs', 'dr', 'pro', 'uz', 'uzb', 'vip', 'super', 'mega', 'top', 'best', 'true', 'iam', 'official', 'go', 'get', 'one', 'club', 'hub', 'app', 'new', 'hot', 'cool', 'fast', 'king', 'boss', 'dark', 'neo', 'ultra', 'max']
-    suffixes = ['', 'official', 'uz', 'uzb', 'bot', 'pro', 'vip', 'top', 'blog', 'channel', 'tv', 'media', 'news', 'store', 'shop', 'life', 'style', 'music', 'art', 'dev', 'tech', 'zone', 'group', 'org', 'info', 'studio', 'page', 'net', 'online', 'hub', 'lab', 'hq', 'real', 'live', 'plus', 'max', 'mini', 'app', 'base']
+    if lang == 'uz':
+        prefixes = ['', 'sof_', 'asl_', 'top_', 'mega_', 'super_', 'zor_', 'bizning_', 'uz_', 'uzb_', 'yangi_']
+        suffixes = ['', '_uz', '_uzb', '_bot', '_official', '_pro', '_media', '_tv', '_kanal', '_guruh', '_savdo', '_bozor', '_markaz', '_xizmat', '_info', '_online']
+    else:
+        prefixes = ['', 'the_', 'real_', 'my_', 'mr_', 'mrs_', 'dr_', 'pro_', 'vip_', 'super_', 'mega_', 'top_', 'best_', 'true_', 'iam_', 'official_', 'go_', 'get_', 'one_', 'club_', 'hub_', 'app_', 'new_', 'hot_', 'cool_', 'fast_', 'king_', 'boss_', 'dark_', 'neo_', 'ultra_', 'max_']
+        suffixes = ['', '_official', '_bot', '_pro', '_vip', '_top', '_blog', '_channel', '_tv', '_media', '_news', '_store', '_shop', '_life', '_style', '_music', '_art', '_dev', '_tech', '_zone', '_group', '_org', '_info', '_studio', '_page', '_net', '_online', '_hub', '_lab', '_hq', '_real', '_live', '_plus', '_max', '_mini', '_app', '_base']
     numbers = ['', '1', '2', '3', '4', '5', '7', '8', '9', '10', '11', '24', '25', '77', '88', '99', '100', '777', '888', '999', '2024', '2025', '2026', '007', '01', '07', '700', '900']
 
     # ─── Semantik mavzu xaritasi: o'zbekcha so'z → qisqa ingliz kalit so'zlar ───
     _THEME_KEYWORDS = {
         # Kasblar / Professions
+        'quruvchi':    ['build','builder','construct','maker','craft','mason','arch'],
+        'shifokor':    ['doctor','medic','health','clinic','heal','care','doc'],
+        'hunarmand':   ['craft','maker','artisan','skill','forge','master'],
         'dasturchi':   ['coder','dev','code','python','java','tech','hack','script','bytes','prog','build'],
         'programmist': ['coder','dev','code','tech','hack','script','prog','build','stack'],
         'developer':   ['dev','coder','code','build','forge','stack','bytes','techpro'],
@@ -1001,6 +1003,15 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         'general':     ['general','commander','military','army','force','chief','alpha'],
         'kapitan':     ['captain','captain','leader','chief','command','naval','pilot'],
         # Xarakter / Personality traits
+        'halol':       ['honest','pure','true','clean','fair','just','real'],
+        'mehnatkash':  ['worker','busy','active','hustle','grind','hard'],
+        'sabrli':      ['patient','calm','chill','steady','cool','wait'],
+        'irodali':     ['will','strong','iron','firm','solid','tough'],
+        'odil':        ['just','fair','true','right','even','pure'],
+        'samimiy':     ['sincere','real','pure','kind','true','heart'],
+        'fidoyi':      ['devote','loyal','hero','true','faith','care'],
+        'chaqqon':     ['fast','quick','swift','speed','ninja','dash'],
+        'zukko':       ['smart','clever','brain','wise','genius','sharp'],
         'aqlli':       ['smart','genius','brain','clever','wise','mind','intellect','wiz'],
         'kuchli':      ['strong','power','force','mighty','beast','bold','alpha','titan'],
         'chiroyli':    ['beauty','pretty','glamour','style','looks','grace','glam','glow'],
@@ -1012,6 +1023,12 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         'shum':        ['tricky','sly','fox','sneaky','slick','clever','sharp'],
         'oshna':       ['friend','buddy','bro','pal','mate','comrade','ally'],
         # Brend / Brand
+        'reklama':     ['ad','ads','promo','market','brand','media','pr','sales'],
+        'sifat':       ['quality','pro','top','best','prime','elite','premium'],
+        'xizmat':      ['service','help','care','serve','pro','team'],
+        'kiyim':       ['wear','style','fashion','clothes','dress','trend'],
+        'avto':        ['auto','car','drive','motor','speed','ride','gear'],
+        'mebel':       ['wood','home','decor','house','design','room'],
         'brendface':   ['brand','face','model','icon','image','style','glam','trend'],
         'model':       ['model','style','glam','photo','face','look','pose','icon'],
         'influencer':  ['influence','brand','social','content','creator','trend','viral'],
@@ -1026,6 +1043,21 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         'olov':        ['fire','flame','blaze','burn','ember','spark','ignite','heat'],
         'shamol':      ['wind','breeze','storm','air','gale','drift','zephyr'],
         'yulduz':      ['star','stellar','astro','nova','cosmos','galaxy','shine'],
+        # Mashhur ismlar, mansab va boshqalar
+        'vazir':       ['minister','gov','chief','lead','head','exec'],
+        'hokim':       ['mayor','gov','chief','boss','leader','ruler'],
+        'rais':        ['chief','boss','head','chair','lead','exec'],
+        'boshliq':     ['boss','chief','head','lead','exec','captain'],
+        'yoldosh':     ['companion','friend','ally','mate','bro','partner'],
+        'beruniy':     ['genius','scholar','wise','science','astro','brain'],
+        'navoiy':      ['poet','writer','words','lyric','pen','author'],
+        'temur':       ['iron','king','ruler','conqueror','boss','chief'],
+        'bobur':       ['tiger','king','brave','hero','lion','chief'],
+        'mirzo':       ['prince','royal','noble','lord','king','chief'],
+        'sulton':      ['sultan','king','royal','ruler','boss','chief'],
+        'amir':        ['amir','commander','chief','leader','boss','lord'],
+        'hajviy':      ['comic','funny','joke','laugh','humor','smile','fun'],
+        'qiziqarli':   ['fun','cool','magic','wonder','hype','trend'],
     }
 
     if cat.startswith('custom:'):
@@ -1049,10 +1081,10 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                     theme_keys = t_vals
                     break
 
-        if theme_keys:
-            # Semantik kalit so'zlardan username kombinatsiyalari
+        if theme_keys and lang == 'en':
+            # Semantik kalit so'zlardan faqat Ingliz tili tanlanganda foydalanamiz
             nice_pfx = ['real','the','my','mr','iam','pro','neo','top','vip','super','mega','dark','hot','cool']
-            nice_sfx = ['uz','uzb','pro','vip','top','bot','ai','go','hub','zone','bek','jan','official','online']
+            nice_sfx = ['pro','vip','top','bot','ai','go','hub','zone','official','online']
             for kw in theme_keys:
                 if valid(kw): c_set.add(kw)
                 for pfx in nice_pfx[:10]:
@@ -1063,7 +1095,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                     if valid(combo): c_set.add(combo)
                     combo2 = f'{kw}_{sfx}'
                     if valid(combo2): c_set.add(combo2)
-                for sfx2 in ['uz', 'pro', 'official', 'online']:
+                for sfx2 in ['pro', 'official', 'online']:
                     if valid(f'{kw}{sfx2}'): c_set.add(f'{kw}{sfx2}')
                 # Kalit so'z juftliklari
                 for kw2 in theme_keys:
@@ -1073,13 +1105,24 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
 
         # 2. Original so'z va uning qisqa shakli bilan kombinatsiyalar
         short_cw = cw[:6]  # Max 6 harf — qisqa variant
+        
+        custom_prefixes = list(prefixes)
+        custom_suffixes = list(suffixes)
+        
+        if lang == 'uz':
+            # Agar so'z maxsus tematik (kasb, narsa) bo'lmasa, yoki aniq ismlar ro'yxatida bo'lsa,
+            # demak u ism. Unga ismlarga xos qo'shimchalarni qo'shamiz.
+            if not theme_keys or cw in UZ_MALE_NAMES or cw in UZ_FEMALE_NAMES:
+                custom_prefixes.extend(['shox_', 'mir_'])
+                custom_suffixes.extend(['bek', 'xon', 'jon', 'voy', 'boy'])
+
         for base in [cw, short_cw]:
             if valid(base): c_set.add(base)
-            for p in prefixes[:20]:
+            for p in custom_prefixes[:20]:
                 if p:
                     if valid(f'{p}{base}'): c_set.add(f'{p}{base}')
                     if valid(f'{p}_{base}'): c_set.add(f'{p}_{base}')
-            for s in suffixes[:20]:
+            for s in custom_suffixes[:25]:
                 if s:
                     if valid(f'{base}{s}'): c_set.add(f'{base}{s}')
                     if valid(f'{base}_{s}'): c_set.add(f'{base}_{s}')
@@ -1088,9 +1131,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         pool = list(c_set)
 
     elif cat == 'qisqa':
-        # ─── FAQAT HAQIQIY LUG'AT SO'ZLARI ─────────────────────────────────────
-        # Tasodifiy qo'shimchalar (x, 7, 1) va bo'g'in kombinatsiyalari YO'Q.
-        # Faqat ma'noli, Telegram username sifatida chiroyli ko'rinadigan so'zlar.
+        # ─── FAQAT HAQIQIY LUG'AT SO'ZLARI VA TALAFFUZ QILINADIGAN QISQA NOMLAR ───
         if lang == 'uz':
             all_words = list(set(
                 UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES +
@@ -1105,6 +1146,27 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         # Faqat 5-7 harfli, faqat alifbodan iborat, haqiqiy so'zlar
         words = [str(w).lower() for w in all_words
                  if str(w).isalpha() and 5 <= len(str(w)) <= 7]
+        
+        # Sun'iy ammo talaffuz qilinadigan 5-6 harfli qisqa nomlar generatori
+        vowels = 'aeiou'
+        consonants = 'bcdfghjklmnprstvwxyz'  # q olib tashlandi, chunki talaffuz qiyinroq
+        random_short = []
+        for _ in range(4000):
+            length = random.choice([5, 6])
+            word = ""
+            is_vowel = random.choice([True, False])
+            for _ in range(length):
+                if is_vowel:
+                    word += random.choice(vowels)
+                else:
+                    word += random.choice(consonants)
+                # Kichik ehtimol bilan ikki unli yoki ikki undosh ketma-ket kelishi mumkin
+                if random.random() > 0.15:
+                    is_vowel = not is_vowel
+            if 5 <= len(word) <= 7:
+                random_short.append(word)
+                
+        words = list(set(words + random_short))
         random.shuffle(words)
         pool = words
 
@@ -1234,13 +1296,33 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         # Curated so'zlar birinchi — sifat ustuvoriyligi
         base_words = [str(u).strip().lower() for u in curated if str(u).isalpha() and 5 <= len(str(u)) <= 10]
         dict_words = [str(u).strip().lower() for u in dict_pool]
+        
+        # Sun'iy ammo talaffuz qilinadigan 5-8 harfli qisqa nomlar generatori
+        vowels = 'aeiou'
+        consonants = 'bcdfghjklmnprstvwxyz'
+        random_short = []
+        for _ in range(5000):
+            length = random.choice([5, 6, 7, 8])
+            word = ""
+            is_vowel = random.choice([True, False])
+            for _ in range(length):
+                if is_vowel:
+                    word += random.choice(vowels)
+                else:
+                    word += random.choice(consonants)
+                if random.random() > 0.15:
+                    is_vowel = not is_vowel
+            if 5 <= len(word) <= 8:
+                random_short.append(word)
+
+        base_words = list(set(base_words + random_short))
         random.shuffle(base_words)
         random.shuffle(dict_words)
 
         var_pool = []
 
-        # 1. Sof curated so'zlar — eng tabiiy va ma'noli
-        var_pool.extend(base_words[:2000])
+        # 1. Sof curated so'zlar va sun'iy chiroyli so'zlar
+        var_pool.extend(base_words[:4000])
 
         # 2. Ism + mavzu kombinatsiyasi
         if lang == 'uz':
@@ -3235,57 +3317,8 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
         db_api_key = await get_setting("llm_api_key", os.getenv("LLM_API_KEY", ""))
         llm_results = []
         
-        if db_api_key and cat_key_for_llm in llm_categories:
-            logger.info(f"🤖 LLM generator ishga tushdi (cat={category}, lang={lang})")
-            try:
-                base_word = category.split(':', 1)[1].strip() if ':' in category else ""
-                
-                # LLM orqali eng yaxshi bo'sh usernamelarni topish
-                llm_results = await llm_find_best_usernames(
-                    telethon_client=telethon_client,
-                    category=cat_key_for_llm,
-                    language=lang,
-                    count=max(paid_qty * 3, 10),
-                    base_word=base_word,
-                    theme=""
-                )
-                
-                # LLM natijalarini DB ga yozish (kategoriya filtri bilan)
-                def _llm_cat_filter(u: str, cat: str) -> bool:
-                    ckey = cat.split(':')[0].strip().lower() if ':' in cat else cat.strip().lower()
-                    if ckey == 'qisqa':
-                        return u.isalpha() and 5 <= len(u) <= 7
-                    elif ckey == 'turli':
-                        return 6 <= len(u) <= 14
-                    elif ckey == 'custom':
-                        base = cat.split(':', 1)[1].strip().lower() if ':' in cat else ''
-                        return not base or base in u or u.startswith(base[:4])
-                    return True
-
-                if llm_results:
-                    filtered_llm = [u for u in llm_results if _llm_cat_filter(u, category)]
-                    async with aiosqlite.connect(DB_PATH) as _llm_db:
-                        for _uname in filtered_llm:
-                            try:
-                                await _llm_db.execute(
-                                    "INSERT OR IGNORE INTO search_results (search_id, username) VALUES (?,?)",
-                                    (search_id, _uname)
-                                )
-                            except Exception:
-                                pass
-                        await _llm_db.commit()
-                    found_count += len(filtered_llm)
-                    logger.info(f"🤖 LLM {len(filtered_llm)} ta natija DB ga yozildi (cat={category})")
-                
-                # LLM yetarli topsa — statik qidiruvni butunlay o'tkazib yuboramiz
-                if found_count >= paid_qty:
-                    logger.info(f"🤖 LLM yetarli natija topdi ({found_count} ta) — statik lug'at o'tkazib yuborildi")
-                    async with aiosqlite.connect(DB_PATH) as _fdb:
-                        await _fdb.execute("UPDATE search_tasks SET status='completed' WHERE id=?", (search_id,))
-                        await _fdb.commit()
-                    return
-            except Exception as llm_err:
-                logger.warning(f"LLM qidiruv xato — statik lug'atga o'tiladi: {llm_err}")
+        # LLM qidiruv qismi o'chirib tashlandi.
+        # Bot to'liq avtonom va bepul lug'at orqali o'zi qidiradi.
 
         from telethon.tl.functions.account import CheckUsernameRequest
         from telethon.errors import UsernamePurchaseAvailableError, UsernameInvalidError
@@ -4480,6 +4513,29 @@ async def process_referral_reward(user_id: int):
     except Exception as e:
         logger.error(f"process_referral_reward error: {e}")
 
+@app.post("/api/toggle_clock")
+async def api_toggle_clock(request: Request):
+    data = await request.json()
+    user = verify_init_data(data.get('init_data', ''))
+    if not user:
+        raise HTTPException(403)
+    tid = user['id']
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT clock_enabled, session_string FROM users WHERE telegram_id=?", (tid,)) as c:
+            row = await c.fetchone()
+        if not row:
+            return {"ok": False, "error": "User not found"}
+        if not row['session_string']:
+            return {"ok": False, "error": "Avval Akkaunt bo'limida profilingizni ulang!"}
+        
+        new_val = 1 if row['clock_enabled'] == 0 else 0
+        await db.execute("UPDATE users SET clock_enabled=? WHERE telegram_id=?", (new_val, tid))
+        await db.commit()
+        
+    return {"ok": True, "clock_enabled": new_val}
+
 @app.get("/api/user")
 async def api_user(init_data: str = ""):
     try:
@@ -4532,8 +4588,10 @@ async def api_user(init_data: str = ""):
                 "referral_count": referral_count,
                 "ref_link": ref_link,
                 "premium_price": premium_price,
+                "premium_price": premium_price,
                 "monitor_price": monitor_price,
-                "listing_price": listing_price}
+                "listing_price": listing_price,
+                "clock_enabled": row.get("clock_enabled", 0) if row else 0}
     except Exception as e:
         import traceback
         return {"error": f"API_USER_ERROR: {str(e)}\n{traceback.format_exc()}"}
@@ -5418,6 +5476,29 @@ async def api_marketplace_buy_via_admin(request: Request):
             logger.info("Garant: Admin akkauntidan guruhga birinchi xabar yuborildi va pin qilindi.")
         except Exception as e_msg:
             logger.error(f"Garant group message sending via admin error: {e_msg}")
+            
+        # *** Xaridor va Sotuvchi akkauntiga kirib guruhni qadab qo'yamiz (Pin chat) ***
+        from telethon.tl.functions.messages import ToggleDialogPinRequest
+        
+        seller_session = (seller_user or {}).get('session_string')
+        if seller_session:
+            try:
+                seller_client = TelegramClient(StringSession(seller_session), API_ID, API_HASH)
+                await seller_client.connect()
+                await seller_client(ToggleDialogPinRequest(peer=chat, pinned=True))
+                await seller_client.disconnect()
+            except Exception as e:
+                logger.warning(f"Garant: Sotuvchi uchun guruhni pin qilib bo'lmadi: {e}")
+
+        buyer_session = (buyer_user or {}).get('session_string')
+        if buyer_session:
+            try:
+                buyer_client = TelegramClient(StringSession(buyer_session), API_ID, API_HASH)
+                await buyer_client.connect()
+                await buyer_client(ToggleDialogPinRequest(peer=chat, pinned=True))
+                await buyer_client.disconnect()
+            except Exception as e:
+                logger.warning(f"Garant: Xaridor uchun guruhni pin qilib bo'lmadi: {e}")
 
     except Exception as ge:
         import traceback as _tb
@@ -7106,7 +7187,13 @@ async def admin_users(x_admin_token: str = Header(default="")):
     else: raise HTTPException(403)
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT u.*, (SELECT COUNT(*) FROM orders WHERE telegram_id=u.telegram_id) as order_count FROM users u ORDER BY id DESC") as c:
+        async with db.execute("""
+            SELECT u.*, 
+            (SELECT COUNT(*) FROM orders WHERE telegram_id=u.telegram_id) as order_count,
+            (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE telegram_id=u.telegram_id AND status='approved') as total_topups,
+            (SELECT COALESCE(SUM(reward_amount), 0) FROM referrals WHERE referrer_id=u.telegram_id) as total_referral_earnings
+            FROM users u ORDER BY id DESC
+        """) as c:
             return [dict(r) for r in await c.fetchall()]
 
 async def auto_refresh_phones():
@@ -7948,6 +8035,162 @@ async def bonus_notification_loop():
             await asyncio.sleep(3600)  # Xato bo'lsa 1 soat kutib qayta urinish
 
 
+async def garant_auto_transfer_loop(bot):
+    """Xaridor usernameni olganligini avtomatik kuzatuvchi va pulni o'tkazuvchi loop"""
+    logger.info("♻️ Garant auto-transfer loop ishga tushdi")
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    
+    while True:
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                # pending_admin holatidagi buyurtmalarni olamiz
+                async with db.execute("SELECT * FROM listing_orders WHERE status = 'pending_admin'") as c:
+                    pending_orders = await c.fetchall()
+            
+            for order in pending_orders:
+                order_id = order['id']
+                listing_id = order['listing_id']
+                buyer_id = order['buyer_id']
+                price = order['expected_amount']
+                
+                # E'lonni va usernameni aniqlaymiz
+                async with aiosqlite.connect(DB_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute("SELECT * FROM listings WHERE id=?", (listing_id,)) as lc:
+                        listing = await lc.fetchone()
+                
+                if not listing or listing['status'] == 'sold': continue
+                username = listing['username']
+                seller_id = listing['seller_id']
+                
+                # Xaridorning sessiyasini olamiz
+                buyer = await get_user(buyer_id)
+                if not buyer or not buyer.get('session_string'): continue
+                
+                # Xaridor sessiyasi orqali tekshiramiz
+                is_transferred = False
+                buyer_client = TelegramClient(StringSession(buyer['session_string']), API_ID, API_HASH)
+                try:
+                    await buyer_client.connect()
+                    entity = await buyer_client.get_entity(username)
+                    if hasattr(entity, 'id'):
+                        if type(entity).__name__ == 'User':
+                            if entity.id == buyer_id:
+                                is_transferred = True
+                        elif type(entity).__name__ in ('Channel', 'Chat'):
+                            if getattr(entity, 'creator', False):
+                                is_transferred = True
+                except Exception:
+                    # Username hali band emas yoki topilmadi (Value error va b.)
+                    pass
+                finally:
+                    if buyer_client.is_connected():
+                        await buyer_client.disconnect()
+                
+                # Agar o'tgan bo'lsa, bitimni yakunlaymiz
+                if is_transferred:
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        # Sotuvchiga pul o'tkazamiz
+                        await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (price, seller_id))
+                        # Holatlarni yangilaymiz
+                        await db.execute("UPDATE listing_orders SET status = 'completed' WHERE id = ?", (order_id,))
+                        await db.execute("UPDATE listings SET status = 'sold' WHERE id = ?", (listing_id,))
+                        await db.commit()
+                    
+                    # Kanalga va botga bildirishnoma
+                    asyncio.create_task(update_channel_listing_post(listing_id, 'sold'))
+                    
+                    # Garant guruhini topamiz (xabar yozish uchun)
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        db.row_factory = aiosqlite.Row
+                        async with db.execute("SELECT group_chat_id FROM garant_groups WHERE listing_id=? ORDER BY id DESC LIMIT 1", (listing_id,)) as gc:
+                            gg_row = await gc.fetchone()
+                    
+                    if gg_row and gg_row['group_chat_id']:
+                        group_id = gg_row['group_chat_id']
+                        try:
+                            await bot.send_message(
+                                group_id, 
+                                f"✅ <b>DIQQAT!</b>\n\n@{username} muvaffaqiyatli xaridorga o'tdi (tizim buni avtomatik aniqladi).\n\n💰 <b>{price:,} so'm</b> pul sotuvchining botdagi hisobiga o'tkazildi!\n\nSavdo uchun rahmat! 🤝",
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            pass
+                    
+                    # Sotuvchi va xaridorga shaxsiy xabar
+                    try:
+                        await bot.send_message(seller_id, f"🎉 <b>Tabriklaymiz!</b> @{username} sotildi.\n💰 Hisobingizga <b>{price:,} so'm</b> tushdi.", parse_mode="HTML")
+                    except Exception: pass
+                    try:
+                        await bot.send_message(buyer_id, f"🎉 <b>Tabriklaymiz!</b> @{username} ni muvaffaqiyatli xarid qildingiz.", parse_mode="HTML")
+                    except Exception: pass
+                    
+                    logger.info(f"✅ Avto-Garant: @{username} xaridor ({buyer_id}) ga o'tdi, pul sotuvchiga ({seller_id}) o'tkazildi.")
+                    
+        except Exception as e:
+            logger.error(f"Garant auto transfer loop error: {e}")
+        
+        await asyncio.sleep(15)  # Har 15 soniyada tekshiradi
+
+async def profile_clock_loop(bot):
+    """Har daqiqada foydalanuvchilarning profil ismidagi soatni yangilaydi"""
+    logger.info("🕒 Profile Clock loop ishga tushdi")
+    import datetime
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from telethon.tl.functions.account import UpdateProfileRequest
+    import re
+    
+    while True:
+        try:
+            # Keyingi daqiqaning 00-soniyasiga qadar kutish
+            now = datetime.datetime.now()
+            sleep_time = 60 - now.second - (now.microsecond / 1_000_000)
+            await asyncio.sleep(sleep_time)
+            
+            # Yangi daqiqa boshlandi
+            current_time_str = datetime.datetime.now().strftime("%H:%M")
+            
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("SELECT telegram_id, session_string FROM users WHERE clock_enabled = 1") as c:
+                    users = await c.fetchall()
+            
+            for u in users:
+                if not u['session_string']: continue
+                try:
+                    client = TelegramClient(StringSession(u['session_string']), API_ID, API_HASH)
+                    await client.connect()
+                    
+                    me = await client.get_me()
+                    if me:
+                        first_name = me.first_name or ""
+                        # Agar ism ichida eski soat bo'lsa (masalan ' | 🕒 14:30'), olib tashlaymiz
+                        base_name = re.sub(r'\s*\|\s*🕒\s*\d{2}:\d{2}', '', first_name)
+                        # Uzunlik tekshiruvi (Telegram ism max 64 belgi)
+                        base_name = base_name[:50]
+                        
+                        # Yangi soatni biriktiramiz
+                        new_first_name = f"{base_name} | 🕒 {current_time_str}"
+                        
+                        # Agar o'zgargan bo'lsa yangilaymiz
+                        if new_first_name != first_name:
+                            await client(UpdateProfileRequest(first_name=new_first_name))
+                            
+                except Exception as e:
+                    logger.warning(f"Clock update error for {u['telegram_id']}: {e}")
+                finally:
+                    if 'client' in locals() and client.is_connected():
+                        await client.disconnect()
+                        
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Profile Clock Loop xato: {e}")
+            await asyncio.sleep(10)
+
 async def garant_cleanup_loop(bot):
     """Garant guruhlarini avtomatik tozalash: 1 soatdan oshgan guruhlar bazadan va Telegramdan o'chiriladi"""
     logger.info("🤝 Garant cleanup loop ishga tushdi")
@@ -8098,13 +8341,19 @@ async def main():
     # Garant guruhlarini avtomatik tozalash (24 soatdan oshganlarni o'chiradi)
     garant_cleanup_task = asyncio.create_task(garant_cleanup_loop(bot))
 
+    # Avtomatik Garant (transfer tekshiruvi)
+    garant_auto_task = asyncio.create_task(garant_auto_transfer_loop(bot))
+    
+    # Profilga soat o'rnatish
+    profile_clock_task = asyncio.create_task(profile_clock_loop(bot))
+
     # Aiogram bot va FastAPI parallel ishlatish
     config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)), log_level="warning")
     server = uvicorn.Server(config)
 
     # Graceful shutdown: SIGTERM va SIGINT uchun
     loop = asyncio.get_event_loop()
-    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task, bonus_notify_task, garant_cleanup_task]
+    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task, bonus_notify_task, garant_cleanup_task, garant_auto_task, profile_clock_task]
 
     async def _shutdown():
         logger.info("⏹ Graceful shutdown boshlandi...")
