@@ -1632,7 +1632,13 @@ async function sendBroadcast() {
 async function loadCards() {
   try {
     const res = await fetch('/api/admin/cards', { headers: headers() });
-    const cards = await res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      showToast("Karta yuklashda xatolik: " + (data.detail || "Server xatosi"), "error");
+      document.getElementById('cards-list-container').innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444;">Xatolik: ${data.detail || 'Server xatosi'}</div>`;
+      return;
+    }
+    const cards = data;
     const container = document.getElementById('cards-list-container');
     if (!cards.length) {
       container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted);">Karta qo\'shilmagan. Yuqoridagi tugma orqali karta qo\'shing.</div>';
@@ -1698,7 +1704,11 @@ async function loadCards() {
         </div>
       `;
     }).join('');
-  } catch(e) {}
+  } catch(e) {
+    console.error("loadCards error:", e);
+    showToast("Karta tizimi xatosi: " + e.message, "error");
+    document.getElementById('cards-list-container').innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444;">Yuklash xatosi: ${e.message}</div>`;
+  }
 }
 
 function openAddCardModal() {
@@ -1882,7 +1892,13 @@ function showToast(msg, type='success') {
 async function loadMandatoryChannels() {
   try {
     const res = await fetch('/api/admin/channels', { headers: headers() });
-    const channels = await res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      showToast("Kanal yuklashda xatolik: " + (data.detail || "Server xatosi"), "error");
+      document.getElementById('channels-list-container').innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444;">Xatolik: ${data.detail || 'Server xatosi'}</div>`;
+      return;
+    }
+    const channels = data;
     const container = document.getElementById('channels-list-container');
     if (!channels || !channels.length) {
       container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted);">Majburiy obuna kanallari qo\'shilmagan</div>';
@@ -1916,7 +1932,11 @@ async function loadMandatoryChannels() {
         </div>
       </div>
     `).join('');
-  } catch(e) {}
+  } catch(e) {
+    console.error("loadMandatoryChannels error:", e);
+    showToast("Kanal tizimi xatosi: " + e.message, "error");
+    document.getElementById('channels-list-container').innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444;">Yuklash xatosi: ${e.message}</div>`;
+  }
 }
 
 async function updateChannelInfo(id) {
