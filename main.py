@@ -426,6 +426,8 @@ async def init_db():
         except: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN clock_enabled INTEGER DEFAULT 0")
         except: pass
+        try: await db.execute("ALTER TABLE users ADD COLUMN clock_base_name TEXT DEFAULT ''")
+        except: pass
         
         # Balansi 0 bo'lgan foydalanuvchilarga boshlang'ich 5000 so'm berish (tiklash)
         try: await db.execute("UPDATE users SET balance=5000 WHERE (balance=0 OR balance IS NULL) AND created_at > (strftime('%s','now') - 86400)")
@@ -4513,7 +4515,7 @@ async def process_referral_reward(user_id: int):
     except Exception as e:
         logger.error(f"process_referral_reward error: {e}")
 
-async def _update_profile_clock_now(session_string, enable=True):
+async def _update_profile_clock_now(session_string, enable=True, tid=None):
     from telethon import TelegramClient
     from telethon.sessions import StringSession
     from telethon.tl.functions.account import UpdateProfileRequest
@@ -4529,10 +4531,20 @@ async def _update_profile_clock_now(session_string, enable=True):
             base_name = base_name[:50]
             
             if enable:
+                # Base ismni bazaga saqlaymiz (keyingi yangilanishlarda get_me() shart emas)
+                if tid:
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        await db.execute("UPDATE users SET clock_base_name=? WHERE telegram_id=?", (base_name, tid))
+                        await db.commit()
                 uzb_tz = datetime.timezone(datetime.timedelta(hours=5))
                 current_time = datetime.datetime.now(uzb_tz).strftime("%H:%M")
                 new_first_name = f"{base_name} | {current_time}"
             else:
+                # O'chirganda base ismni bazadan olib tashlaymiz
+                if tid:
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        await db.execute("UPDATE users SET clock_base_name='' WHERE telegram_id=?", (tid,))
+                        await db.commit()
                 new_first_name = base_name
                 
             if new_first_name != first_name:
@@ -4566,7 +4578,7 @@ async def api_toggle_clock(request: Request):
     
     # DB ni yangiladik — UI ga darhol javob beramiz (tez!)
     # Telegram profilini orqa fonda yangilaymiz (sekin API kutilmaydi)
-    asyncio.create_task(_update_profile_clock_now(row['session_string'], new_val == 1))
+    asyncio.create_task(_update_profile_clock_now(row['session_string'], new_val == 1, tid))
         
     return {"ok": True, "clock_enabled": new_val}
 
@@ -8175,43 +8187,47 @@ async def profile_clock_loop(bot):
     from telethon import TelegramClient
     from telethon.sessions import StringSession
     from telethon.tl.functions.account import UpdateProfileRequest
-    import re
+    
+    uzb_tz = datetime.timezone(datetime.timedelta(hours=5))
     
     while True:
         try:
-            # Keyingi daqiqaning 00-soniyasiga qadar kutish
-            now = datetime.datetime.now()
-            sleep_time = 60 - now.second - (now.microsecond / 1_000_000)
+            # UZB vaqtida keyingi daqiqa 00-soniyasiga aniq sinxronlashtiramiz
+            now_uzb = datetime.datetime.now(uzb_tz)
+            sleep_time = 60 - now_uzb.second - (now_uzb.microsecond / 1_000_000)
             await asyncio.sleep(sleep_time)
             
-            # Yangi daqiqa boshlandi
-            uzb_tz = datetime.timezone(datetime.timedelta(hours=5))
+            # Yangi daqiqa UZB vaqtida
             current_time_str = datetime.datetime.now(uzb_tz).strftime("%H:%M")
             
             async with aiosqlite.connect(DB_PATH) as db:
                 db.row_factory = aiosqlite.Row
-                async with db.execute("SELECT telegram_id, session_string FROM users WHERE clock_enabled = 1") as c:
+                async with db.execute("SELECT telegram_id, session_string, clock_base_name FROM users WHERE clock_enabled = 1") as c:
                     users = await c.fetchall()
             
             for u in users:
                 if not u['session_string']: continue
+                base_name = (u['clock_base_name'] or '').strip()
+                
                 try:
                     client = TelegramClient(StringSession(u['session_string']), API_ID, API_HASH)
                     await client.connect()
                     
-                    me = await client.get_me()
-                    if me:
-                        first_name = me.first_name or ""
-                        # Agar ism ichida eski soat bo'lsa (stikerli yoki stikersiz), olib tashlaymiz
-                        base_name = re.sub(r'\s*\|\s*(?:🕒\s*)?\d{2}:\d{2}', '', first_name)
-                        # Uzunlik tekshiruvi (Telegram ism max 64 belgi)
-                        base_name = base_name[:50]
-                        
-                        # Yangi soatni biriktiramiz
+                    if base_name:
+                        # Bazada ism bor — to'g'ridan-to'g'ri yangilaymiz (get_me() yo'q = 2x tez!)
                         new_first_name = f"{base_name} | {current_time_str}"
-                        
-                        # Agar o'zgargan bo'lsa yangilaymiz
-                        if new_first_name != first_name:
+                        await client(UpdateProfileRequest(first_name=new_first_name))
+                    else:
+                        # Bazada ism yo'q — bir marta get_me() qilamiz va saqlaymiz
+                        import re
+                        me = await client.get_me()
+                        if me:
+                            first_name = me.first_name or ""
+                            base_name = re.sub(r'\s*\|\s*(?:[\U0001F550-\U0001F567][\uFE0F]?\s*)?\d{2}:\d{2}', '', first_name).strip()[:50]
+                            async with aiosqlite.connect(DB_PATH) as db:
+                                await db.execute("UPDATE users SET clock_base_name=? WHERE telegram_id=?", (base_name, u['telegram_id']))
+                                await db.commit()
+                            new_first_name = f"{base_name} | {current_time_str}"
                             await client(UpdateProfileRequest(first_name=new_first_name))
                             
                 except Exception as e:
