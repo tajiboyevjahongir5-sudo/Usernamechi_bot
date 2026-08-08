@@ -4232,7 +4232,12 @@ class SubscriptionMiddleware(BaseHTTPMiddleware):
                                     "channels": [dict(c) for c in unsubbed]
                                 }
                             )
-            return await call_next(request)
+            response = await call_next(request)
+            if path.startswith("/api/admin/") or path == "/admin":
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+            return response
         except Exception as e:
             import traceback
             logger.error(f"Middleware Error: {e}\n{traceback.format_exc()}")

@@ -1064,7 +1064,7 @@ function initNavDragPhysics() {
 /* DASHBOARD */
 async function loadDashboard() {
   try {
-    const res = await fetch('/api/admin/stats', { headers: headers() });
+    const res = await fetch('/api/admin/stats?t=' + Date.now(), { headers: headers() });
     const data = await res.json();
 
     document.getElementById('stat-users').textContent = (data.users || 0).toLocaleString();
@@ -1461,7 +1461,7 @@ async function rejectWithdrawal(id) {
 /* SETTINGS & MULTI-CARD */
 async function loadSettings() {
   try {
-    const res = await fetch('/api/admin/settings', { headers: headers() });
+    const res = await fetch('/api/admin/settings?t=' + Date.now(), { headers: headers() });
     const s = await res.json();
     document.getElementById('set-channel').value = s.payment_channel_id || '';
 
@@ -1662,7 +1662,7 @@ async function sendBroadcast() {
 
 async function loadCards() {
   try {
-    const res = await fetch('/api/admin/cards', { headers: headers() });
+    const res = await fetch('/api/admin/cards?t=' + Date.now(), { headers: headers() });
     const data = await res.json();
     if (!res.ok) {
       showToast("Karta yuklashda xatolik: " + (data.detail || "Server xatosi"), "error");
@@ -1922,7 +1922,7 @@ function showToast(msg, type='success') {
 
 async function loadMandatoryChannels() {
   try {
-    const res = await fetch('/api/admin/channels', { headers: headers() });
+    const res = await fetch('/api/admin/channels?t=' + Date.now(), { headers: headers() });
     const data = await res.json();
     if (!res.ok) {
       showToast("Kanal yuklashda xatolik: " + (data.detail || "Server xatosi"), "error");
