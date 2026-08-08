@@ -821,8 +821,17 @@ try {
   }
 } catch(e) {}
 
-let ADMIN_TOKEN = localStorage.getItem('admin_token') || '';
-const headers = () => ({ 'X-Admin-Token': localStorage.getItem('admin_token') || '' });
+const safeStorage = {
+  getItem: (key) => {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  },
+  setItem: (key, val) => {
+    try { localStorage.setItem(key, val); } catch (e) {}
+  }
+};
+
+let ADMIN_TOKEN = safeStorage.getItem('admin_token') || '';
+const headers = () => ({ 'X-Admin-Token': safeStorage.getItem('admin_token') || '' });
 
 async function doTelegramLogin() {
   if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
@@ -844,7 +853,7 @@ async function attemptWebAuth() {
       const d = await res.json();
       if (d.ok && d.token) {
         ADMIN_TOKEN = d.token;
-        localStorage.setItem('admin_token', d.token);
+        safeStorage.setItem('admin_token', d.token);
         const loginEl = document.getElementById('login-screen');
         if (loginEl) loginEl.style.display = 'none';
         return true;
@@ -857,38 +866,45 @@ async function attemptWebAuth() {
 }
 
 async function checkAuth() {
-  const params = new URLSearchParams(location.search);
-  const token = params.get('token');
-  if (token) {
-    ADMIN_TOKEN = token;
-    localStorage.setItem('admin_token', token);
-    history.replaceState({}, '', '/admin');
-  }
+  try {
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token');
+    if (token) {
+      ADMIN_TOKEN = token;
+      safeStorage.setItem('admin_token', token);
+      history.replaceState({}, '', '/admin');
+    }
 
-  let isAuthed = false;
+    let isAuthed = false;
 
-  // 1. Telegram WebApp initData bo'lsa token olamiz
-  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
-    isAuthed = await attemptWebAuth();
-  }
+    // 1. Telegram WebApp initData bo'lsa token olamiz
+    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+      isAuthed = await attemptWebAuth();
+    }
 
-  // 2. Agar avtomatik auth bo'lmagan bo'lsa, mavjud token yaroqliligini tekshiramiz
-  if (!isAuthed && ADMIN_TOKEN) {
-    try {
-      const res = await fetch('/api/admin/check', { headers: headers() });
-      if (res.ok) {
-        isAuthed = true;
-      }
-    } catch(e) {}
-  }
+    // 2. Agar avtomatik auth bo'lmagan bo'lsa, mavjud token yaroqliligini tekshiramiz
+    if (!isAuthed && ADMIN_TOKEN) {
+      try {
+        const res = await fetch('/api/admin/check', { headers: headers() });
+        if (res.ok) {
+          isAuthed = true;
+        }
+      } catch(e) {}
+    }
 
-  const loginEl = document.getElementById('login-screen');
-  if (isAuthed) {
-    if (loginEl) loginEl.style.display = 'none';
-    initNavDragPhysics();
-    loadDashboard();
-  } else {
-    // Tizimga kirmagan — login oynasini majburiy ko'rsatamiz
+    const loginEl = document.getElementById('login-screen');
+    if (isAuthed) {
+      if (loginEl) loginEl.style.display = 'none';
+      initNavDragPhysics();
+      loadDashboard();
+    } else {
+      // Tizimga kirmagan — login oynasini majburiy ko'rsatamiz
+      if (loginEl) loginEl.style.display = 'flex';
+    }
+  } catch (error) {
+    console.error("checkAuth crash:", error);
+    // Crash bo'lsa ham login oynasini ko'rsatamiz
+    const loginEl = document.getElementById('login-screen');
     if (loginEl) loginEl.style.display = 'flex';
   }
 }
