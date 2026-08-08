@@ -3195,6 +3195,14 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
 # ── TELETHON CLIENT CACHE ────────────────────────
 _telethon_cache: dict = {}
 _active_search_tasks: set = set()
+# Har bir sessiya uchun alohida lock — bir vaqtda faqat bitta operatsiya
+_session_locks: dict = {}  # {session_string: asyncio.Lock}
+
+def _get_session_lock(session_string: str) -> asyncio.Lock:
+    """Sessiya uchun lock qaytaradi yoki yangisini yaratadi."""
+    if session_string not in _session_locks:
+        _session_locks[session_string] = asyncio.Lock()
+    return _session_locks[session_string]
 
 async def _get_fast_client(session_string: str):
     """Keshdan tezkor Telethon client qaytaradi yoki yangisini yaratadi. 15s timeout."""
@@ -3756,18 +3764,19 @@ async def monitoring_loop(bot):
                 from telethon.errors import UsernamePurchaseAvailableError, UsernameInvalidError
                 _first_task = next((t for t in task_group if t.get("session_string")), None)
                 if _first_task:
-                    _check_client = await _get_fast_client(_first_task["session_string"])
-                    _api_result = await asyncio.wait_for(
-                        _check_client(CheckUsernameRequest(uname)),
-                        timeout=5.0
-                    )
+                    _sess_str = _first_task["session_string"]
+                    _lock = _get_session_lock(_sess_str)
+                    async with _lock:  # Bir vaqtda faqat bitta operatsiya!
+                        _check_client = await _get_fast_client(_sess_str)
+                        _api_result = await asyncio.wait_for(
+                            _check_client(CheckUsernameRequest(uname)),
+                            timeout=5.0
+                        )
                     if _api_result is True:
                         api_confirmed_free = True
                         logger.info(f"✅ [API CONFIRM] @{uname} Telethon API bo'shligini tasdiqladi — kanal ochilmoqda...")
                     else:
                         logger.info(f"⚠️ [CLAIM CANCEL] @{uname} Telethon API bo'sh emas (False).")
-                        # Telethon "band" dedi — 2 soat keshga olish (12 emas, chunki
-                        # kanal sozlamalari o'zgarsa tezroq qayta tekshirilsin)
                         taken_usernames_cache[uname.lower()] = time.time() + 7200  # 2 soat
                         return
             except (UsernamePurchaseAvailableError,):
@@ -3783,11 +3792,8 @@ async def monitoring_loop(bot):
                 taken_usernames_cache[uname.lower()] = time.time() + 3600
                 return
             finally:
-                if _check_client and _first_task:
-                    try:
-                        await _check_client.disconnect()
-                    except Exception: pass
-                    _telethon_cache.pop(_first_task.get("session_string"), None)
+                # Client keshda qoladi, faqat disconnect QILMAYMIZ — boshqa operatsiyalar ishlatadi
+                pass
 
             if not api_confirmed_free:
                 return
