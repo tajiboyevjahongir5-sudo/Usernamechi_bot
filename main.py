@@ -8475,7 +8475,12 @@ async def debug_user_balance(bot):
             report += f"- @{ld['username']}, Narxi: {ld['price']:,} soʻm, Status: {ld['status']}\n"
         report += "\n"
         
-        cur.execute("SELECT * FROM listing_orders WHERE buyer_id=? OR seller_id=?", (target_id, target_id))
+        cur.execute("""
+            SELECT lo.*, l.seller_id, l.username, l.price 
+            FROM listing_orders lo 
+            JOIN listings l ON lo.listing_id = l.id 
+            WHERE lo.buyer_id=? OR l.seller_id=?
+        """, (target_id, target_id))
         orders = cur.fetchall()
         report += f"🛒 **Savdo bitimlari ({len(orders)} ta):**\n"
         for o in orders:
