@@ -8411,6 +8411,87 @@ async def debug_find_databases(bot):
         logger.error(f"Send debug report error: {e}")
 
 
+async def debug_user_balance(bot):
+    import os
+    import sqlite3
+    
+    await asyncio.sleep(6)  # Bot fully started
+    
+    if not ADMIN_IDS:
+        return
+    admin_id = ADMIN_IDS[0]
+    target_id = 893683541  # Zuhiriddin
+    
+    if not os.path.exists(DB_PATH):
+        return
+        
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.row_factory = sqlite3.Row
+        
+        # 1. User info
+        cur.execute("SELECT * FROM users WHERE telegram_id=?", (target_id,))
+        user = cur.fetchone()
+        
+        if not user:
+            await bot.send_message(admin_id, f"❌ ID: {target_id} foydalanuvchisi bazadan topilmadi!")
+            conn.close()
+            return
+            
+        user_dict = dict(user)
+        report = f"🔍 **Foydalanuvchi Auditi (ID: {target_id}):**\n\n"
+        report += f"Ism: {user_dict.get('first_name')}\n"
+        report += f"Username: @{user_dict.get('username')}\n"
+        report += f"Balans: {user_dict.get('balance'):,} soʻm\n"
+        report += f"Savdo balansi: {user_dict.get('seller_balance'):,} soʻm\n"
+        report += f"Taklif qilgan referrer: {user_dict.get('referrer_id')}\n"
+        report += f"Referral mukofot berilganmi: {user_dict.get('reward_given')}\n\n"
+        
+        # 2. Karta to'lovlari (payments)
+        cur.execute("SELECT * FROM payments WHERE telegram_id=?", (target_id,))
+        payments = cur.fetchall()
+        report += f"💳 **Karta toʻlovlari ({len(payments)} ta):**\n"
+        for p in payments:
+            pd = dict(p)
+            report += f"- ID: {pd['id']}, Summa: {pd['amount']:,} soʻm, Status: {pd['status']}\n"
+        report += "\n"
+        
+        # 3. Referallari (referrals)
+        cur.execute("SELECT * FROM referrals WHERE referrer_id=?", (target_id,))
+        refs = cur.fetchall()
+        report += f"🎁 **Taklif qilgan referallari ({len(refs)} ta):**\n"
+        for r in refs:
+            rd = dict(r)
+            report += f"- User ID: {rd['user_id']}, Mukofot: {rd['reward_amount']:,} soʻm, Berilganmi: {rd['reward_given']}\n"
+        report += "\n"
+        
+        # 4. Sotgan/Sotib olgan usernamelari (listings & listing_orders)
+        cur.execute("SELECT * FROM listings WHERE seller_id=?", (target_id,))
+        listings = cur.fetchall()
+        report += f"🛍 **Sotuvga qoʻygan eʼlonlari ({len(listings)} ta):**\n"
+        for l in listings:
+            ld = dict(l)
+            report += f"- @{ld['username']}, Narxi: {ld['price']:,} soʻm, Status: {ld['status']}\n"
+        report += "\n"
+        
+        cur.execute("SELECT * FROM listing_orders WHERE buyer_id=? OR seller_id=?", (target_id, target_id))
+        orders = cur.fetchall()
+        report += f"🛒 **Savdo bitimlari ({len(orders)} ta):**\n"
+        for o in orders:
+            od = dict(o)
+            role = "Xaridor" if od['buyer_id'] == target_id else "Sotuvchi"
+            report += f"- @{od['username']}, Narxi: {od['price']:,} soʻm, Rol: {role}, Status: {od['status']}\n"
+            
+        conn.close()
+        await bot.send_message(admin_id, report)
+    except Exception as e:
+        logger.error(f"Audit error: {e}")
+        try:
+            await bot.send_message(admin_id, f"Audit xatosi: {e}")
+        except: pass
+
+
 async def main():
     import signal
 
@@ -8420,6 +8501,7 @@ async def main():
     await init_db()
 
     bot = Bot(token=BOT_TOKEN)
+    asyncio.create_task(debug_user_balance(bot))
     dp  = Dispatcher()
 
 
