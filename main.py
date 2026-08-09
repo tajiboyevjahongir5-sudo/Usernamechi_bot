@@ -8420,7 +8420,7 @@ async def debug_user_balance(bot):
     if not ADMIN_IDS:
         return
     admin_id = ADMIN_IDS[0]
-    target_id = 893683541  # Zuhiriddin
+    target_id = 8936835411  # Zuhiriddin
     
     if not os.path.exists(DB_PATH):
         return
