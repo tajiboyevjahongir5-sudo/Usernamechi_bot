@@ -1250,7 +1250,7 @@ function renderUsers() {
             💬 Profil
           </a>
           <button class="action-btn btn-emerald" onclick="openDirectMessage('${u.username || u.telegram_id}')">📩 Xabar</button>
-          <button class="action-btn btn-secondary" onclick="alert('💰 Balans Tarixi:\\n\\n💳 Karta orqali: ' + (u.total_topups || 0).toLocaleString() + ' so\\'m\\n🎁 Referallardan: ' + (u.total_referral_earnings || 0).toLocaleString() + ' so\\'m')">📊 Tarix</button>
+          <button class="action-btn btn-secondary" onclick="alert('💰 Balans Tarixi:\\n\\n💳 Karta orqali: ${(u.total_topups || 0).toLocaleString()} soʻm\\n🎁 Referallardan: ${(u.total_referral_earnings || 0).toLocaleString()} soʻm')">📊 Tarix</button>
           <button class="action-btn btn-secondary" onclick="openBalanceModal(${u.telegram_id}, ${u.balance||0}, ${u.seller_balance||0})">✏️ Balans</button>
           <button class="action-btn ${u.is_stealth ? 'btn-rose' : 'btn-emerald'}" onclick="toggleStealth(${u.telegram_id})">
             ${u.is_stealth ? '🔓 Off' : '🕵️ On'}
