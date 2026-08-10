@@ -8668,7 +8668,7 @@ async def main():
     await init_db()
 
     bot = Bot(token=BOT_TOKEN)
-    asyncio.create_task(debug_user_balance(bot))
+    # asyncio.create_task(debug_user_balance(bot))
     dp  = Dispatcher()
 
 
