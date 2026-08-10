@@ -7154,12 +7154,7 @@ async def admin_auth(request: Request):
     token = get_admin_token(tid)
     return RedirectResponse(f"/admin?token={token}")
 
-@app.get("/api/admin/check")
-async def admin_check(x_admin_token: str = Header(default="")):
-    for aid in ADMIN_IDS:
-        if get_admin_token(aid) == x_admin_token:
-            return {"ok": True}
-    raise HTTPException(403, "Ruxsat yo'q")
+
 
 @app.get("/api/admin/stats")
 async def admin_stats(x_admin_token: str = Header(default="")):
