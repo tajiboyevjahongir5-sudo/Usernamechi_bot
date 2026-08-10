@@ -953,21 +953,41 @@
 
     <div class="form-group">
       <label>🎯 Qanday username qidiramiz?</label>
-      <div style="display:flex; gap:8px; margin-bottom:8px;">
-        <button id="btn-cat-custom" class="btn btn-outline" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('custom')">
+      <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px; margin-bottom:8px;">
+        <button id="btn-cat-custom" class="btn btn-outline" style="margin:0; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('custom')">
           <i class="fa-solid fa-pen-nib" style="font-size:16px; color:var(--accent-light); margin-top:2px;"></i>
           <span>O'zim kiritaman</span>
           <span style="font-size:11px; opacity:0.8; font-weight:700;">5,000 so'm</span>
         </button>
-        <button id="btn-cat-smart" class="btn btn-primary" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('turli')">
+        <button id="btn-cat-turli" class="btn btn-primary" style="margin:0; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('turli')">
           <i class="fa-solid fa-wand-magic-sparkles" style="font-size:16px; color:#22d3ee; margin-top:2px;"></i>
           <span>Turli ko'rinishdagi</span>
           <span style="font-size:11px; opacity:0.8; font-weight:700;">10,000 so'm</span>
         </button>
-        <button id="btn-cat-short" class="btn btn-outline" style="margin:0; flex:1; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('qisqa')">
+        <button id="btn-cat-short" class="btn btn-outline" style="margin:0; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('qisqa')">
           <i class="fa-solid fa-gem" style="font-size:16px; color:#fbbf24; margin-top:2px;"></i>
           <span>Qisqa noyob</span>
           <span style="font-size:11px; opacity:0.8; font-weight:700;">15,000 so'm</span>
+        </button>
+        <button id="btn-cat-ism" class="btn btn-outline" style="margin:0; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('ism')">
+          <i class="fa-solid fa-user-tag" style="font-size:16px; color:#a78bfa; margin-top:2px;"></i>
+          <span>Ism bo'yicha</span>
+          <span style="font-size:11px; opacity:0.8; font-weight:700;">25,000 so'm</span>
+        </button>
+        <button id="btn-cat-familiya" class="btn btn-outline" style="margin:0; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('familiya')">
+          <i class="fa-solid fa-users" style="font-size:16px; color:#60a5fa; margin-top:2px;"></i>
+          <span>Familiya bo'yicha</span>
+          <span style="font-size:11px; opacity:0.8; font-weight:700;">25,000 so'm</span>
+        </button>
+        <button id="btn-cat-brend" class="btn btn-outline" style="margin:0; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px;" onclick="setCategory('brend')">
+          <i class="fa-solid fa-store" style="font-size:16px; color:#34d399; margin-top:2px;"></i>
+          <span>Brend/Kompaniya</span>
+          <span style="font-size:11px; opacity:0.8; font-weight:700;">25,000 so'm</span>
+        </button>
+        <button id="btn-cat-lavozim" class="btn btn-outline" style="margin:0; font-size:12px; padding:10px 6px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:6px; grid-column: span 2;" onclick="setCategory('lavozim')">
+          <i class="fa-solid fa-briefcase" style="font-size:16px; color:#f472b6; margin-top:2px;"></i>
+          <span>Kasb / Lavozim bo'yicha</span>
+          <span style="font-size:11px; opacity:0.8; font-weight:700;">25,000 so'm</span>
         </button>
       </div>
       <div id="custom-word-container" style="display:none; margin-bottom:12px;">
@@ -1547,17 +1567,29 @@ let photoFile = null;
 // ── CATEGORY & LANG (moved from inline) ──────
 function setCategory(cat) {
   document.getElementById('buy-category').value = cat;
-  document.getElementById('custom-word-container').style.display = (cat === 'custom') ? 'block' : 'none';
-  document.getElementById('btn-cat-short').className = 'btn btn-outline';
-  document.getElementById('btn-cat-smart').className = 'btn btn-outline';
-  document.getElementById('btn-cat-custom').className = 'btn btn-outline';
-  if(cat === 'qisqa') {
-    document.getElementById('btn-cat-short').className = 'btn btn-primary';
-  } else if (cat === 'turli') {
-    document.getElementById('btn-cat-smart').className = 'btn btn-primary';
-  } else if (cat === 'custom') {
-    document.getElementById('btn-cat-custom').className = 'btn btn-primary';
+  
+  const customContainer = document.getElementById('custom-word-container');
+  const customInput = document.getElementById('buy-custom-word');
+  
+  if (cat === 'custom' || cat === 'lavozim') {
+    customContainer.style.display = 'block';
+    if (cat === 'custom') {
+      customInput.placeholder = "Masalan: ali, anvar, shop...";
+    } else {
+      customInput.placeholder = "Kasb kiriting (bo'sh qolsa tasodifiy): masalan, haydovchi...";
+    }
+  } else {
+    customContainer.style.display = 'none';
   }
+  
+  ['qisqa', 'turli', 'custom', 'ism', 'familiya', 'brend', 'lavozim'].forEach(c => {
+    const btn = document.getElementById('btn-cat-' + c);
+    if (btn) btn.className = 'btn btn-outline';
+  });
+  
+  const activeBtn = document.getElementById('btn-cat-' + cat);
+  if (activeBtn) activeBtn.className = 'btn btn-primary';
+  
   calcSearchPrice();
 }
 function setLang(lang) {
@@ -2899,6 +2931,7 @@ let selectedUsernames = new Set();
 function getCategoryPrice(catVal) {
   if (catVal.startsWith('custom')) return 5000;
   if (catVal === 'qisqa') return 15000;
+  if (catVal === 'ism' || catVal === 'familiya' || catVal === 'brend' || catVal.startsWith('lavozim') || catVal.startsWith('kasb')) return 25000;
   return 10000; // turli (default)
 }
 
@@ -2925,6 +2958,11 @@ async function startSearch() {
       return;
     }
     cat = "custom:" + word;
+  } else if (rawCat === 'lavozim') {
+    const word = document.getElementById('buy-custom-word').value.trim();
+    if (word) {
+      cat = "lavozim:" + word;
+    }
   }
   const lang = document.getElementById('buy-lang').value;
   const qty = Math.min(10, Math.max(1, parseInt(document.getElementById('buy-qty').value) || 1));

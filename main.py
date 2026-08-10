@@ -958,108 +958,111 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         suffixes = ['', '_official', '_bot', '_pro', '_vip', '_top', '_blog', '_channel', '_tv', '_media', '_news', '_store', '_shop', '_life', '_style', '_music', '_art', '_dev', '_tech', '_zone', '_group', '_org', '_info', '_studio', '_page', '_net', '_online', '_hub', '_lab', '_hq', '_real', '_live', '_plus', '_max', '_mini', '_app', '_base']
     numbers = ['', '1', '2', '3', '4', '5', '7', '8', '9', '10', '11', '24', '25', '77', '88', '99', '100', '777', '888', '999', '2024', '2025', '2026', '007', '01', '07', '700', '900']
 
-    # ─── Semantik mavzu xaritasi: o'zbekcha so'z → qisqa ingliz kalit so'zlar ───
+    # ─── Semantik mavzu xaritasi: o'zbekcha so'z → ingliz va o'zbek sinonimlar ───
     _THEME_KEYWORDS = {
-        # Kasblar / Professions
-        'quruvchi':    ['build','builder','construct','maker','craft','mason','arch'],
-        'shifokor':    ['doctor','medic','health','clinic','heal','care','doc'],
-        'hunarmand':   ['craft','maker','artisan','skill','forge','master'],
-        'dasturchi':   ['coder','dev','code','python','java','tech','hack','script','bytes','prog','build'],
-        'programmist': ['coder','dev','code','tech','hack','script','prog','build','stack'],
-        'developer':   ['dev','coder','code','build','forge','stack','bytes','techpro'],
-        'sotuvchi':    ['seller','sales','trade','shop','market','vendor','deal','offer','store','sell'],
-        'savdo':       ['trade','deal','market','shop','sales','offer','sell','merch'],
-        'direktor':    ['boss','chief','ceo','exec','leader','head','direct','manage'],
-        'rahbar':      ['boss','chief','leader','head','exec','manage','commander'],
-        'biznesmen':   ['bizman','ceo','boss','trade','deal','invest','corp','exec','capital','mogul'],
-        'tadbirkor':   ['startup','invest','build','ceo','exec','found','venture','mogul'],
-        'menejer':     ['manager','manage','team','admin','lead','head','exec'],
-        'vrach':       ['doctor','medic','health','clinic','heal','care','doc','md'],
-        'doktor':      ['doctor','medic','health','clinic','heal','care','doc','md'],
-        'oquvchi':     ['student','learn','study','campus','uni','pupil'],
-        'talaba':      ['student','learn','study','campus','uni','college','pupil'],
-        'oqutuvchi':   ['teacher','edu','tutor','learn','teach','school','mentor'],
-        'muallim':     ['teacher','edu','tutor','learn','teach','mentor','coach'],
-        'murabbiy':    ['coach','mentor','trainer','teach','guide','master'],
-        'bloger':      ['blog','vlog','media','content','creator','post','review','share'],
-        'blogger':     ['blog','vlog','media','content','creator','post','review'],
-        'youtuber':    ['youtube','vlog','content','creator','channel','video','tube'],
-        'aktyor':      ['actor','film','movie','star','scene','art','stage','cinema'],
-        'sportchi':    ['sport','athlete','fitness','gym','train','pro','team','champ'],
-        'haker':       ['hacker','dark','hack','cyber','ghost','anon','zero','void','shadow'],
-        'texno':       ['tech','digital','cyber','smart','byte','code','net','geek'],
-        'geymer':      ['gamer','game','play','gg','pro','clan','squad','noob','quest'],
-        'streamer':    ['stream','live','gaming','broadcast','content','viewer','twitch'],
-        'rassom':      ['art','artist','paint','draw','creative','sketch','visual','brush'],
-        'dizayner':    ['design','art','creative','visual','craft','pixel','studio','ux'],
-        'fotograf':    ['photo','photo','shoot','lens','capture','frame','snap','camera'],
-        'musiqachi':   ['music','audio','sound','beat','melody','studio','dj','track'],
-        'rapper':      ['rap','flow','beat','rhyme','bars','drip','trap','bars'],
-        'rejissor':    ['director','film','cinema','studio','scene','cut','creative'],
-        'jurnalist':   ['news','media','press','report','journalist','story','write'],
-        'yozuvchi':    ['writer','author','book','story','novel','pen','words','prose'],
-        'oshpaz':      ['chef','cook','food','recipe','kitchen','taste','meal','dish'],
-        'tadqiqotchi': ['research','science','lab','study','data','analyst','explore'],
-        'advokat':     ['lawyer','law','legal','court','justice','rights','counsel'],
-        'siyosatchi':  ['politic','leader','govern','power','state','party','vote'],
-        'general':     ['general','commander','military','army','force','chief','alpha'],
-        'kapitan':     ['captain','captain','leader','chief','command','naval','pilot'],
-        # Xarakter / Personality traits
-        'halol':       ['honest','pure','true','clean','fair','just','real'],
-        'mehnatkash':  ['worker','busy','active','hustle','grind','hard'],
-        'sabrli':      ['patient','calm','chill','steady','cool','wait'],
-        'irodali':     ['will','strong','iron','firm','solid','tough'],
-        'odil':        ['just','fair','true','right','even','pure'],
-        'samimiy':     ['sincere','real','pure','kind','true','heart'],
-        'fidoyi':      ['devote','loyal','hero','true','faith','care'],
-        'chaqqon':     ['fast','quick','swift','speed','ninja','dash'],
-        'zukko':       ['smart','clever','brain','wise','genius','sharp'],
-        'aqlli':       ['smart','genius','brain','clever','wise','mind','intellect','wiz'],
-        'kuchli':      ['strong','power','force','mighty','beast','bold','alpha','titan'],
-        'chiroyli':    ['beauty','pretty','glamour','style','looks','grace','glam','glow'],
-        'axmoq':       ['dumb','fool','crazy','wild','mad','joker','clown','loco','goof'],
-        'yovuz':       ['dark','evil','villain','shadow','night','void','doom','sinister'],
-        'jasur':       ['brave','bold','hero','courage','fearless','daring','valor'],
-        'mehribon':    ['kind','love','heart','warm','gentle','care','sweet','angel'],
-        'mard':        ['brave','bold','hero','manly','warrior','alpha','tough','steel'],
-        'shum':        ['tricky','sly','fox','sneaky','slick','clever','sharp'],
-        'oshna':       ['friend','buddy','bro','pal','mate','comrade','ally'],
-        # Brend / Brand
-        'reklama':     ['ad','ads','promo','market','brand','media','pr','sales'],
-        'sifat':       ['quality','pro','top','best','prime','elite','premium'],
-        'xizmat':      ['service','help','care','serve','pro','team'],
-        'kiyim':       ['wear','style','fashion','clothes','dress','trend'],
-        'avto':        ['auto','car','drive','motor','speed','ride','gear'],
-        'mebel':       ['wood','home','decor','house','design','room'],
-        'brendface':   ['brand','face','model','icon','image','style','glam','trend'],
-        'model':       ['model','style','glam','photo','face','look','pose','icon'],
-        'influencer':  ['influence','brand','social','content','creator','trend','viral'],
-        'blogger':     ['blog','vlog','media','content','creator','post'],
-        # Diniy / Religious
-        'hafiz':       ['hafiz','quran','islamic','muslim','faith','deen','sacred'],
-        'imam':        ['imam','islamic','muslim','faith','quran','deen','lead'],
-        # Tabiat / Nature
-        'osmon':       ['sky','cloud','heaven','azure','celestial','above','cosmos'],
-        'daryo':       ['river','stream','flow','current','wave','aqua','water'],
-        'tog':         ['mountain','peak','summit','ridge','alpine','highland','cliff'],
-        'olov':        ['fire','flame','blaze','burn','ember','spark','ignite','heat'],
-        'shamol':      ['wind','breeze','storm','air','gale','drift','zephyr'],
-        'yulduz':      ['star','stellar','astro','nova','cosmos','galaxy','shine'],
-        # Mashhur ismlar, mansab va boshqalar
-        'vazir':       ['minister','gov','chief','lead','head','exec'],
-        'hokim':       ['mayor','gov','chief','boss','leader','ruler'],
-        'rais':        ['chief','boss','head','chair','lead','exec'],
-        'boshliq':     ['boss','chief','head','lead','exec','captain'],
-        'yoldosh':     ['companion','friend','ally','mate','bro','partner'],
-        'beruniy':     ['genius','scholar','wise','science','astro','brain'],
-        'navoiy':      ['poet','writer','words','lyric','pen','author'],
-        'temur':       ['iron','king','ruler','conqueror','boss','chief'],
-        'bobur':       ['tiger','king','brave','hero','lion','chief'],
-        'mirzo':       ['prince','royal','noble','lord','king','chief'],
-        'sulton':      ['sultan','king','royal','ruler','boss','chief'],
-        'amir':        ['amir','commander','chief','leader','boss','lord'],
-        'hajviy':      ['comic','funny','joke','laugh','humor','smile','fun'],
-        'qiziqarli':   ['fun','cool','magic','wonder','hype','trend'],
+        # 50 ta kasb va lavozimlar
+        'haydovchi':   {'en': ['driver','drive','wheel','road','ride','moto','speed','racer','track'],
+                        'uz': ['haydovchi','yolovchi','yulchi','tezyurar','yoldosh','shofyor','ulovchi']},
+        'gulchi':      {'en': ['florist','flower','bloom','petal','bouquet','garden','rose','flora'],
+                        'uz': ['gulchi','gulzor','gulnoz','bogbon','gulchechak','guliston','chechak']},
+        'pulchi':      {'en': ['money','cash','fund','wealth','finance','capital','rich','coin','gold'],
+                        'uz': ['pulchi','boylik','xazina','daromad','moliyachi','boyvachcha','sarrofi']},
+        'bankir':      {'en': ['banker','bank','finance','capital','vault','credit','money','safe'],
+                        'uz': ['bankir','moliyachi','kreditchi','xazinachi','bankchi']},
+        'sotuvchi':    {'en': ['seller','sales','trade','shop','market','vendor','deal','store','merchant'],
+                        'uz': ['sotuvchi','savdogar','bozorchi','dokonchi','tijoratchi','bazozer']},
+        'dehqon':      {'en': ['farmer','farm','harvest','field','crop','grower','agri','soil'],
+                        'uz': ['dehqon','bogbon','ekinchi','yerchi','ziraotchi','chorvador']},
+        'chorvador':   {'en': ['herder','livestock','ranch','cattle','shepherd','pasture','farm'],
+                        'uz': ['chorvador','chopon','malchi','podachi','otchi']},
+        'baliqchi':    {'en': ['fisher','fish','angler','catch','sea','ocean','lake','river','net'],
+                        'uz': ['baliqchi','ovchi','baliqovchi','daryochi','suvchi']},
+        'temirchi':    {'en': ['smith','forge','iron','metal','anvil','craft','steel','blacksmith'],
+                        'uz': ['temirchi','ustachi','pichoqchi','lochin','asl_temir']},
+        'duradgor':    {'en': ['carpenter','wood','craft','builder','joiner','timber','lumber'],
+                        'uz': ['duradgor','yogochchi','ustachi','mebelchi','duradgorlik']},
+        'novvoy':      {'en': ['baker','bread','bakery','dough','oven','flour','pastry'],
+                        'uz': ['novvoy','nonvoy','pishiruvchi','tandirchi','nonpaz']},
+        'sartarosh':   {'en': ['barber','hair','cut','style','salon','trim','shear'],
+                        'uz': ['sartarosh','sochtarosh','ustaxonachi','chiroychi']},
+        'tikuvchi':    {'en': ['tailor','sew','stitch','fabric','fashion','design','dress','needle'],
+                        'uz': ['tikuvchi','duzchi','kiyimchi','chevar','kiyim_usta']},
+        'zargar':      {'en': ['jeweler','jewel','gold','gem','ring','craft','diamond','silver'],
+                        'uz': ['zargar','zargarlik','oltinchi','kumushchi','marvarid']},
+        'quruvchi':    {'en': ['builder','build','construct','mason','architect','brick','crane'],
+                        'uz': ['quruvchi','binokor','usta','loyiha_qur','gishtchi']},
+        'uchuvchi':    {'en': ['pilot','fly','sky','wing','jet','air','aero','flight','cloud'],
+                        'uz': ['uchuvchi','samolyotchi','osmonchi','lochin','parvozchi']},
+        'shifokor':    {'en': ['doctor','medic','health','clinic','heal','care','nurse','surgeon','doc'],
+                        'uz': ['shifokor','tabib','doxtir','shifo','malhamchi','loqmon']},
+        'muhandis':    {'en': ['engineer','build','design','tech','construct','mechanic','logic'],
+                        'uz': ['muhandis','injener','loyihachi','ustoz','chizmachi']},
+        'oshpaz':      {'en': ['chef','cook','food','recipe','kitchen','taste','bake','grill','dish'],
+                        'uz': ['oshpaz','oshxonachi','pazanda','kabobchi','oshpazlik','somsa_paz']},
+        'oqituvchi':   {'en': ['teacher','edu','tutor','learn','teach','school','mentor','class','lesson'],
+                        'uz': ['oqituvchi','muallim','ustoz','murabbiy','saboqchi','darschi']},
+        'murabbiy':    {'en': ['coach','mentor','trainer','teach','guide','master','fitness','gym','sport'],
+                        'uz': ['murabbiy','trener','ustoz','yolchi','yolboshchi']},
+        'dasturchi':   {'en': ['coder','dev','code','tech','hack','script','bytes','prog','build','stack','web'],
+                        'uz': ['dasturchi','kodchi','dastur_usta','kiber','tizimchi','dastur_uz']},
+        'bloger':      {'en': ['blog','vlog','media','content','creator','post','review','share','social'],
+                        'uz': ['bloger','vloger','ijodkor','fikrchi','media_uz','kanalchi']},
+        'jurnalist':   {'en': ['news','media','press','report','journalist','story','write','paper','info'],
+                        'uz': ['jurnalist','muxbir','gazetachi','habarchi','pressa','media_muxbir']},
+        'dizayner':    {'en': ['design','art','creative','visual','craft','pixel','studio','ux','ui','style'],
+                        'uz': ['dizayner','rassom','ijodkor','pixelchi','chiroychi','tarhchi']},
+        'fotograf':    {'en': ['photo','shoot','lens','capture','frame','snap','camera','focus','light'],
+                        'uz': ['fotograf','suratchi','tasvirchi','snapchi','kamera_uz','rasmchi']},
+        'musiqachi':   {'en': ['music','audio','sound','beat','melody','studio','dj','track','singer','song'],
+                        'uz': ['musiqachi','sozchi','ashulachi','beatchi','xonanda','musiqa_uz']},
+        'yozuvchi':    {'en': ['writer','author','book','story','novel','pen','words','prose','poet'],
+                        'uz': ['yozuvchi','shoir','qalamchi','muallif','kitobchi','adib']},
+        'advokat':     {'en': ['lawyer','law','legal','court','justice','rights','counsel','attorney'],
+                        'uz': ['advokat','huquqshunos','himoyachi','adolat','qonunchi']},
+        'rassom':      {'en': ['art','artist','paint','draw','creative','sketch','visual','brush','canvas'],
+                        'uz': ['rassom','ijodkor','rangtasvir','chizuvchi','tasvirchi','sanatkor']},
+        'qassob':      {'en': ['butcher','meat','knife','steak','chop','cleaver','chef'],
+                        'uz': ['qassob','goshtchi','pichoqchi','nimtachi']},
+        'buxgalter':   {'en': ['accountant','audit','calc','math','tax','ledger','bookkeeper','finance'],
+                        'uz': ['buxgalter','hisobchi','moliyachi','hisob_kitob','soliqchi']},
+        'tarjimon':    {'en': ['translator','lang','speak','words','lingual','polyglot','global'],
+                        'uz': ['tarjimon','tilchi','tarjima_uz','suhbatdosh']},
+        'blogger':     {'en': ['blog','vlog','media','content','creator','post','review','share'],
+                        'uz': ['blogger','bloger','ijodkor','vloger','media_uz']},
+        'youtuber':    {'en': ['youtube','vlog','content','creator','channel','video','tube','stream'],
+                        'uz': ['youtuber','videochi','kanalchi','ijodkor','streamchi']},
+        'haker':       {'en': ['hacker','dark','hack','cyber','ghost','anon','zero','void','shadow','sec'],
+                        'uz': ['haker','kiber_haker','anonim','soya','zero_uz','kiber_soqchi']},
+        'geymer':      {'en': ['gamer','game','play','gg','pro','clan','squad','noob','quest','apex'],
+                        'uz': ['geymer','oyinchi','kiber_sport','pro_geymer','klanchi']},
+        'streamer':    {'en': ['stream','live','gaming','broadcast','content','viewer','twitch','yt'],
+                        'uz': ['streamer','jonli_efir','oyinchi','ijodkor']},
+        'tadbirkor':   {'en': ['startup','invest','build','ceo','exec','found','venture','mogul','biz','trader'],
+                        'uz': ['tadbirkor','ishbilarmon','sarmoyachi','tijoratchi','investor_uz']},
+        'sudya':       {'en': ['judge','court','law','justice','order','legal','gavel'],
+                        'uz': ['sudya','hakam','odil','adolat_hakam']},
+        'arxitektor':  {'en': ['architect','design','plan','build','structure','construct','blueprint'],
+                        'uz': ['arxitektor','loyihachi','binokor','tarhchi']},
+        'veterinar':   {'en': ['vet','veterinary','animal','pet','doctor','care','wildlife'],
+                        'uz': ['veterinar','mol_tabib','hayvon_shifokor','tabib_pet']},
+        'psixolog':    {'en': ['psychologist','mind','soul','brain','calm','talk','heal','therapy'],
+                        'uz': ['psixolog','ruhiyat','ruhshunos','sirdosh','maslahatchi']},
+        'farmatsevt':  {'en': ['pharmacist','pharma','drug','pill','cure','chem','lab','clinic'],
+                        'uz': ['farmatsevt','dori_usta','dorixonachi','shifobaxsh']},
+        'harbiy':      {'en': ['soldier','military','army','force','guard','defend','combat','shield'],
+                        'uz': ['harbiy','askar','soqchi','qalqon','posbon','vatanparvar']},
+        'elektrik':    {'en': ['electrician','wire','spark','shock','power','volt','amp','grid'],
+                        'uz': ['elektrik','simchi','tokchi','quvvat_usta','nurchi']},
+        'santexnik':   {'en': ['plumber','pipe','water','flow','drain','leak','valve','fix'],
+                        'uz': ['santexnik','suvchi','simchi','usta_santex']},
+        'olim':        {'en': ['scholar','scientist','lab','research','theory','study','brain','smart'],
+                        'uz': ['olim','dono','donishmand','tadqiqotchi','zakovat','ilmchi']},
+        'hunarmand':   {'en': ['craft','maker','artisan','skill','forge','master'],
+                        'uz': ['hunarmand','ustakor','kasbdor']},
+        'rahbar':      {'en': ['boss','chief','leader','head','exec','manage','commander'],
+                        'uz': ['rahbar','boshliq','rais','amir','sarkarda']},
+        'savdo':       {'en': ['trade','deal','market','shop','sales','offer','sell','merch'],
+                        'uz': ['savdo','bozor','tijorat','dokon','savdogarlik']},
     }
 
     if cat.startswith('custom:'):
@@ -1068,26 +1071,48 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
             cw = 'user'
         c_set = set()
 
-        # 1. Semantik mavzu so'zlari — o'zbekcha mavzudan ingliz kalit so'zlar topish
-        theme_keys = []
+        # 1. Semantik mavzu so'zlari — o'zbekcha/inglizcha mavzudan sinonimlar topish
+        theme_keys_en = []
+        theme_keys_uz = []
         cw_norm = cw.replace("'", "").replace("'", "")
         for t_key, t_vals in _THEME_KEYWORDS.items():
             t_norm = t_key.replace("'", "")
             if cw_norm == t_norm or cw_norm in t_norm or t_norm in cw_norm:
-                theme_keys = t_vals
+                theme_keys_en = t_vals.get('en', [])
+                theme_keys_uz = t_vals.get('uz', [])
                 break
-        if not theme_keys:
-            # Qisman moslik: birinchi 5 harf mos kelsa
+        if not theme_keys_en:
+            # Qisman moslik
             for t_key, t_vals in _THEME_KEYWORDS.items():
                 if cw_norm[:5] == t_key[:5] and len(cw_norm) >= 4:
-                    theme_keys = t_vals
+                    theme_keys_en = t_vals.get('en', [])
+                    theme_keys_uz = t_vals.get('uz', [])
                     break
 
-        if theme_keys and lang == 'en':
-            # Semantik kalit so'zlardan faqat Ingliz tili tanlanganda foydalanamiz
+        if lang == 'uz' and theme_keys_uz:
+            nice_pfx_uz = ['sof', 'asl', 'top', 'mega', 'super', 'yangi', 'tezkor', 'taniqli']
+            nice_sfx_uz = ['uz', 'uzb', 'pro', 'official', 'online', 'bek', 'jon']
+            for kw in theme_keys_uz:
+                if valid(kw): c_set.add(kw)
+                for pfx in nice_pfx_uz:
+                    if valid(f'{pfx}_{kw}'): c_set.add(f'{pfx}_{kw}')
+                    if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                for sfx in nice_sfx_uz:
+                    if sfx in ('bek', 'jon'):
+                        if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                    else:
+                        if valid(f'{kw}_{sfx}'): c_set.add(f'{kw}_{sfx}')
+                        if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+            # Fallback/English combinations as well but with UZ style
+            if theme_keys_en:
+                for kw_en in theme_keys_en:
+                    if valid(f'{kw_en}_uz'): c_set.add(f'{kw_en}_uz')
+                    if valid(f'{kw_en}_uzb'): c_set.add(f'{kw_en}_uzb')
+                    if valid(f'{kw_en}pro'): c_set.add(f'{kw_en}pro')
+        elif lang == 'en' and theme_keys_en:
             nice_pfx = ['real','the','my','mr','iam','pro','neo','top','vip','super','mega','dark','hot','cool']
             nice_sfx = ['pro','vip','top','bot','ai','go','hub','zone','official','online']
-            for kw in theme_keys:
+            for kw in theme_keys_en:
                 if valid(kw): c_set.add(kw)
                 for pfx in nice_pfx[:10]:
                     combo = f'{pfx}{kw}'
@@ -1100,7 +1125,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                 for sfx2 in ['pro', 'official', 'online']:
                     if valid(f'{kw}{sfx2}'): c_set.add(f'{kw}{sfx2}')
                 # Kalit so'z juftliklari
-                for kw2 in theme_keys:
+                for kw2 in theme_keys_en:
                     if kw2 != kw:
                         combo = f'{kw}{kw2}'
                         if valid(combo): c_set.add(combo)
@@ -1114,7 +1139,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         if lang == 'uz':
             # Agar so'z maxsus tematik (kasb, narsa) bo'lmasa, yoki aniq ismlar ro'yxatida bo'lsa,
             # demak u ism. Unga ismlarga xos qo'shimchalarni qo'shamiz.
-            if not theme_keys or cw in UZ_MALE_NAMES or cw in UZ_FEMALE_NAMES:
+            if not theme_keys_uz or cw in UZ_MALE_NAMES or cw in UZ_FEMALE_NAMES:
                 custom_prefixes.extend(['shox_', 'mir_'])
                 custom_suffixes.extend(['bek', 'xon', 'jon', 'voy', 'boy'])
 
@@ -1128,8 +1153,6 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                 if s:
                     if valid(f'{base}{s}'): c_set.add(f'{base}{s}')
                     if valid(f'{base}_{s}'): c_set.add(f'{base}_{s}')
-            # Raqamli qo'shimchalar OLIB TASHLANDI — piyodax, piyoda7 kabi nomlar yo'q
-            # Faqat ma'noli so'z kombinatsiyalari saqlanadi
         pool = list(c_set)
 
     elif cat == 'qisqa':
@@ -1172,23 +1195,120 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         random.shuffle(words)
         pool = words
 
-    elif cat in ('brend', 'biznes', 'business'):
+    elif cat == 'ism':
         if lang == 'uz':
-            b_words = ['savdo', 'bozor', 'dokon', 'market', 'servis', 'uz', 'tijorat', 'group', 'media', 'studio', 'express']
-            bases = list(set(UZ_WORDS_CLEAN + uz_dict))
+            bases = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES))
+            suffixes_ism = ['', '_uz', '_uzb', '_official', 'bek', 'jon', 'xon', 'voy', 'boy', '_pro', '_online']
+            prefixes_ism = ['', 'real_', 'sof_', 'asl_']
         else:
-            b_words = ['store', 'shop', 'market', 'trade', 'brand', 'group', 'company', 'corp', 'studio', 'agency', 'media', 'express', 'center', 'global', 'service', 'hub', 'lab']
-            bases = list(set(nouns + EN_COOL_CLEAN))
-        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+            bases = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES))
+            suffixes_ism = ['', '_official', '_real', '_vip', '_pro', '_online']
+            prefixes_ism = ['', 'real_', 'the_', 'iam_', 'official_']
+        
+        bases = [str(w).lower() for w in bases if str(w).isalpha() and 3 <= len(str(w)) <= 10]
         random.shuffle(bases)
         var_pool = []
-        for w in bases[:800]:
+        for w in bases[:1000]:
+            if valid(w): var_pool.append(w)
+            for sfx in suffixes_ism[:8]:
+                if sfx:
+                    var_pool.append(f"{w}{sfx}")
+            for pfx in prefixes_ism[:3]:
+                if pfx:
+                    var_pool.append(f"{pfx}{w}")
+        random.shuffle(var_pool)
+        pool = var_pool
+
+    elif cat == 'familiya':
+        bases = list(set(UZ_SURNAMES))
+        suffixes_fam = ['', '_uz', '_uzb', '_official', '_pro', '_online']
+        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 12]
+        random.shuffle(bases)
+        var_pool = []
+        for w in bases[:1000]:
+            if valid(w): var_pool.append(w)
+            for sfx in suffixes_fam[:5]:
+                if sfx:
+                    var_pool.append(f"{w}{sfx}")
+        random.shuffle(var_pool)
+        pool = var_pool
+
+    elif cat in ('brend', 'biznes', 'business'):
+        if lang == 'uz':
+            bases = [
+                'savdo', 'bozor', 'dokon', 'market', 'servis', 'uz', 'tijorat', 'group', 
+                'media', 'studio', 'express', 'shirin', 'orzu', 'oliy', 'ishonch', 'hamkor', 
+                'umid', 'baraka', 'omad', 'sayohat', 'zamon', 'yulduz', 'makon', 'avlod', 
+                'nur', 'parvoz', 'sifat', 'milliy', 'bepul', 'ishonchli', 'tezkor', 'oson', 
+                'arzon', 'gozal', 'asl', 'sof', 'ideal', 'innovatsiya', 'tizim', 'tarmoq', 
+                'sarmoya', 'invest', 'moliya', 'baho', 'qulay', 'ishchi', 'tanlov'
+            ]
+            b_words = ['savdo', 'bozor', 'dokon', 'market', 'servis', 'uz', 'tijorat', 'group', 'media', 'studio', 'express']
+        else:
+            bases = [
+                'apex', 'prime', 'elite', 'vertex', 'nova', 'pulse', 'spark', 'flux', 'vortex', 
+                'orbit', 'axis', 'zenith', 'summit', 'peak', 'cortex', 'nexus', 'sonic', 'glow', 
+                'pure', 'smart', 'swift', 'bold', 'meta', 'quantum', 'matrix', 'delta', 'alpha', 
+                'omega', 'focus', 'vision', 'mind', 'gear', 'capital', 'global', 'future', 'smart'
+            ]
+            b_words = ['store', 'shop', 'market', 'trade', 'brand', 'group', 'company', 'corp', 'studio', 'agency', 'media', 'express', 'center', 'global', 'service', 'hub', 'lab']
+        
+        random.shuffle(bases)
+        var_pool = []
+        for w in bases:
+            if valid(w): var_pool.append(w)
             for bw in b_words[:8]:
                 var_pool.append(f"{w}_{bw}")
                 var_pool.append(f"{w}{bw}")
                 var_pool.append(f"{bw}_{w}")
         random.shuffle(var_pool)
         pool = var_pool
+
+    elif cat.startswith('lavozim') or cat.startswith('kasb'):
+        prof = ''
+        if ':' in cat:
+            prof = cat.split(':', 1)[1].strip()
+        
+        if not prof or prof not in _THEME_KEYWORDS:
+            prof = random.choice(list(_THEME_KEYWORDS.keys()))
+            
+        t_vals = _THEME_KEYWORDS.get(prof, {'en': [prof], 'uz': [prof]})
+        theme_keys_en = t_vals.get('en', [])
+        theme_keys_uz = t_vals.get('uz', [])
+        
+        c_set = set()
+        if lang == 'uz':
+            nice_pfx_uz = ['sof', 'asl', 'top', 'mega', 'super', 'yangi', 'tezkor', 'taniqli']
+            nice_sfx_uz = ['uz', 'uzb', 'pro', 'official', 'online', 'bek', 'jon']
+            for kw in theme_keys_uz:
+                if valid(kw): c_set.add(kw)
+                for pfx in nice_pfx_uz:
+                    if valid(f'{pfx}_{kw}'): c_set.add(f'{pfx}_{kw}')
+                    if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                for sfx in nice_sfx_uz:
+                    if sfx in ('bek', 'jon'):
+                        if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                    else:
+                        if valid(f'{kw}_{sfx}'): c_set.add(f'{kw}_{sfx}')
+                        if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+            if theme_keys_en:
+                for kw_en in theme_keys_en:
+                    if valid(f'{kw_en}_uz'): c_set.add(f'{kw_en}_uz')
+                    if valid(f'{kw_en}_uzb'): c_set.add(f'{kw_en}_uzb')
+                    if valid(f'{kw_en}pro'): c_set.add(f'{kw_en}pro')
+        else:
+            nice_pfx = ['real','the','my','mr','iam','pro','neo','top','vip','super','mega','dark','hot','cool']
+            nice_sfx = ['pro','vip','top','bot','ai','go','hub','zone','official','online']
+            for kw in theme_keys_en:
+                if valid(kw): c_set.add(kw)
+                for pfx in nice_pfx[:10]:
+                    if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                for sfx in nice_sfx[:10]:
+                    if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                    if valid(f'{kw}_{sfx}'): c_set.add(f'{kw}_{sfx}')
+                for sfx2 in ['pro', 'official', 'online']:
+                    if valid(f'{kw}{sfx2}'): c_set.add(f'{kw}{sfx2}')
+        pool = list(c_set)
 
     elif cat in ('gaming', 'game'):
         g_words = ['game', 'gaming', 'play', 'player', 'pro', 'gg', 'craft', 'sniper', 'kill', 'quest', 'clan', 'squad', 'legend', 'cyber', 'esports']
@@ -1225,55 +1345,89 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         pool = var_pool
 
     elif cat == 'turli':
-        # Har xil uslub aralash: brend, ism, tabiat, texno, ijodiy
-        style_words = {
-            'uz': [
-                'koinot','olov','botir','usta','tezkor','ulug','yulduz',
-                'bulut','qoplon','arslon','lochin','shamol','daryo','togʼ',
-                'nurli','jasur','aqlli','jasorat','mard','zafar'
-            ],
-            'en': [
-                'storm','forge','nova','spark','echo','flux','edge',
-                'core','drift','vault','lynx','hawk','ridge','dawn',
-                'swift','blaze','axon','prime','orbit','craft'
-            ]
-        }
-        style_sfx = {
-            'uz': ['uz','uzb','bot','kanal','clan','pro','vip','top','hub','usta'],
-            'en': ['pro','hub','lab','hq','bot','zone','clan','co','ai','official']
-        }
-        style_pfx = {
-            'uz': ['real','the','mega','ultra','super','vip','iam','mr','top'],
-            'en': ['real','the','neo','dark','cyber','ultra','super','vip','iam']
-        }
-        if lang == 'uz':
-            bases_all = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_WORDS_CLEAN + style_words['uz']))
-        else:
-            bases_all = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES + EN_COOL_CLEAN + nouns + style_words['en']))
-        bases_all = [str(w).lower() for w in bases_all if str(w).isalpha() and 4 <= len(str(w)) <= 10]
-        random.shuffle(bases_all)
-        sfx_list = style_sfx.get(lang, style_sfx['en'])
-        pfx_list = style_pfx.get(lang, style_pfx['en'])
-        var_pool = []
-        for w in bases_all[:600]:
-            # Uslub 1: so'z + qisqartma
-            for sfx in sfx_list[:5]:
-                var_pool.append(f"{w}_{sfx}")
-                var_pool.append(f"{w}{sfx}")
-            # Uslub 2: prefiks + so'z
-            for pfx in pfx_list[:4]:
-                var_pool.append(f"{pfx}_{w}")
-                var_pool.append(f"{pfx}{w}")
-            # Uslub 3: so'z + raqam
-            for num in ['7','21','33','99','2025','007']:
-                var_pool.append(f"{w}{num}")
-            # Uslub 4: ikki so'z birikmasi
-            if bases_all:
-                pair = random.choice(bases_all)
-                if 7 <= len(w + pair) <= 14:
-                    var_pool.append(f"{w}{pair}")
-        random.shuffle(var_pool)
-        pool = var_pool
+        selected_style = random.choice(['ism', 'brend', 'tabiat', 'kasb'])
+        if selected_style == 'ism':
+            if lang == 'uz':
+                bases = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES))
+                suffixes = ['', '_uz', '_uzb', '_official', 'bek', 'jon', '_pro', '_online']
+                prefixes = ['', 'real_', 'sof_', 'asl_']
+            else:
+                bases = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES))
+                suffixes = ['', '_official', '_real', '_vip', '_pro', '_online']
+                prefixes = ['', 'real_', 'the_', 'iam_', 'official_']
+            bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 9]
+            random.shuffle(bases)
+            var_pool = []
+            for w in bases[:800]:
+                if valid(w): var_pool.append(w)
+                for sfx in suffixes[:6]:
+                    if sfx: var_pool.append(f"{w}{sfx}")
+                for pfx in prefixes[:2]:
+                    if pfx: var_pool.append(f"{pfx}{w}")
+            pool = var_pool
+        elif selected_style == 'brend':
+            if lang == 'uz':
+                bases = ['shirin', 'orzu', 'oliy', 'ishonch', 'hamkor', 'umid', 'baraka', 'omad', 'sayohat', 'zamon', 'yulduz', 'makon', 'avlod']
+                b_words = ['savdo', 'bozor', 'dokon', 'market', 'servis', 'group', 'studio']
+            else:
+                bases = ['apex', 'prime', 'elite', 'vertex', 'nova', 'pulse', 'spark', 'flux', 'vortex', 'orbit']
+                b_words = ['store', 'shop', 'market', 'brand', 'group', 'company', 'studio']
+            random.shuffle(bases)
+            var_pool = []
+            for w in bases:
+                if valid(w): var_pool.append(w)
+                for bw in b_words:
+                    var_pool.append(f"{w}_{bw}")
+                    var_pool.append(f"{w}{bw}")
+                    var_pool.append(f"{bw}_{w}")
+            pool = var_pool
+        elif selected_style == 'tabiat':
+            if lang == 'uz':
+                bases = ['osmon', 'yulduz', 'daryo', 'tog', 'olov', 'shamol', 'bulut', 'qoplon', 'arslon', 'lochin', 'burgut']
+                suffixes = ['_uz', '_uzb', '_pro', '_vip', '_official']
+                prefixes = ['real_', 'the_', 'mega_', 'super_']
+            else:
+                bases = ['storm', 'forge', 'nova', 'spark', 'echo', 'flux', 'edge', 'core', 'drift', 'vault', 'lynx', 'hawk']
+                suffixes = ['_pro', '_hq', '_club', '_hub', '_lab']
+                prefixes = ['real_', 'the_', 'neo_', 'cyber_']
+            random.shuffle(bases)
+            var_pool = []
+            for w in bases:
+                if valid(w): var_pool.append(w)
+                for sfx in suffixes:
+                    var_pool.append(f"{w}{sfx}")
+                for pfx in prefixes:
+                    var_pool.append(f"{pfx}{w}")
+            pool = var_pool
+        else: # kasb
+            prof = random.choice(list(_THEME_KEYWORDS.keys()))
+            t_vals = _THEME_KEYWORDS[prof]
+            theme_keys_en = t_vals.get('en', [])
+            theme_keys_uz = t_vals.get('uz', [])
+            c_set = set()
+            if lang == 'uz':
+                nice_pfx_uz = ['sof', 'asl', 'top', 'mega']
+                nice_sfx_uz = ['uz', 'uzb', 'pro', 'official', 'bek', 'jon']
+                for kw in theme_keys_uz:
+                    if valid(kw): c_set.add(kw)
+                    for pfx in nice_pfx_uz:
+                        if valid(f'{pfx}_{kw}'): c_set.add(f'{pfx}_{kw}')
+                        if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                    for sfx in nice_sfx_uz:
+                        if sfx in ('bek', 'jon'):
+                            if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                        else:
+                            if valid(f'{kw}_{sfx}'): c_set.add(f'{kw}_{sfx}')
+            else:
+                nice_pfx = ['real','the','my','mr','iam','pro','neo','top']
+                nice_sfx = ['pro','vip','top','bot','ai']
+                for kw in theme_keys_en:
+                    if valid(kw): c_set.add(kw)
+                    for pfx in nice_pfx:
+                        if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                    for sfx in nice_sfx:
+                        if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+            pool = list(c_set)
 
     else:
         from bot.words import _is_pronounceable
@@ -3386,6 +3540,14 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             elif cat_key == 'turli':
                 # Turli ko'rinishdagi: 6-14 belgi, chiroyli kombinatsiyalar
                 return 6 <= len(uname) <= 14
+            elif cat_key == 'ism':
+                return uname.isalpha() and 4 <= len(uname) <= 12
+            elif cat_key == 'familiya':
+                return uname.isalpha() and 5 <= len(uname) <= 14
+            elif cat_key == 'brend':
+                return 4 <= len(uname) <= 18
+            elif cat_key in ('lavozim', 'kasb'):
+                return 4 <= len(uname) <= 20
             elif cat_key == 'custom':
                 # O'zim kiritaman: so'zning o'zi yoki unga tegishli kombinatsiya
                 base = cat.split(':', 1)[1].strip().lower() if ':' in cat else ''
@@ -6479,6 +6641,11 @@ async def api_search_start(request: Request):
         'qisqa': 15000,   # Qisqa noyob so'z
         'turli': 10000,   # Turli ko'rinishdagi
         'custom': 5000,   # O'zim kiritaman
+        'ism': 25000,
+        'familiya': 25000,
+        'brend': 25000,
+        'lavozim': 25000,
+        'kasb': 25000,
     }
     # custom: o'zim kiritaman
     cat_key = cat.split(':')[0] if ':' in cat else cat
