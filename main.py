@@ -1278,8 +1278,8 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         
         c_set = set()
         if lang == 'uz':
-            nice_pfx_uz = ['sof', 'asl', 'top', 'mega', 'super', 'yangi', 'tezkor', 'taniqli']
-            nice_sfx_uz = ['uz', 'uzb', 'pro', 'official', 'online', 'bek', 'jon']
+            nice_pfx_uz = ['sof', 'asl', 'top', 'mega', 'super', 'yangi', 'tezkor', 'taniqli', 'ezgu', 'bepul', 'ishonchli', 'tez', 'bosh', 'boshliq', 'usta', 'shox', 'mir', 'xoja', 'bek']
+            nice_sfx_uz = ['uz', 'uzb', 'pro', 'official', 'online', 'bek', 'jon', 'xon', 'voy', 'boy', 'uz_official', 'media', 'tv', 'tijorat', 'savdo', 'market', 'dokon', 'bozor', 'uzb_pro']
             for kw in theme_keys_uz:
                 if valid(kw): c_set.add(kw)
                 for pfx in nice_pfx_uz:
@@ -3545,9 +3545,9 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             elif cat_key == 'familiya':
                 return uname.isalpha() and 5 <= len(uname) <= 14
             elif cat_key == 'brend':
-                return 4 <= len(uname) <= 18
+                return 4 <= len(uname) <= 26
             elif cat_key in ('lavozim', 'kasb'):
-                return 4 <= len(uname) <= 20
+                return 4 <= len(uname) <= 28
             elif cat_key == 'custom':
                 # O'zim kiritaman: so'zning o'zi yoki unga tegishli kombinatsiya
                 base = cat.split(':', 1)[1].strip().lower() if ':' in cat else ''
