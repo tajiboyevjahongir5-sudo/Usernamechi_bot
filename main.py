@@ -421,11 +421,15 @@ async def init_db():
                 username TEXT UNIQUE NOT NULL,
                 quality_score INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'hunting',
+                last_checked REAL DEFAULT 0,
                 created_at REAL DEFAULT (strftime('%s','now')),
                 claimed_at REAL
             )
         """)
+        try: await db.execute("ALTER TABLE admin_premium_targets ADD COLUMN last_checked REAL DEFAULT 0")
+        except Exception: pass
         await db.execute("CREATE INDEX IF NOT EXISTS idx_admin_premium_status ON admin_premium_targets(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_admin_premium_score ON admin_premium_targets(quality_score, last_checked);")
 
         await db.commit()
         
@@ -4383,104 +4387,83 @@ async def monitoring_loop(bot):
 
 # ─── ADMIN PREMIUM USERNAME HUNTER ─────────────────────
 
-# Premium so'zlar lug'ati — faqat qisqa, manoli, chiroyli nomlar
-_PREMIUM_WORDS = {
-    # O'zbek ismlari (5-8 harf) — eng ommabop
-    'anvar', 'aziza', 'barno', 'bahrom', 'bobur', 'botir', 'diyor', 'dilbar',
-    'erkin', 'farrux', 'feruza', 'gavhar', 'gulnor', 'hamid', 'hayot', 'hilol',
-    'ilhom', 'iroda', 'jamol', 'jasur', 'kamol', 'laylo', 'lazzat', 'madina',
-    'mahbub', 'malika', 'mansur', 'maqsud', 'mirzo', 'mohira', 'murod', 'nafisa',
-    'nasiba', 'navro', 'nilufar', 'nodir', 'nodira', 'nozima', 'obid', 'odina',
-    'parviz', 'qamar', 'ravshan', 'rustam', 'sabina', 'saodat', 'sarvar', 'shahlo',
-    'shaxlo', 'sitora', 'suhrob', 'sulton', 'temur', 'tohir', 'umida', 'vohid',
-    'yulduz', 'zarif', 'zafar', 'zilola', 'ziyod', 'zuhro', 'zuhra', 'behzod',
-    'doston', 'eldor', 'firuz', 'husan', 'ismoil', 'javlon', 'komil', 'lochin',
-    'mavlon', 'nargiz', 'rahim', 'sanjar', 'timur', 'ulmas', 'xurshid',
-    # O'zbek so'zlari — qisqa, go'zal, manoli
-    'oltin', 'kumush', 'bahor', 'yulduz', 'quyosh', 'bulut', 'shamol', 'sahro',
-    'daryo', 'deniz', 'osmon', 'turon', 'vatan', 'orzuv', 'umid', 'mehr',
-    'ishonch', 'sabr', 'savob', 'ezgulik', 'nurli', 'zilol', 'zamin',
-    'oqshom', 'tafakkur', 'hikmat', 'fazilat', 'saodat', 'baxt', 'davlat',
-    'dovon', 'chorvod', 'marjon', 'sadaf', 'gavhar', 'durr', 'javohir',
-    'baxmal', 'atlas', 'ipak', 'kumush', 'bronza', 'temir', 'olmos',
-    'lochin', 'burgut', 'layla', 'tohir', 'shirin', 'farhod',
-    # Inglizcha qisqa premium so'zlar (5-8 harf)
-    'flame', 'storm', 'ocean', 'lunar', 'solar', 'vivid', 'noble', 'raven',
-    'frost', 'blaze', 'atlas', 'nexus', 'prism', 'orbit', 'pulse', 'sigma',
-    'alpha', 'delta', 'omega', 'sonic', 'titan', 'venom', 'cipher', 'zenith',
-    'ember', 'ivory', 'onyx', 'opal', 'pearl', 'ruby', 'topaz', 'coral',
-    'cedar', 'maple', 'birch', 'aspen', 'haven', 'realm', 'crest', 'valor',
-    'astra', 'lyric', 'mirth', 'spark', 'swift', 'quest', 'grace', 'bliss',
-    'charm', 'dream', 'faith', 'glory', 'honor', 'lucid', 'magic', 'mystic',
-    'peace', 'prime', 'royal', 'saint', 'steel', 'stone', 'surge', 'truth',
-    'ultra', 'unity', 'verse', 'vigor', 'vivid', 'wrath', 'youth', 'zephyr',
-    'pixel', 'metro', 'retro', 'turbo', 'hydro', 'astro', 'crypto', 'cyber',
-    'macro', 'micro', 'neuro', 'proto', 'ultra', 'infra',
-    # Brend / texnologiya so'zlari
-    'savdo', 'ustoz', 'bozor', 'market', 'trend', 'brand', 'elite', 'prime',
-    'smart', 'focus', 'power', 'craft', 'forge', 'build', 'drive', 'boost',
-    'logic', 'pixel', 'cloud', 'stack', 'rapid', 'agile', 'solid', 'fresh',
-}
-
-def _is_premium_quality(uname: str) -> bool:
-    """Faqat chinakam premium sifatli usernamelarni o'tkazadi.
-    Qisqa (5-8 harf), faqat harflar, talaffuz qilinadigan, lug'atda bor.
-    """
-    u = uname.lower().strip()
-    # 1. Faqat harflar, 5-8 ta
-    if not u.isalpha() or not (5 <= len(u) <= 8):
-        return False
-    # 2. Ketma-ket 4+ undosh harf yo'q (talaffuz qilish mumkin)
-    vowels = set('aeiouyo')
-    consonant_streak = 0
-    for ch in u:
-        if ch in vowels:
-            consonant_streak = 0
-        else:
-            consonant_streak += 1
-            if consonant_streak >= 4:
-                return False
-    # 3. Ketma-ket 3+ unli harf yo'q (g'alati ko'rinishni oldini olish)
-    vowel_streak = 0
-    for ch in u:
-        if ch in vowels:
-            vowel_streak += 1
-            if vowel_streak >= 4:
-                return False
-        else:
-            vowel_streak = 0
-    # 4. Ma'noli so'z yoki ism bo'lishi kerak
-    if u in _PREMIUM_WORDS:
-        return True
-    return False
-
-
-def generate_premium_targets(count: int = 500) -> list:
-    """Admin uchun yuqori sifatli premium username nomzodlarni generatsiya qiladi."""
-    candidates = set()
+def load_all_premium_targets() -> dict:
+    """Admin uchun barcha 5-8 harfli sof o'zbekcha ismlar, estetik so'zlar va lug'at boyligini yuklaydi."""
+    from bot.words import UZ_MALE_NAMES, UZ_FEMALE_NAMES, UZ_SURNAMES
     
-    for word in _PREMIUM_WORDS:
-        w = word.lower().strip()
-        if _is_premium_quality(w):
-            candidates.add(w)
+    valid_re = re.compile(r'^[a-z]{5,8}$')
+    vowels = set('aeiouy')
     
-    result = list(candidates)
-    random.shuffle(result)
-    return result[:count]
+    def clean_word(raw):
+        w = str(raw).lower().strip().replace("'", '').replace('`', '').replace('ʻ', '').replace('ʼ', '')
+        if not valid_re.match(w):
+            return None
+        if sum(1 for ch in w if ch in vowels) < 2:
+            return None
+        c_streak = 0
+        v_streak = 0
+        for ch in w:
+            if ch in vowels:
+                c_streak = 0
+                v_streak += 1
+                if v_streak >= 4:
+                    return None
+            else:
+                v_streak = 0
+                c_streak += 1
+                if c_streak >= 4:
+                    return None
+        return w
+
+    scored_targets = {}  # {word: score}
+    
+    # 1. Mashhur o'zbek ismlari (eng yuqori prioritet: +40 bonus ball)
+    for n in UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES:
+        w = clean_word(n)
+        if w:
+            base_score = 100 - (len(w) - 5) * 20
+            scored_targets[w] = max(scored_targets.get(w, 0), base_score + 40)
+            
+    # 2. Inglizcha va brend sara so'zlar
+    elite_curated = [
+        'flame', 'storm', 'ocean', 'lunar', 'solar', 'vivid', 'noble', 'raven',
+        'frost', 'blaze', 'atlas', 'nexus', 'prism', 'orbit', 'pulse', 'sigma',
+        'alpha', 'delta', 'omega', 'sonic', 'titan', 'venom', 'cipher', 'zenith',
+        'ember', 'ivory', 'pearl', 'topaz', 'coral', 'haven', 'realm', 'crest',
+        'valor', 'spark', 'swift', 'quest', 'grace', 'bliss', 'charm', 'dream',
+        'faith', 'glory', 'honor', 'lucid', 'magic', 'mystic', 'peace', 'prime',
+        'royal', 'saint', 'steel', 'stone', 'surge', 'truth', 'ultra', 'unity',
+        'savdo', 'ustoz', 'bozor', 'market', 'trend', 'brand', 'elite', 'smart',
+        'focus', 'power', 'craft', 'forge', 'build', 'drive', 'boost', 'logic',
+        'pixel', 'cloud', 'stack', 'rapid', 'agile', 'solid', 'fresh'
+    ]
+    for ew in elite_curated:
+        w = clean_word(ew)
+        if w:
+            base_score = 100 - (len(w) - 5) * 20
+            scored_targets[w] = max(scored_targets.get(w, 0), base_score + 30)
+
+    # 3. uz_words_latin.txt (16,000+ ta sof o'zbekcha so'z)
+    latin_path = os.path.join(os.path.dirname(__file__), 'bot', 'uz_words_latin.txt')
+    if os.path.exists(latin_path):
+        try:
+            with open(latin_path, encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    w = clean_word(line)
+                    if w:
+                        base_score = 100 - (len(w) - 5) * 20
+                        scored_targets[w] = max(scored_targets.get(w, 0), base_score)
+        except Exception as e:
+            logger.error(f"uz_words_latin yuklashda xato: {e}")
+                    
+    return scored_targets
 
 
 async def admin_premium_hunter_loop(bot):
     """Admin profili uchun premium username qidirish va kanal ochib band qilish loopi.
     
-    Ishlash tartibi:
-    1. Premium lug'atdan yuqori sifatli usernamelar generatsiya qilinadi
-    2. DB ga yoziladi (takrorlanmaydigan)
-    3. Har 10-15 soniyada bitta username tekshiriladi:
-       - HTTP orqali bo'shligini tekshirish
-       - Bo'sh bo'lsa → Telethon API tasdiqlash
-       - Tasdiqlansa → Kanal ochib username biriktirish
-       - Adminga xabar yuborish
-    4. Har 6 soatda target'lar yangilanadi
+    16,900+ ta 5-8 harfli toza o'zbekcha ismlar va so'zlarni muntazam poylab boradi.
+    Eng qisqa va qimmatli nomlar (5 harfli ismlar) birinchi navbatda tekshiriladi.
     """
     import aiohttp
     from telethon.tl.functions.account import CheckUsernameRequest
@@ -4492,41 +4475,41 @@ async def admin_premium_hunter_loop(bot):
         UsernamePurchaseAvailableError
     )
 
-    await asyncio.sleep(30)  # Server ishga tushgandan keyin 30s kutish
+    await asyncio.sleep(25)  # Server to'liq ishga tushishini kutish
 
     if not ADMIN_IDS:
-        logger.warning("⚠️ Admin Premium Hunter: ADMIN_IDS bo'sh — loop o'chirildi.")
+        logger.warning("⚠️ Admin Premium Hunter: ADMIN_IDS bo'sh — loop to'xtatildi.")
         return
 
     admin_id = ADMIN_IDS[0]
     logger.info(f"🏆 Admin Premium Hunter ishga tushdi (Admin: {admin_id})")
 
     last_refill_ts = 0
-    REFILL_INTERVAL = 6 * 3600  # Har 6 soatda yangi target'lar to'ldirish
+    REFILL_INTERVAL = 12 * 3600  # Har 12 soatda yangi targetlar bazasini yangilash
     taken_cache = {}  # {uname: expiry_ts} — band nomlarni keshda saqlash
 
     http_session = None
 
     while True:
         try:
-            # ── 1. Target'larni to'ldirish (har 6 soatda) ──
             now = time.time()
+
+            # ── 1. Target'larni to'ldirish (barcha 16,900+ nomlarni DB ga yuklash) ──
             if now - last_refill_ts > REFILL_INTERVAL:
-                targets = generate_premium_targets(500)
+                targets = load_all_premium_targets()
                 if targets:
                     async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-                        inserted = 0
-                        for t in targets:
-                            try:
-                                await db.execute(
-                                    "INSERT OR IGNORE INTO admin_premium_targets (username, quality_score) VALUES (?, ?)",
-                                    (t, len(t) * 10)  # Qisqa bo'lsa — yuqori ball
-                                )
-                                inserted += 1
-                            except Exception:
-                                pass
+                        # Ommaviy tezkor kiritish
+                        await db.executemany(
+                            "INSERT OR IGNORE INTO admin_premium_targets (username, quality_score, last_checked) VALUES (?, ?, 0)",
+                            [(w, score) for w, score in targets.items()]
+                        )
                         await db.commit()
-                    logger.info(f"🏆 Admin Premium Hunter: {inserted} ta yangi target qo'shildi (jami lug'at: {len(targets)})")
+                        
+                        async with db.execute("SELECT COUNT(*) FROM admin_premium_targets WHERE status='hunting'") as cur:
+                            total_cnt = (await cur.fetchone())[0]
+                            
+                    logger.info(f"🏆 Admin Premium Hunter: Jami {len(targets)} ta nom bazada faol (Hozir poylanayotgan: {total_cnt} ta)!")
                 last_refill_ts = now
 
             # ── 2. Admin sessiyasini olish ──
@@ -4539,21 +4522,32 @@ async def admin_premium_hunter_loop(bot):
             admin_session = admin_user['session_string']
 
             # ── 3. Band bo'lgan kesh nomlarini tozalash ──
-            expired_keys = [k for k, v in taken_cache.items() if v < time.time()]
+            expired_keys = [k for k, v in taken_cache.items() if v < now]
             for k in expired_keys:
                 del taken_cache[k]
 
-            # ── 4. Hunting statusdagi targetlarni olish ──
+            # ── 4. Hunting statusdagi targetlarni olish (Rotatsiya bilan: eng yuqori ball va eng uzoq tekshirilmagan) ──
+            cooldown_threshold = now - 7200  # 2 soat
             async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                 db.row_factory = aiosqlite.Row
                 async with db.execute(
                     "SELECT id, username, quality_score FROM admin_premium_targets "
-                    "WHERE status='hunting' ORDER BY quality_score DESC LIMIT 100"
+                    "WHERE status='hunting' AND (last_checked IS NULL OR last_checked < ?) "
+                    "ORDER BY quality_score DESC, last_checked ASC LIMIT 100",
+                    (cooldown_threshold,)
                 ) as c:
                     hunting_targets = await c.fetchall()
 
+                # Agar barcha 100 ta cooldown da bo'lsa, oddiy navbat bilan olamiz
+                if not hunting_targets:
+                    async with db.execute(
+                        "SELECT id, username, quality_score FROM admin_premium_targets "
+                        "WHERE status='hunting' ORDER BY last_checked ASC LIMIT 100"
+                    ) as c2:
+                        hunting_targets = await c2.fetchall()
+
             if not hunting_targets:
-                logger.debug("🏆 Admin Premium Hunter: Hunting target yo'q — 120s kutilmoqda")
+                logger.debug("🏆 Admin Premium Hunter: Poylash uchun target topilmadi — 120s kutilmoqda")
                 await asyncio.sleep(120)
                 continue
 
@@ -4573,6 +4567,11 @@ async def admin_premium_hunter_loop(bot):
                     continue
 
                 try:
+                    # Oxirgi tekshiruv vaqtini DB ga yozib qo'yamiz (keyingi targetlarga navbat berish uchun)
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                        await db.execute("UPDATE admin_premium_targets SET last_checked=? WHERE id=?", (time.time(), target_id))
+                        await db.commit()
+
                     # 6a. HTTP tekshiruv
                     try:
                         async with http_session.get(
@@ -4587,16 +4586,16 @@ async def admin_premium_hunter_loop(bot):
                                 continue
                             text = await resp.text()
                     except asyncio.TimeoutError:
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(4)
                         continue
                     except Exception:
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(4)
                         continue
 
                     if is_username_occupied_html(text):
-                        # Band — keshga qo'shamiz (6 soat)
-                        taken_cache[uname] = time.time() + 21600
-                        await asyncio.sleep(random.uniform(8, 15))
+                        # Band — keshga qo'shamiz (2 soat)
+                        taken_cache[uname] = time.time() + 7200
+                        await asyncio.sleep(random.uniform(8, 14))
                         continue
 
                     # 6b. HTTP bo'sh ko'rindi — Telethon API tasdiqlash
@@ -4636,11 +4635,11 @@ async def admin_premium_hunter_loop(bot):
                     except Exception as ce:
                         logger.debug(f"🏆 CheckUsername xato @{uname}: {ce}")
                         taken_cache[uname] = time.time() + 3600
-                        await asyncio.sleep(10)
+                        await asyncio.sleep(8)
                         continue
 
                     if not api_free:
-                        await asyncio.sleep(random.uniform(8, 15))
+                        await asyncio.sleep(random.uniform(8, 14))
                         continue
 
                     # 6c. BO'SH! Kanal ochib band qilamiz
@@ -4741,8 +4740,8 @@ async def admin_premium_hunter_loop(bot):
                 except Exception as target_err:
                     logger.debug(f"🏆 Target tekshiruv xatosi @{uname}: {target_err}")
 
-                # Har bir tekshiruv orasida 10-15 soniya kutamiz (rate-limit oldini olish)
-                await asyncio.sleep(random.uniform(10, 15))
+                # Har bir tekshiruv orasida 8-12 soniya kutamiz
+                await asyncio.sleep(random.uniform(8, 12))
 
         except Exception as loop_err:
             import traceback
