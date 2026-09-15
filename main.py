@@ -4388,7 +4388,9 @@ async def monitoring_loop(bot):
 # ─── ADMIN PREMIUM USERNAME HUNTER ─────────────────────
 
 def load_all_premium_targets() -> dict:
-    """Admin uchun barcha 5-8 harfli sof o'zbekcha ismlar, estetik so'zlar va lug'at boyligini yuklaydi."""
+    """Admin uchun faqat chinakam premium usernamelarni yuklaydi.
+    Manba: o'zbek ismlari + qo'lda tanlangan go'zal so'zlar. Lug'atdan tasodifiy so'z OLMAYDI.
+    """
     from bot.words import UZ_MALE_NAMES, UZ_FEMALE_NAMES, UZ_SURNAMES
     
     valid_re = re.compile(r'^[a-z]{5,8}$')
@@ -4401,7 +4403,6 @@ def load_all_premium_targets() -> dict:
         w = str(raw).lower().strip().replace("'", '').replace('`', '').replace('ʻ', '').replace('ʼ', '')
         if not valid_re.match(w):
             return None
-        # Fe'l va grammatik qo'shimchalarni filtrlash
         if any(w.endswith(s) for s in _BAD_SUFFIXES):
             return None
         if sum(1 for ch in w if ch in vowels) < 2:
@@ -4423,15 +4424,24 @@ def load_all_premium_targets() -> dict:
 
     scored_targets = {}  # {word: score}
     
-    # 1. Mashhur o'zbek ismlari (eng yuqori prioritet: +40 bonus ball)
+    # 1. O'zbek ismlari — eng qimmatli username manba (ismlar doim premium!)
     for n in UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES:
         w = clean_word(n)
         if w:
-            base_score = 100 - (len(w) - 5) * 20
-            scored_targets[w] = max(scored_targets.get(w, 0), base_score + 40)
+            # Qisqa ism = qimmatroq: 5 harf=140, 6=120, 7=100, 8=80
+            base_score = 140 - (len(w) - 5) * 20
+            scored_targets[w] = max(scored_targets.get(w, 0), base_score)
             
-    # 2. Inglizcha va brend sara so'zlar
-    elite_curated = [
+    # 2. Qo'lda tanlangan premium so'zlar — faqat chiroyli, manoli, username sifatida yaxshi
+    _CURATED_PREMIUM = [
+        # O'zbek — tabiat, qimmatbaho, go'zal tushunchalar
+        'oltin', 'kumush', 'bahor', 'yulduz', 'quyosh', 'bulut', 'shamol',
+        'daryo', 'deniz', 'osmon', 'turon', 'vatan', 'sahro', 'dovon',
+        'marjon', 'sadaf', 'gavhar', 'javohir', 'olmos', 'temir', 'bronza',
+        'atlas', 'ipak', 'baxmal', 'lochin', 'burgut', 'shirin', 'farhod',
+        'layla', 'doston', 'hikmat', 'fazilat', 'davlat', 'zilol', 'nurli',
+        'baxt', 'mehr', 'oqshom', 'zamin', 'sarob', 'pahta', 'tafakkur',
+        # Inglizcha — qisqa, estetik, brend-worthy
         'flame', 'storm', 'ocean', 'lunar', 'solar', 'vivid', 'noble', 'raven',
         'frost', 'blaze', 'atlas', 'nexus', 'prism', 'orbit', 'pulse', 'sigma',
         'alpha', 'delta', 'omega', 'sonic', 'titan', 'venom', 'cipher', 'zenith',
@@ -4439,28 +4449,18 @@ def load_all_premium_targets() -> dict:
         'valor', 'spark', 'swift', 'quest', 'grace', 'bliss', 'charm', 'dream',
         'faith', 'glory', 'honor', 'lucid', 'magic', 'mystic', 'peace', 'prime',
         'royal', 'saint', 'steel', 'stone', 'surge', 'truth', 'ultra', 'unity',
+        'verse', 'vigor', 'youth', 'zephyr', 'pixel', 'metro', 'retro', 'turbo',
+        'hydro', 'astro', 'cyber', 'proto', 'infra', 'astra', 'lyric', 'mirth',
+        # Brend / texno / savdo — professional username uchun
         'savdo', 'ustoz', 'bozor', 'market', 'trend', 'brand', 'elite', 'smart',
         'focus', 'power', 'craft', 'forge', 'build', 'drive', 'boost', 'logic',
-        'pixel', 'cloud', 'stack', 'rapid', 'agile', 'solid', 'fresh'
+        'cloud', 'stack', 'rapid', 'agile', 'solid', 'fresh', 'super', 'chief',
     ]
-    for ew in elite_curated:
+    for ew in _CURATED_PREMIUM:
         w = clean_word(ew)
         if w:
-            base_score = 100 - (len(w) - 5) * 20
-            scored_targets[w] = max(scored_targets.get(w, 0), base_score + 30)
-
-    # 3. uz_words_latin.txt (16,000+ ta sof o'zbekcha so'z)
-    latin_path = os.path.join(os.path.dirname(__file__), 'bot', 'uz_words_latin.txt')
-    if os.path.exists(latin_path):
-        try:
-            with open(latin_path, encoding='utf-8', errors='ignore') as f:
-                for line in f:
-                    w = clean_word(line)
-                    if w:
-                        base_score = 100 - (len(w) - 5) * 20
-                        scored_targets[w] = max(scored_targets.get(w, 0), base_score)
-        except Exception as e:
-            logger.error(f"uz_words_latin yuklashda xato: {e}")
+            base_score = 130 - (len(w) - 5) * 20
+            scored_targets[w] = max(scored_targets.get(w, 0), base_score)
                     
     return scored_targets
 
@@ -4500,12 +4500,18 @@ async def admin_premium_hunter_loop(bot):
         try:
             now = time.time()
 
-            # ── 1. Target'larni to'ldirish (barcha 16,900+ nomlarni DB ga yuklash) ──
+            # ── 1. Target'larni to'ldirish (faqat toza, ma'noli sara nomlar) ──
             if now - last_refill_ts > REFILL_INTERVAL:
                 targets = load_all_premium_targets()
                 if targets:
+                    valid_list = list(targets.keys())
                     async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-                        # Ommaviy tezkor kiritish
+                        # Eski xom/keraksiz yoki lug'atdagi ma'nosiz so'zlarni DB dan to'liq tozalaymiz
+                        placeholders = ','.join('?' for _ in valid_list)
+                        await db.execute(
+                            f"DELETE FROM admin_premium_targets WHERE status='hunting' AND username NOT IN ({placeholders})",
+                            valid_list
+                        )
                         await db.executemany(
                             "INSERT OR IGNORE INTO admin_premium_targets (username, quality_score, last_checked) VALUES (?, ?, 0)",
                             [(w, score) for w, score in targets.items()]
@@ -4515,7 +4521,7 @@ async def admin_premium_hunter_loop(bot):
                         async with db.execute("SELECT COUNT(*) FROM admin_premium_targets WHERE status='hunting'") as cur:
                             total_cnt = (await cur.fetchone())[0]
                             
-                    logger.info(f"🏆 Admin Premium Hunter: Jami {len(targets)} ta nom bazada faol (Hozir poylanayotgan: {total_cnt} ta)!")
+                    logger.info(f"🏆 Admin Premium Hunter: Bazadan keraksiz so'zlar tozalandi! Faqat {total_cnt} ta chinakam sara nom qoldi.")
                 last_refill_ts = now
 
             # ── 2. Admin sessiyasini olish ──
