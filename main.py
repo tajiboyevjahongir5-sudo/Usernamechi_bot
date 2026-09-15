@@ -413,6 +413,20 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_search_tasks_status ON search_tasks(status);")
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_search_results_unique ON search_results(search_id, username);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_search_results_sid ON search_results(search_id);")
+
+        # Admin premium username hunter jadvali
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS admin_premium_targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                quality_score INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'hunting',
+                created_at REAL DEFAULT (strftime('%s','now')),
+                claimed_at REAL
+            )
+        """)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_admin_premium_status ON admin_premium_targets(status);")
+
         await db.commit()
         
         # Backward compatibility for existing databases (ALTER TABLE)
@@ -4366,6 +4380,375 @@ async def monitoring_loop(bot):
             logger.error(f"Monitoring loop xato: {e}\n{traceback.format_exc()}")
 
         await asyncio.sleep(2.0)  # 2 soniya kutamiz — ortiqcha so'rovlar oldini oladi
+
+# ─── ADMIN PREMIUM USERNAME HUNTER ─────────────────────
+
+# Premium so'zlar lug'ati — faqat qisqa, manoli, chiroyli nomlar
+_PREMIUM_WORDS = {
+    # O'zbek ismlari (5-8 harf) — eng ommabop
+    'anvar', 'aziza', 'barno', 'bahrom', 'bobur', 'botir', 'diyor', 'dilbar',
+    'erkin', 'farrux', 'feruza', 'gavhar', 'gulnor', 'hamid', 'hayot', 'hilol',
+    'ilhom', 'iroda', 'jamol', 'jasur', 'kamol', 'laylo', 'lazzat', 'madina',
+    'mahbub', 'malika', 'mansur', 'maqsud', 'mirzo', 'mohira', 'murod', 'nafisa',
+    'nasiba', 'navro', 'nilufar', 'nodir', 'nodira', 'nozima', 'obid', 'odina',
+    'parviz', 'qamar', 'ravshan', 'rustam', 'sabina', 'saodat', 'sarvar', 'shahlo',
+    'shaxlo', 'sitora', 'suhrob', 'sulton', 'temur', 'tohir', 'umida', 'vohid',
+    'yulduz', 'zarif', 'zafar', 'zilola', 'ziyod', 'zuhro', 'zuhra', 'behzod',
+    'doston', 'eldor', 'firuz', 'husan', 'ismoil', 'javlon', 'komil', 'lochin',
+    'mavlon', 'nargiz', 'rahim', 'sanjar', 'timur', 'ulmas', 'xurshid',
+    # O'zbek so'zlari — qisqa, go'zal, manoli
+    'oltin', 'kumush', 'bahor', 'yulduz', 'quyosh', 'bulut', 'shamol', 'sahro',
+    'daryo', 'deniz', 'osmon', 'turon', 'vatan', 'orzuv', 'umid', 'mehr',
+    'ishonch', 'sabr', 'savob', 'ezgulik', 'nurli', 'zilol', 'zamin',
+    'oqshom', 'tafakkur', 'hikmat', 'fazilat', 'saodat', 'baxt', 'davlat',
+    'dovon', 'chorvod', 'marjon', 'sadaf', 'gavhar', 'durr', 'javohir',
+    'baxmal', 'atlas', 'ipak', 'kumush', 'bronza', 'temir', 'olmos',
+    'lochin', 'burgut', 'layla', 'tohir', 'shirin', 'farhod',
+    # Inglizcha qisqa premium so'zlar (5-8 harf)
+    'flame', 'storm', 'ocean', 'lunar', 'solar', 'vivid', 'noble', 'raven',
+    'frost', 'blaze', 'atlas', 'nexus', 'prism', 'orbit', 'pulse', 'sigma',
+    'alpha', 'delta', 'omega', 'sonic', 'titan', 'venom', 'cipher', 'zenith',
+    'ember', 'ivory', 'onyx', 'opal', 'pearl', 'ruby', 'topaz', 'coral',
+    'cedar', 'maple', 'birch', 'aspen', 'haven', 'realm', 'crest', 'valor',
+    'astra', 'lyric', 'mirth', 'spark', 'swift', 'quest', 'grace', 'bliss',
+    'charm', 'dream', 'faith', 'glory', 'honor', 'lucid', 'magic', 'mystic',
+    'peace', 'prime', 'royal', 'saint', 'steel', 'stone', 'surge', 'truth',
+    'ultra', 'unity', 'verse', 'vigor', 'vivid', 'wrath', 'youth', 'zephyr',
+    'pixel', 'metro', 'retro', 'turbo', 'hydro', 'astro', 'crypto', 'cyber',
+    'macro', 'micro', 'neuro', 'proto', 'ultra', 'infra',
+    # Brend / texnologiya so'zlari
+    'savdo', 'ustoz', 'bozor', 'market', 'trend', 'brand', 'elite', 'prime',
+    'smart', 'focus', 'power', 'craft', 'forge', 'build', 'drive', 'boost',
+    'logic', 'pixel', 'cloud', 'stack', 'rapid', 'agile', 'solid', 'fresh',
+}
+
+def _is_premium_quality(uname: str) -> bool:
+    """Faqat chinakam premium sifatli usernamelarni o'tkazadi.
+    Qisqa (5-8 harf), faqat harflar, talaffuz qilinadigan, lug'atda bor.
+    """
+    u = uname.lower().strip()
+    # 1. Faqat harflar, 5-8 ta
+    if not u.isalpha() or not (5 <= len(u) <= 8):
+        return False
+    # 2. Ketma-ket 4+ undosh harf yo'q (talaffuz qilish mumkin)
+    vowels = set('aeiouyo')
+    consonant_streak = 0
+    for ch in u:
+        if ch in vowels:
+            consonant_streak = 0
+        else:
+            consonant_streak += 1
+            if consonant_streak >= 4:
+                return False
+    # 3. Ketma-ket 3+ unli harf yo'q (g'alati ko'rinishni oldini olish)
+    vowel_streak = 0
+    for ch in u:
+        if ch in vowels:
+            vowel_streak += 1
+            if vowel_streak >= 4:
+                return False
+        else:
+            vowel_streak = 0
+    # 4. Ma'noli so'z yoki ism bo'lishi kerak
+    if u in _PREMIUM_WORDS:
+        return True
+    return False
+
+
+def generate_premium_targets(count: int = 500) -> list:
+    """Admin uchun yuqori sifatli premium username nomzodlarni generatsiya qiladi."""
+    candidates = set()
+    
+    for word in _PREMIUM_WORDS:
+        w = word.lower().strip()
+        if _is_premium_quality(w):
+            candidates.add(w)
+    
+    result = list(candidates)
+    random.shuffle(result)
+    return result[:count]
+
+
+async def admin_premium_hunter_loop(bot):
+    """Admin profili uchun premium username qidirish va kanal ochib band qilish loopi.
+    
+    Ishlash tartibi:
+    1. Premium lug'atdan yuqori sifatli usernamelar generatsiya qilinadi
+    2. DB ga yoziladi (takrorlanmaydigan)
+    3. Har 10-15 soniyada bitta username tekshiriladi:
+       - HTTP orqali bo'shligini tekshirish
+       - Bo'sh bo'lsa → Telethon API tasdiqlash
+       - Tasdiqlansa → Kanal ochib username biriktirish
+       - Adminga xabar yuborish
+    4. Har 6 soatda target'lar yangilanadi
+    """
+    import aiohttp
+    from telethon.tl.functions.account import CheckUsernameRequest
+    from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest, DeleteChannelRequest
+    from telethon.tl.types import InputChannel
+    from telethon.errors import (
+        FloodWaitError, ChannelsAdminPublicTooMuchError,
+        UsernameOccupiedError, UsernameInvalidError,
+        UsernamePurchaseAvailableError
+    )
+
+    await asyncio.sleep(30)  # Server ishga tushgandan keyin 30s kutish
+
+    if not ADMIN_IDS:
+        logger.warning("⚠️ Admin Premium Hunter: ADMIN_IDS bo'sh — loop o'chirildi.")
+        return
+
+    admin_id = ADMIN_IDS[0]
+    logger.info(f"🏆 Admin Premium Hunter ishga tushdi (Admin: {admin_id})")
+
+    last_refill_ts = 0
+    REFILL_INTERVAL = 6 * 3600  # Har 6 soatda yangi target'lar to'ldirish
+    taken_cache = {}  # {uname: expiry_ts} — band nomlarni keshda saqlash
+
+    http_session = None
+
+    while True:
+        try:
+            # ── 1. Target'larni to'ldirish (har 6 soatda) ──
+            now = time.time()
+            if now - last_refill_ts > REFILL_INTERVAL:
+                targets = generate_premium_targets(500)
+                if targets:
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                        inserted = 0
+                        for t in targets:
+                            try:
+                                await db.execute(
+                                    "INSERT OR IGNORE INTO admin_premium_targets (username, quality_score) VALUES (?, ?)",
+                                    (t, len(t) * 10)  # Qisqa bo'lsa — yuqori ball
+                                )
+                                inserted += 1
+                            except Exception:
+                                pass
+                        await db.commit()
+                    logger.info(f"🏆 Admin Premium Hunter: {inserted} ta yangi target qo'shildi (jami lug'at: {len(targets)})")
+                last_refill_ts = now
+
+            # ── 2. Admin sessiyasini olish ──
+            admin_user = await get_user(admin_id)
+            if not admin_user or not admin_user.get('session_string'):
+                logger.debug("🏆 Admin Premium Hunter: Admin sessiyasi topilmadi — 60s kutilmoqda")
+                await asyncio.sleep(60)
+                continue
+
+            admin_session = admin_user['session_string']
+
+            # ── 3. Band bo'lgan kesh nomlarini tozalash ──
+            expired_keys = [k for k, v in taken_cache.items() if v < time.time()]
+            for k in expired_keys:
+                del taken_cache[k]
+
+            # ── 4. Hunting statusdagi targetlarni olish ──
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(
+                    "SELECT id, username, quality_score FROM admin_premium_targets "
+                    "WHERE status='hunting' ORDER BY quality_score DESC LIMIT 100"
+                ) as c:
+                    hunting_targets = await c.fetchall()
+
+            if not hunting_targets:
+                logger.debug("🏆 Admin Premium Hunter: Hunting target yo'q — 120s kutilmoqda")
+                await asyncio.sleep(120)
+                continue
+
+            # ── 5. HTTP session ──
+            if http_session is None or http_session.closed:
+                http_session = aiohttp.ClientSession(
+                    connector=aiohttp.TCPConnector(limit=5)
+                )
+
+            # ── 6. Har bir targetni tekshirish (sekin va ehtiyotkor) ──
+            for target in hunting_targets:
+                uname = target['username']
+                target_id = target['id']
+
+                # Keshda bo'lsa — o'tkazish
+                if taken_cache.get(uname, 0) > time.time():
+                    continue
+
+                try:
+                    # 6a. HTTP tekshiruv
+                    try:
+                        async with http_session.get(
+                            f"https://t.me/{uname}",
+                            allow_redirects=True,
+                            timeout=aiohttp.ClientTimeout(total=4.0),
+                            headers={'User-Agent': random.choice(HEADERS_LIST)}
+                        ) as resp:
+                            if resp.status == 429:
+                                logger.warning("🏆 t.me 429 — 30s kutilmoqda")
+                                await asyncio.sleep(30)
+                                continue
+                            text = await resp.text()
+                    except asyncio.TimeoutError:
+                        await asyncio.sleep(5)
+                        continue
+                    except Exception:
+                        await asyncio.sleep(5)
+                        continue
+
+                    if is_username_occupied_html(text):
+                        # Band — keshga qo'shamiz (6 soat)
+                        taken_cache[uname] = time.time() + 21600
+                        await asyncio.sleep(random.uniform(8, 15))
+                        continue
+
+                    # 6b. HTTP bo'sh ko'rindi — Telethon API tasdiqlash
+                    logger.info(f"🏆 [PREMIUM HUNTER] @{uname} HTTP bo'sh ko'rindi — API tekshirilmoqda...")
+                    
+                    check_client = None
+                    api_free = False
+                    try:
+                        _lock = _get_session_lock(admin_session)
+                        async with _lock:
+                            check_client = await _get_fast_client(admin_session)
+                            api_result = await asyncio.wait_for(
+                                check_client(CheckUsernameRequest(uname)),
+                                timeout=5.0
+                            )
+                        if api_result is True:
+                            api_free = True
+                            logger.info(f"🏆 [API CONFIRM] @{uname} Telethon bo'shligini tasdiqladi!")
+                        else:
+                            taken_cache[uname] = time.time() + 7200
+                            logger.info(f"🏆 [TAKEN] @{uname} API bo'sh emas.")
+                    except UsernamePurchaseAvailableError:
+                        logger.info(f"🏆 @{uname} Fragment auksionida — o'tkazildi")
+                        taken_cache[uname] = time.time() + 43200
+                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                            await db.execute("UPDATE admin_premium_targets SET status='skipped' WHERE id=?", (target_id,))
+                            await db.commit()
+                        await asyncio.sleep(5)
+                        continue
+                    except UsernameInvalidError:
+                        logger.info(f"🏆 @{uname} yaroqsiz — o'chirildi")
+                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                            await db.execute("UPDATE admin_premium_targets SET status='skipped' WHERE id=?", (target_id,))
+                            await db.commit()
+                        await asyncio.sleep(5)
+                        continue
+                    except Exception as ce:
+                        logger.debug(f"🏆 CheckUsername xato @{uname}: {ce}")
+                        taken_cache[uname] = time.time() + 3600
+                        await asyncio.sleep(10)
+                        continue
+
+                    if not api_free:
+                        await asyncio.sleep(random.uniform(8, 15))
+                        continue
+
+                    # 6c. BO'SH! Kanal ochib band qilamiz
+                    logger.info(f"🏆 [CLAIMING] @{uname} — kanal ochilmoqda...")
+                    claim_client = None
+                    ch_id = None
+                    ch_access_hash = None
+                    success = False
+                    try:
+                        _lock = _get_session_lock(admin_session)
+                        async with _lock:
+                            claim_client = await _get_fast_client(admin_session)
+                            ch = await claim_client(CreateChannelRequest(
+                                title=uname.capitalize(),
+                                about=f"Premium username @{uname} — @usernamechi_bot",
+                                megagroup=False
+                            ))
+                            ch_id = ch.chats[0].id
+                            ch_access_hash = ch.chats[0].access_hash
+                            
+                            await claim_client(UpdateUsernameRequest(
+                                channel=InputChannel(ch_id, ch_access_hash),
+                                username=uname
+                            ))
+                            success = True
+
+                        # DB yangilash
+                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                            await db.execute(
+                                "UPDATE admin_premium_targets SET status='claimed', claimed_at=? WHERE id=?",
+                                (time.time(), target_id)
+                            )
+                            await db.commit()
+
+                        # Adminga xabar
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                f"🏆 <b>Premium username topildi va band qilindi!</b>\n\n"
+                                f"Username: <b>@{uname}</b>\n"
+                                f"Uzunlik: {len(uname)} harf\n"
+                                f"Kanal ID: <code>{ch_id}</code>\n\n"
+                                f"✅ Kanal ochildi va username biriktirildi!",
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            pass
+
+                        logger.info(f"🏆🎉 MUVAFFAQIYAT! Premium @{uname} olindi! (Kanal: {ch_id})")
+
+                    except FloodWaitError as e:
+                        logger.warning(f"🏆 FloodWait {e.seconds}s — @{uname}")
+                        await asyncio.sleep(min(e.seconds + 5, 300))
+                        continue
+
+                    except ChannelsAdminPublicTooMuchError:
+                        logger.warning(f"🏆 Admin ommaviy link limiti tugagan (10 ta)! Hunter to'xtatildi.")
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                "🏆⚠️ <b>Premium Hunter to'xtatildi!</b>\n\n"
+                                "Ommaviy link limiti (10 ta) tugagan.\n"
+                                "Ba'zi kanallarni o'chirib joy bo'shating.",
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            pass
+                        await asyncio.sleep(3600)  # 1 soat kutish
+                        continue
+
+                    except (UsernameOccupiedError,):
+                        logger.info(f"🏆 @{uname} claim paytida band bo'ldi (UsernameOccupied)")
+                        taken_cache[uname] = time.time() + 43200
+                        continue
+
+                    except Exception as ue:
+                        logger.warning(f"🏆 Claim xato @{uname}: {ue}")
+                        taken_cache[uname] = time.time() + 3600
+                        continue
+
+                    finally:
+                        # Muvaffaqiyatsiz kanal ochilgan bo'lsa — o'chiramiz
+                        if ch_id and ch_access_hash and not success and claim_client:
+                            try:
+                                await claim_client(DeleteChannelRequest(
+                                    channel=InputChannel(ch_id, ch_access_hash)
+                                ))
+                                logger.info(f"🏆🗑 Muvaffaqiyatsiz kanal o'chirildi: @{uname}")
+                            except Exception:
+                                pass
+                        if claim_client:
+                            try:
+                                await claim_client.disconnect()
+                            except Exception:
+                                pass
+                            _telethon_cache.pop(admin_session, None)
+
+                except Exception as target_err:
+                    logger.debug(f"🏆 Target tekshiruv xatosi @{uname}: {target_err}")
+
+                # Har bir tekshiruv orasida 10-15 soniya kutamiz (rate-limit oldini olish)
+                await asyncio.sleep(random.uniform(10, 15))
+
+        except Exception as loop_err:
+            import traceback
+            logger.error(f"🏆 Admin Premium Hunter loop xato: {loop_err}\n{traceback.format_exc()}")
+
+        await asyncio.sleep(5.0)
 
 # ─── FASTAPI APP ──────────────────────────────
 
@@ -8731,13 +9114,16 @@ async def main():
     # Profilga soat o'rnatish
     profile_clock_task = asyncio.create_task(profile_clock_loop(bot))
 
+    # Admin uchun premium username hunter
+    premium_hunter_task = asyncio.create_task(admin_premium_hunter_loop(bot))
+
     # Aiogram bot va FastAPI parallel ishlatish
     config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)), log_level="warning")
     server = uvicorn.Server(config)
 
     # Graceful shutdown: SIGTERM va SIGINT uchun
     loop = asyncio.get_event_loop()
-    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task, bonus_notify_task, garant_cleanup_task, garant_auto_task, profile_clock_task]
+    bg_tasks: list[asyncio.Task] = [monitoring_task, deferred_task, session_check_task, cleanup_task, orphan_task, auction_task, bonus_notify_task, garant_cleanup_task, garant_auto_task, profile_clock_task, premium_hunter_task]
 
     async def _shutdown():
         logger.info("⏹ Graceful shutdown boshlandi...")
