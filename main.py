@@ -4387,89 +4387,72 @@ async def monitoring_loop(bot):
 
 # ─── ADMIN PREMIUM USERNAME HUNTER ─────────────────────
 
-def load_all_premium_targets() -> dict:
-    """Admin uchun faqat chinakam premium usernamelarni yuklaydi.
-    Manba: o'zbek ismlari + qo'lda tanlangan go'zal so'zlar. Lug'atdan tasodifiy so'z OLMAYDI.
-    """
-    from bot.words import UZ_MALE_NAMES, UZ_FEMALE_NAMES, UZ_SURNAMES
-    
-    valid_re = re.compile(r'^[a-z]{5,8}$')
-    vowels = set('aeiouy')
-    
-    # Fe'l va grammatik qo'shimchalar — username sifatida yaroqsiz
-    _BAD_SUFFIXES = ('moq', 'mak', 'lik', 'chi', 'siz', 'lash', 'lan', 'lar')
-    
-    def clean_word(raw):
-        w = str(raw).lower().strip().replace("'", '').replace('`', '').replace('ʻ', '').replace('ʼ', '')
-        if not valid_re.match(w):
-            return None
-        if any(w.endswith(s) for s in _BAD_SUFFIXES):
-            return None
-        if sum(1 for ch in w if ch in vowels) < 2:
-            return None
-        c_streak = 0
-        v_streak = 0
-        for ch in w:
-            if ch in vowels:
-                c_streak = 0
-                v_streak += 1
-                if v_streak >= 4:
-                    return None
-            else:
-                v_streak = 0
-                c_streak += 1
-                if c_streak >= 4:
-                    return None
-        return w
+# ─── ADMIN PREMIUM USERNAME HUNTER (FAQAT SARA VA MA'NOLI RO'YXAT) ─────
 
-    scored_targets = {}  # {word: score}
-    
-    # 1. O'zbek ismlari — eng qimmatli username manba (ismlar doim premium!)
-    for n in UZ_MALE_NAMES + UZ_FEMALE_NAMES + UZ_SURNAMES:
-        w = clean_word(n)
-        if w:
-            # Qisqa ism = qimmatroq: 5 harf=140, 6=120, 7=100, 8=80
-            base_score = 140 - (len(w) - 5) * 20
-            scored_targets[w] = max(scored_targets.get(w, 0), base_score)
-            
-    # 2. Qo'lda tanlangan premium so'zlar — faqat chiroyli, manoli, username sifatida yaxshi
-    _CURATED_PREMIUM = [
-        # O'zbek — tabiat, qimmatbaho, go'zal tushunchalar
-        'oltin', 'kumush', 'bahor', 'yulduz', 'quyosh', 'bulut', 'shamol',
-        'daryo', 'deniz', 'osmon', 'turon', 'vatan', 'sahro', 'dovon',
-        'marjon', 'sadaf', 'gavhar', 'javohir', 'olmos', 'temir', 'bronza',
-        'atlas', 'ipak', 'baxmal', 'lochin', 'burgut', 'shirin', 'farhod',
-        'layla', 'doston', 'hikmat', 'fazilat', 'davlat', 'zilol', 'nurli',
-        'baxt', 'mehr', 'oqshom', 'zamin', 'sarob', 'pahta', 'tafakkur',
-        # Inglizcha — qisqa, estetik, brend-worthy
-        'flame', 'storm', 'ocean', 'lunar', 'solar', 'vivid', 'noble', 'raven',
-        'frost', 'blaze', 'atlas', 'nexus', 'prism', 'orbit', 'pulse', 'sigma',
-        'alpha', 'delta', 'omega', 'sonic', 'titan', 'venom', 'cipher', 'zenith',
-        'ember', 'ivory', 'pearl', 'topaz', 'coral', 'haven', 'realm', 'crest',
-        'valor', 'spark', 'swift', 'quest', 'grace', 'bliss', 'charm', 'dream',
-        'faith', 'glory', 'honor', 'lucid', 'magic', 'mystic', 'peace', 'prime',
-        'royal', 'saint', 'steel', 'stone', 'surge', 'truth', 'ultra', 'unity',
-        'verse', 'vigor', 'youth', 'zephyr', 'pixel', 'metro', 'retro', 'turbo',
-        'hydro', 'astro', 'cyber', 'proto', 'infra', 'astra', 'lyric', 'mirth',
-        # Brend / texno / savdo — professional username uchun
-        'savdo', 'ustoz', 'bozor', 'market', 'trend', 'brand', 'elite', 'smart',
-        'focus', 'power', 'craft', 'forge', 'build', 'drive', 'boost', 'logic',
-        'cloud', 'stack', 'rapid', 'agile', 'solid', 'fresh', 'super', 'chief',
-    ]
-    for ew in _CURATED_PREMIUM:
-        w = clean_word(ew)
-        if w:
-            base_score = 130 - (len(w) - 5) * 20
-            scored_targets[w] = max(scored_targets.get(w, 0), base_score)
-                    
-    return scored_targets
+_CURATED_PREMIUM_WHITELIST = {
+    # 1. Eng mashhur sof o'zbek ismlari (5-7 harf, toza, mashhur, xatosiz)
+    'anvar': 150, 'bobur': 150, 'jasur': 150, 'botir': 150, 'diyor': 150,
+    'sarvar': 150, 'eldor': 150, 'laylo': 150, 'rustam': 150, 'zafar': 150,
+    'temur': 150, 'nodir': 150, 'farrux': 150, 'kamol': 150, 'malika': 150,
+    'dilbar': 150, 'erkin': 150, 'samar': 150, 'sulton': 150, 'tohir': 150,
+    'umida': 150, 'zarif': 150, 'ravshan': 150, 'behzod': 150, 'doston': 150,
+    'firuz': 150, 'husan': 150, 'ismoil': 150, 'javlon': 150, 'lochin': 150,
+    'nargiz': 150, 'rahim': 150, 'sanjar': 150, 'shirin': 150, 'farhod': 150,
+    'aziza': 150, 'barno': 150, 'dildor': 150, 'gavhar': 150, 'nilufar': 150,
+    'nodira': 150, 'nozima': 150, 'sabina': 150, 'saodat': 150, 'sitora': 150,
+    'suhrob': 150, 'zilola': 150, 'zuhra': 150, 'mansur': 150, 'maqsud': 150,
+    'mohira': 150, 'murod': 150, 'nafisa': 150, 'nasiba': 150, 'parviz': 150,
+    'hamid': 150, 'jamol': 150, 'iroda': 150, 'shaxlo': 150, 'gulnor': 150,
+    'feruza': 150, 'hayot': 150, 'hilol': 150, 'ilhom': 150, 'madina': 150,
+    'alisher': 150, 'arslon': 150, 'baxtiyor': 150, 'bekzod': 150, 'dilshod': 150,
+    'elmurod': 150, 'humoyun': 150, 'ibragim': 150, 'islom': 150, 'kamron': 150,
+    'laziz': 150, 'mahmud': 150, 'muxtor': 150, 'sardor': 150, 'shahzod': 150,
+    'sherzod': 150, 'shohruh': 150, 'sobir': 150, 'ulugbek': 150, 'yusuf': 150,
+    'zohid': 150, 'afzal': 150, 'akbar': 150, 'akmal': 150, 'akrom': 150,
+    'dovud': 150, 'fozil': 150, 'ikrom': 150, 'komil': 150, 'shahrom': 150,
+    'xurshid': 150, 'yulduz': 150, 'dildora': 150, 'shahnoza': 150, 'gulnoza': 150,
+    'kamola': 150,
+
+    # 2. Toza o'zbek tushunchalari, boyliklar va brendlar (5-7 harf)
+    'oltin': 140, 'kumush': 140, 'bahor': 140, 'quyosh': 140, 'daryo': 140,
+    'osmon': 140, 'olmos': 140, 'burgut': 140, 'savdo': 140, 'bozor': 140,
+    'turon': 140, 'vatan': 140, 'javohir': 140, 'marjon': 140, 'sadaf': 140,
+    'atlas': 140, 'baxmal': 140, 'hikmat': 140, 'davlat': 140, 'zilol': 140,
+    'nurli': 140, 'oqshom': 140, 'zamin': 140, 'sarob': 140, 'shonli': 140,
+    'qudrat': 140, 'golib': 140, 'jasorat': 140, 'tafakkur': 140, 'fazilat': 140,
+
+    # 3. Mashhur inglizcha estetik va brend nomlar (5-7 harf)
+    'flame': 130, 'lunar': 130, 'storm': 130, 'blaze': 130, 'frost': 130,
+    'titan': 130, 'alpha': 130, 'sigma': 130, 'prime': 130, 'elite': 130,
+    'cyber': 130, 'nexus': 130, 'pulse': 130, 'orbit': 130, 'turbo': 130,
+    'ocean': 130, 'vivid': 130, 'noble': 130, 'raven': 130, 'prism': 130,
+    'delta': 130, 'omega': 130, 'sonic': 130, 'venom': 130, 'cipher': 130,
+    'zenith': 130, 'ember': 130, 'ivory': 130, 'pearl': 130, 'topaz': 130,
+    'coral': 130, 'haven': 130, 'realm': 130, 'crest': 130, 'valor': 130,
+    'spark': 130, 'swift': 130, 'quest': 130, 'grace': 130, 'bliss': 130,
+    'charm': 130, 'dream': 130, 'faith': 130, 'glory': 130, 'honor': 130,
+    'lucid': 130, 'magic': 130, 'mystic': 130, 'peace': 130, 'royal': 130,
+    'saint': 130, 'steel': 130, 'stone': 130, 'surge': 130, 'truth': 130,
+    'ultra': 130, 'unity': 130, 'verse': 130, 'vigor': 130, 'youth': 130,
+    'pixel': 130, 'smart': 130, 'focus': 130, 'power': 130, 'craft': 130,
+    'forge': 130, 'build': 130, 'drive': 130, 'boost': 130, 'logic': 130,
+    'cloud': 130, 'stack': 130, 'metro': 130, 'retro': 130, 'hydro': 130,
+    'astro': 130, 'proto': 130, 'infra': 130, 'astra': 130, 'lyric': 130,
+    'mirth': 130, 'market': 130, 'trend': 130, 'brand': 130, 'rapid': 130,
+    'agile': 130, 'solid': 130, 'fresh': 130, 'super': 130, 'chief': 130,
+    'genius': 130, 'legend': 130, 'shadow': 130, 'wizard': 130, 'phoenix': 130
+}
+
+def load_all_premium_targets() -> dict:
+    """Faqat 100% qo'lda tasdiqlangan sara nomlarni qaytaradi.
+    Tashqi lug'at yoki so'zlar bazasidan HECH QANDAY so'z olinmaydi.
+    """
+    return dict(_CURATED_PREMIUM_WHITELIST)
 
 
 async def admin_premium_hunter_loop(bot):
     """Admin profili uchun premium username qidirish va kanal ochib band qilish loopi.
-    
-    16,900+ ta 5-8 harfli toza o'zbekcha ismlar va so'zlarni muntazam poylab boradi.
-    Eng qisqa va qimmatli nomlar (5 harfli ismlar) birinchi navbatda tekshiriladi.
+    Faqat _CURATED_PREMIUM_WHITELIST dagi eng sara nomlar poylanadi.
     """
     import aiohttp
     from telethon.tl.functions.account import CheckUsernameRequest
@@ -4481,7 +4464,7 @@ async def admin_premium_hunter_loop(bot):
         UsernamePurchaseAvailableError
     )
 
-    await asyncio.sleep(25)  # Server to'liq ishga tushishini kutish
+    await asyncio.sleep(20)  # Server to'liq ishga tushishini kutish
 
     if not ADMIN_IDS:
         logger.warning("⚠️ Admin Premium Hunter: ADMIN_IDS bo'sh — loop to'xtatildi.")
@@ -4491,8 +4474,8 @@ async def admin_premium_hunter_loop(bot):
     logger.info(f"🏆 Admin Premium Hunter ishga tushdi (Admin: {admin_id})")
 
     last_refill_ts = 0
-    REFILL_INTERVAL = 12 * 3600  # Har 12 soatda yangi targetlar bazasini yangilash
-    taken_cache = {}  # {uname: expiry_ts} — band nomlarni keshda saqlash
+    REFILL_INTERVAL = 12 * 3600
+    taken_cache = {}
 
     http_session = None
 
@@ -4500,28 +4483,22 @@ async def admin_premium_hunter_loop(bot):
         try:
             now = time.time()
 
-            # ── 1. Target'larni to'ldirish (faqat toza, ma'noli sara nomlar) ──
+            # ── 1. Target'larni to'ldirish (Eski barcha xom nomlarni butunlay tozalab, faqat sarasini kiritish) ──
             if now - last_refill_ts > REFILL_INTERVAL:
                 targets = load_all_premium_targets()
-                if targets:
-                    valid_list = list(targets.keys())
-                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-                        # Eski xom/keraksiz yoki lug'atdagi ma'nosiz so'zlarni DB dan to'liq tozalaymiz
-                        placeholders = ','.join('?' for _ in valid_list)
-                        await db.execute(
-                            f"DELETE FROM admin_premium_targets WHERE status='hunting' AND username NOT IN ({placeholders})",
-                            valid_list
-                        )
-                        await db.executemany(
-                            "INSERT OR IGNORE INTO admin_premium_targets (username, quality_score, last_checked) VALUES (?, ?, 0)",
-                            [(w, score) for w, score in targets.items()]
-                        )
-                        await db.commit()
+                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                    # Barcha eski xom/tasodifiy hunting nomlarni BUTUNLAY o'chiramiz:
+                    await db.execute("DELETE FROM admin_premium_targets WHERE status='hunting'")
+                    await db.executemany(
+                        "INSERT INTO admin_premium_targets (username, quality_score, last_checked) VALUES (?, ?, 0)",
+                        [(w, score) for w, score in targets.items()]
+                    )
+                    await db.commit()
+                    
+                    async with db.execute("SELECT COUNT(*) FROM admin_premium_targets WHERE status='hunting'") as cur:
+                        total_cnt = (await cur.fetchone())[0]
                         
-                        async with db.execute("SELECT COUNT(*) FROM admin_premium_targets WHERE status='hunting'") as cur:
-                            total_cnt = (await cur.fetchone())[0]
-                            
-                    logger.info(f"🏆 Admin Premium Hunter: Bazadan keraksiz so'zlar tozalandi! Faqat {total_cnt} ta chinakam sara nom qoldi.")
+                logger.info(f"🏆 Admin Premium Hunter: Baza to'liq yangilandi! Faqat {total_cnt} ta 100% saralangan nom qoldi.")
                 last_refill_ts = now
 
             # ── 2. Admin sessiyasini olish ──
