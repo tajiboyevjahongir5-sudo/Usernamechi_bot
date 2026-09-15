@@ -4487,10 +4487,10 @@ async def admin_premium_hunter_loop(bot):
             if now - last_refill_ts > REFILL_INTERVAL:
                 targets = load_all_premium_targets()
                 async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-                    # Barcha eski xom/tasodifiy hunting nomlarni BUTUNLAY o'chiramiz:
-                    await db.execute("DELETE FROM admin_premium_targets WHERE status='hunting'")
+                    # Barcha eski xom/tasodifiy nomlarni BUTUNLAY tozalaymiz:
+                    await db.execute("DELETE FROM admin_premium_targets")
                     await db.executemany(
-                        "INSERT INTO admin_premium_targets (username, quality_score, last_checked) VALUES (?, ?, 0)",
+                        "INSERT OR REPLACE INTO admin_premium_targets (username, quality_score, status, last_checked) VALUES (?, ?, 'hunting', 0)",
                         [(w, score) for w, score in targets.items()]
                     )
                     await db.commit()
