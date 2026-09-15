@@ -4394,9 +4394,15 @@ def load_all_premium_targets() -> dict:
     valid_re = re.compile(r'^[a-z]{5,8}$')
     vowels = set('aeiouy')
     
+    # Fe'l va grammatik qo'shimchalar — username sifatida yaroqsiz
+    _BAD_SUFFIXES = ('moq', 'mak', 'lik', 'chi', 'siz', 'lash', 'lan', 'lar')
+    
     def clean_word(raw):
         w = str(raw).lower().strip().replace("'", '').replace('`', '').replace('ʻ', '').replace('ʼ', '')
         if not valid_re.match(w):
+            return None
+        # Fe'l va grammatik qo'shimchalarni filtrlash
+        if any(w.endswith(s) for s in _BAD_SUFFIXES):
             return None
         if sum(1 for ch in w if ch in vowels) < 2:
             return None
