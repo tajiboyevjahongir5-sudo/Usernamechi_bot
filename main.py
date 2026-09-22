@@ -9127,6 +9127,13 @@ async def main():
         except NotImplementedError:
             pass  # Windows da signal_handler ishlamaydi, lekin Railway Linux da ishlaydi
 
+    # Telegram webhook'ni tozalash (agar boshqa joydan webhook qo'yilgan bo'lsa polling to'xtab qolishining oldini oladi)
+    try:
+        await bot.delete_webhook(drop_pending_updates=False)
+        logger.info("✅ Telegram webhook tozalandi, Polling faollashdi.")
+    except Exception as e:
+        logger.warning(f"delete_webhook ogohlantirish: {e}")
+
     await asyncio.gather(
         dp.start_polling(bot),
         server.serve()
