@@ -17,6 +17,7 @@ import hmac
 import json
 import time
 import aiosqlite
+import aiohttp
 
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import (
@@ -748,7 +749,6 @@ async def llm_generate_candidates(
     """LLM API orqali username nomzodlari generatsiya qilish.
     Google Gemini, Groq, OpenRouter yoki har qanday OpenAI-mos tekin modelni qo'llab-quvvatlaydi.
     """
-    import httpx
     import json as _json
 
     api_key = await get_setting("llm_api_key", LLM_API_KEY)
@@ -776,24 +776,26 @@ async def llm_generate_candidates(
         headers["Authorization"] = f"Bearer {api_key}"
 
     try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            resp = await client.post(
+        payload = {
+            "model": model,
+            "max_tokens": 800,
+            "messages": [
+                {"role": "system", "content": "You are an expert Telegram username generator. You always respond ONLY with a raw JSON array of strings, no conversational text, no markdown backticks."},
+                {"role": "user", "content": prompt}
+            ],
+        }
+        async with aiohttp.ClientSession() as client:
+            async with client.post(
                 api_url,
                 headers=headers,
-                json={
-                    "model": model,
-                    "max_tokens": 800,
-                    "messages": [
-                        {"role": "system", "content": "You are an expert Telegram username generator. You always respond ONLY with a raw JSON array of strings, no conversational text, no markdown backticks."},
-                        {"role": "user", "content": prompt}
-                    ],
-                },
-            )
-        if resp.status_code != 200:
-            logger.warning(f"LLM API xato {resp.status_code}: {resp.text[:200]}")
-            return []
-
-        data = resp.json()
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=25.0)
+            ) as resp:
+                if resp.status != 200:
+                    err_txt = await resp.text()
+                    logger.warning(f"LLM API xato {resp.status}: {err_txt[:200]}")
+                    return []
+                data = await resp.json()
         text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         if not text:
             content = data.get("content", [{}])
@@ -7381,6 +7383,9 @@ async def api_admin_llm_test(request: Request, x_admin_token: str = Header(defau
             theme=base_word or category
         )
         return {"ok": True, "count": len(candidates), "candidates": candidates}
+    except Exception as e:
+        logger.error(f"api_admin_llm_test error: {e}")
+        return {"ok": False, "error": str(e), "count": 0, "candidates": []}
     finally:
         if orig_key is not None:
             await set_setting("llm_api_key", orig_key)

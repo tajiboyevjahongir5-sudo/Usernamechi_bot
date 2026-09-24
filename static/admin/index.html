@@ -1634,8 +1634,9 @@ async function testAiGeneration() {
     } else {
       countBadge.textContent = '0 ta nom';
       countBadge.className = 'badge badge-danger';
-      resultsDiv.innerHTML = '<span style="color:#ef4444; font-size:12px;">⚠️ AI nomzod qaytarmadi. API kalit yoki model nomini tekshiring.</span>';
-      showToast("AI javob qaytarmadi", "error");
+      const errMsg = d.error ? `Xatolik: ${d.error}` : 'AI nomzod qaytarmadi. API kalit yoki model nomini tekshiring.';
+      resultsDiv.innerHTML = `<span style="color:#ef4444; font-size:12px;">⚠️ ${errMsg}</span>`;
+      showToast("AI javob qaytarmadi: " + (d.error || ''), "error");
     }
   } catch(e) {
     countBadge.textContent = 'Xatolik';
