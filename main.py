@@ -648,131 +648,112 @@ from bot.words import (
 
 
 # ─── LLM USERNAME GENERATOR ─────────────────────────────────────────────
-LLM_API_KEY = os.getenv("LLM_API_KEY", "")   # OpenRouter yoki boshqa provider
-LLM_MODEL   = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4-5")
-LLM_API_URL = os.getenv("LLM_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+# Google Gemini (Tekin), Groq Cloud (Tekin) yoki OpenRouter (Tekin modellar)
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")   
+LLM_MODEL   = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+LLM_API_URL = os.getenv("LLM_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 
 def build_llm_prompt(category: str, language: str, base_word: str, theme: str, excluded_part: str) -> str:
-    """Til aniq va aralashmaslik uchun dinamik prompt quradi."""
-    # Til bo'yicha aniq ko'rsatmalar
-    if language == "uz":
-        lang_rule_custom = (
-            "MUHIM: Barcha qo'shimcha so'zlar O'ZBEKCHA bo'lishi SHART! "
-            "Inglizcha so'zlar QATIY TAQIQLANGAN. "
-            "O'zbekcha qo'shimchalar: aqlli, yulduz, usta, olov, kuchli, tezkor, ulug, botir."
-        )
-        lang_rule_styled = (
-            "MUHIM: Barcha username'lar O'ZBEKCHA so'z yoki bo'g'inlardan iborat bo'lsin! "
-            "Inglizcha so'zlar QATIY TAQIQLANGAN. "
-            "Misol o'zbek prefikslari: uz, uzb, koinot, usta, olov, botir. "
-            "Misol o'zbek emas: pro, hub, lab, neo, tech."
-        )
-        lang_rule_short = (
-            "MUHIM: Faqat O'ZBEKCHA ma'noli so'zlar bering — lotin yozuvida. "
-            "Inglizcha so'zlar MUTLAQO TAQIQLANGAN. "
-            "Misol: bulut, olov, qoplon, kamon, tezkor, botir, gulnor, yashar."
-        )
-    else:  # en
-        lang_rule_custom = (
-            "IMPORTANT: All added parts must be in ENGLISH only! "
-            "No Uzbek or other non-English words allowed. "
-            "English examples: official, world, pro, hub, zone, prime, craft, forge."
-        )
-        lang_rule_styled = (
-            "IMPORTANT: All usernames must use ENGLISH words only! "
-            "No Uzbek words allowed. "
-            "Examples: neo, dark, spark, storm, forge, swift, core, edge."
-        )
-        lang_rule_short = (
-            "IMPORTANT: English or international brand-like words ONLY! "
-            "No Uzbek words allowed. "
-            "Examples: nova, orbit, flux, ember, spark, ridge, vault, lynx."
-        )
+    """Kategoriya va til bo'yicha eng sara username takliflarini beruvchi dinamik prompt."""
+    cat_lower = category.lower().strip()
+    
+    if cat_lower == "ism":
+        return f"""You are a professional naming expert specializing in authentic Uzbek and prestigious international personal names for Telegram.
+TASK: Generate 30 popular, beautiful, clean personal first names (mostly Uzbek/Central Asian, plus prestigious international names).
+STRICT RULES:
+- 4 to 12 letters, ONLY latin letters (a-z)
+- NO numbers, NO underscores
+- Real, authentic, prestigious names (e.g. anvar, jasur, bobur, sardor, laylo, nilufar, azizbek, shahzod, behzod, dilshod, kamron, rustam, madina)
+{excluded_part}
+FORMAT: Return ONLY a valid JSON array, nothing else:
+["name1", "name2", ...]"""
 
-    if category == "qisqa":
+    elif cat_lower == "familiya":
+        return f"""You are a naming expert specializing in Central Asian / Uzbek surnames for Telegram.
+TASK: Generate 30 popular, respectable surnames.
+STRICT RULES:
+- 5 to 14 letters, ONLY latin letters (a-z)
+- Real authentic surnames in Uzbek latin (e.g. rahimov, karimov, aliev, tursunov, usmonov, abdullaev, ahmedov, hasanov, nazarov)
+{excluded_part}
+FORMAT: Return ONLY a valid JSON array, nothing else:
+["surname1", "surname2", ...]"""
+
+    elif cat_lower == "brend":
+        return f"""You are a branding and startup naming specialist.
+TASK: Generate 30 modern, catchy, memorable brand / business / shop usernames for Telegram.
+STRICT RULES:
+- 4 to 16 letters, lowercase latin letters and optional single underscore
+- Sound like real companies, modern stores, tech brands, or creative agencies (e.g. uzmarket, modauz, novabrand, techzone, styleuz, trendshop, quickpay, autohub, branduz, apextech)
+{excluded_part}
+FORMAT: Return ONLY a valid JSON array, nothing else:
+["brand1", "brand2", ...]"""
+
+    elif cat_lower in ("lavozim", "kasb"):
+        return f"""You are a professional naming specialist.
+TASK: Generate 30 creative career, trade, and profession usernames for Telegram.
+STRICT RULES:
+- 4 to 16 letters, lowercase latin letters and optional single underscore
+- Professional titles, jobs, and roles in Uzbek and English (e.g. dasturchi, shifokor, advokat, usta, dev_uz, masterpro, coderuz, dizayner, ustoz, muhandis, haydovchi, traderuz)
+{excluded_part}
+FORMAT: Return ONLY a valid JSON array, nothing else:
+["job1", "job2", ...]"""
+
+    elif cat_lower == "qisqa":
         return f"""You are a professional username naming specialist. Create very SHORT (5-7 letters), MEANINGFUL, single-word usernames.
-
 STRICT RULES:
 - Exactly 5 to 7 letters — NO numbers, NO underscores at all
 - Must be a SINGLE word (not a combination of two words joined)
 - Must be easy to pronounce (CVCVC or CVCCV pattern preferred)
 - Either a real dictionary word OR a very natural brand-like new word
 - Random letter sequences are FORBIDDEN
-
-{lang_rule_short}
+- Examples: oltin, bahor, bulut, quyosh, flame, lunar, storm, titan, alpha, prime
 {excluded_part}
-
-TASK: Generate 20 unique, short, meaningful usernames following ALL above rules. Pick words from varied topics (nature, space, tech, feelings, action).
-
-FORMAT: Return ONLY a JSON array, nothing else:
+TASK: Generate 25 unique, short, meaningful usernames following ALL above rules.
+FORMAT: Return ONLY a valid JSON array, nothing else:
 ["word1", "word2", ...]"""
 
-    elif category == "turli":
+    elif cat_lower == "turli":
         return f"""You are a professional Telegram username generator. Create usernames in VARIOUS STYLES.
-
 RULES:
-- Only lowercase letters, numbers, and underscores
-- 5-32 characters
-- Each username must be in a different style
-
-STYLES (at least 3 per style):
-1. Word + topic abbreviation   (example: techno_uz, gamer_pro)
-2. Word + logical number        (example: koinot33, matrix2025)
-3. Two meaningful words merged  (example: darkmoon, silverfox)
-4. Topic + location/nationality (example: crypto_uz, music_asia)
-5. Creative brand-style new word (example: nexoria, vantix)
-
-{lang_rule_styled}
+- Only lowercase letters, numbers, and underscores (5-16 characters)
+- Mix styles: word+topic, word+number, merged words, topic+location (uz)
 THEME: {theme or 'general (technology, space, nature, sport, business)'}
 {excluded_part}
-
-TASK: Generate 18 usernames, at least 3 from each style above.
-
-FORMAT: Return ONLY a JSON array:
+TASK: Generate 25 usernames in diverse styles.
+FORMAT: Return ONLY a valid JSON array, nothing else:
 ["variant1", "variant2", ...]"""
 
     else:  # custom / theme
         word = base_word or "user"
         return f"""You are a professional Telegram username naming expert. Generate SHORT, CREATIVE, MEANINGFUL usernames inspired by the THEME: "{word}".
-
 CRITICAL RULES:
 - Only lowercase letters (a-z), numbers, and underscores (_)
-- 5-32 characters total — shorter is better (5-14 ideal)
+- 5 to 16 characters total — shorter is better
 - Do NOT end with underscore or use double underscores
 - The exact word "{word}" does NOT need to appear — use translations, synonyms, abbreviations, and related concepts!
 - Each username must feel natural and look like a real person's or brand's handle
-- Mix styles: some single words, some word+number, some word_suffix
-
-{lang_rule_custom}
-
-EXAMPLES:
-- Theme "dasturchi" → ["codemaster", "dev_uz", "pytek77", "codejun", "hackpro"]
-- Theme "sotuvchi"  → ["sellerbek", "trade_uz", "shopking", "dealmaker"]
-- Theme "direktor"  → ["bosslife", "ceo_uz", "chiefman", "execpro"]
-- Theme "axmoq"     → ["crazyguy", "wild_one", "locobek", "madlad"]
-
-TASK: Generate 24 unique, creative usernames inspired by the theme "{word}". Use the theme as inspiration — not a literal requirement.
 {excluded_part}
-
-FORMAT: Return ONLY a JSON array, nothing else:
+TASK: Generate 30 unique, creative usernames inspired by the theme "{word}".
+FORMAT: Return ONLY a valid JSON array, nothing else:
 ["variant1", "variant2", ...]"""
 
 
 async def llm_generate_candidates(
     category: str,
-    language: str,
+    language: str = "uz",
     base_word: str = "",
     theme: str = "",
     excluded: list | None = None
 ) -> list[str]:
-    """LLM API orqali username nomzodlari generatsiya qilish."""
+    """LLM API orqali username nomzodlari generatsiya qilish.
+    Google Gemini, Groq, OpenRouter yoki har qanday OpenAI-mos tekin modelni qo'llab-quvvatlaydi.
+    """
     import httpx
     import json as _json
 
-    # API kalitini DB settingsdan yoki envdan olamiz
     api_key = await get_setting("llm_api_key", LLM_API_KEY)
     if not api_key:
-        logger.warning("LLM_API_KEY yo'q — statik lug'atga o'tiladi")
+        logger.debug("LLM_API_KEY sozlanmagan — statik lug'at generatoriga o'tiladi")
         return []
 
     model = await get_setting("llm_model", LLM_MODEL)
@@ -781,26 +762,31 @@ async def llm_generate_candidates(
     excluded = excluded or []
     excluded_part = ""
     if excluded:
-        sample = excluded[:30]  # Juda ko'p yubormaslik uchun
+        sample = excluded[:30]
         excluded_part = f"\nDO NOT suggest these (already taken): {', '.join(sample)}"
 
-    # Til aniq, aralashmaslik uchun dinamik prompt
     prompt = build_llm_prompt(category, language, base_word, theme, excluded_part)
 
+    headers = {
+        "Content-Type": "application/json",
+        "HTTP-Referer": WEB_URL,
+        "X-Title": "Usernamechi Bot",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=25.0) as client:
             resp = await client.post(
                 api_url,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": WEB_URL,
-                    "X-Title": "Usernamechi Bot",
-                },
+                headers=headers,
                 json={
                     "model": model,
-                    "max_tokens": 1000,
-                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 800,
+                    "messages": [
+                        {"role": "system", "content": "You are an expert Telegram username generator. You always respond ONLY with a raw JSON array of strings, no conversational text, no markdown backticks."},
+                        {"role": "user", "content": prompt}
+                    ],
                 },
             )
         if resp.status_code != 200:
@@ -810,33 +796,30 @@ async def llm_generate_candidates(
         data = resp.json()
         text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         if not text:
-            # Anthropic-style fallback
             content = data.get("content", [{}])
             text = content[0].get("text", "") if content else ""
 
         text = text.strip()
-        # JSON blokni ajratib olish
         if "```" in text:
             text = text.split("```")[-2] if text.count("```") >= 2 else text
             text = text.removeprefix("json").strip()
-        # Faqat JSON array qismini olish
         start = text.find("[")
         end = text.rfind("]")
         if start != -1 and end != -1:
             text = text[start:end+1]
 
         raw = _json.loads(text)
-        # Kategoriya 2 dict list bo'lishi mumkin — normalizatsiya
         candidates = []
+        TELEGRAM_RE = re.compile(r'^[a-z0-9][a-z0-9_]{3,30}[a-z0-9]$')
         for item in raw:
             if isinstance(item, dict):
-                uname = item.get("username", "")
+                uname = item.get("username", "") or item.get("name", "")
             else:
                 uname = str(item)
             uname = uname.strip().lower().replace("@", "")
-            if uname:
+            if uname and 5 <= len(uname) <= 32 and bool(TELEGRAM_RE.match(uname)):
                 candidates.append(uname)
-        logger.info(f"LLM {len(candidates)} ta nomzod qaytardi (cat={category})")
+        logger.info(f"🤖 LLM {len(candidates)} ta ma'noli nomzod qaytardi (kategoriya={category})")
         return candidates
 
     except Exception as e:
@@ -3492,15 +3475,33 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                         logger.warning(f"Search sniper stealth telethon client fallback error: {se}")
                         telethon_client = None
 
-        # ── LLM QIDIRUV (agar API kalit bo'lsa va LLM kategoriyasi bo'lsa) ──
-        llm_categories = ('custom', 'turli', 'qisqa')
+        # ── LLM QIDIRUV (AI orqali ma'noli va kategoriyaga mos nomzodlar generatsiya qilish) ──
         cat_key_for_llm = category.split(':')[0] if ':' in category else category
+        custom_base = category.split(':', 1)[1].strip() if ':' in category else ''
         
         db_api_key = await get_setting("llm_api_key", os.getenv("LLM_API_KEY", ""))
         llm_results = []
-        
-        # LLM qidiruv qismi o'chirib tashlandi.
-        # Bot to'liq avtonom va bepul lug'at orqali o'zi qidiradi.
+        if db_api_key:
+            try:
+                logger.info(f"🤖 [AI QIDIRUV] Kategoriya '{category}' uchun AI orqali ma'noli nomzodlar so'ralmoqda...")
+                ai_candidates = await llm_generate_candidates(
+                    category=cat_key_for_llm,
+                    language=lang,
+                    base_word=custom_base,
+                    theme=custom_base or category
+                )
+                if ai_candidates:
+                    logger.info(f"🤖 [AI QIDIRUV] AI {len(ai_candidates)} ta sara nomzod generatsiya qildi!")
+                    clean_ai = [
+                        u for u in ai_candidates 
+                        if u not in seen_t and 5 <= len(u) <= 32 and bool(TELEGRAM_RE.match(u))
+                    ]
+                    for cu in clean_ai:
+                        seen_t.add(cu)
+                    # AI nomzodlarini eng birinchi navbatda tekshiriladigan qilib qo'shamiz:
+                    all_targets = clean_ai + all_targets
+            except Exception as ai_err:
+                logger.warning(f"AI generatsiya xatosi (statik lug'at bilan davom etiladi): {ai_err}")
 
         from telethon.tl.functions.account import CheckUsernameRequest
         from telethon.errors import UsernamePurchaseAvailableError, UsernameInvalidError
@@ -7342,6 +7343,51 @@ async def api_admin_settings_set(request: Request, x_admin_token: str = Header(d
     if 'llm_api_url' in data:
         await set_setting("llm_api_url", data['llm_api_url'])
     return {"ok": True}
+
+@app.post("/api/admin/llm/test")
+async def api_admin_llm_test(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+    
+    data = await request.json()
+    category = data.get("category", "brend")
+    lang = data.get("language", "uz")
+    base_word = data.get("base_word", "")
+    
+    # Vaqtinchalik parametrlar (sinov uchun)
+    test_key = data.get("api_key")
+    test_model = data.get("model")
+    test_url = data.get("api_url")
+    
+    orig_key = None
+    orig_model = None
+    orig_url = None
+    if test_key:
+        orig_key = await get_setting("llm_api_key", LLM_API_KEY)
+        await set_setting("llm_api_key", test_key)
+    if test_model:
+        orig_model = await get_setting("llm_model", LLM_MODEL)
+        await set_setting("llm_model", test_model)
+    if test_url:
+        orig_url = await get_setting("llm_api_url", LLM_API_URL)
+        await set_setting("llm_api_url", test_url)
+        
+    try:
+        candidates = await llm_generate_candidates(
+            category=category,
+            language=lang,
+            base_word=base_word,
+            theme=base_word or category
+        )
+        return {"ok": True, "count": len(candidates), "candidates": candidates}
+    finally:
+        if orig_key is not None:
+            await set_setting("llm_api_key", orig_key)
+        if orig_model is not None:
+            await set_setting("llm_model", orig_model)
+        if orig_url is not None:
+            await set_setting("llm_api_url", orig_url)
 
 @app.get("/api/admin/channels")
 async def api_admin_channels_get(x_admin_token: str = Header(default="")):

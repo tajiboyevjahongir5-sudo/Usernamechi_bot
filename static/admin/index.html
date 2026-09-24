@@ -563,6 +563,66 @@ body::before {
       </div>
     </div>
 
+    <!-- AI MODEL PANEL -->
+    <div class="glass-panel" style="margin-top:24px;">
+      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div class="panel-title">🤖 Sun'iy Intellekt (AI Model) Sozlamalari</div>
+          <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Qidiruv vaqtida kategoriyaga mos, eng ma'noli va yangi username nomzodlarini generatsiya qilish uchun tekin AI modelini ulang.</div>
+        </div>
+        <span class="badge badge-primary">AI Naming Engine</span>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:18px;">
+        <button type="button" class="action-btn" style="background:rgba(66, 133, 244, 0.15); border:1px solid rgba(66, 133, 244, 0.4); justify-content:center;" onclick="applyAiPreset('gemini')">
+          🌟 Google Gemini (Tekin)
+        </button>
+        <button type="button" class="action-btn" style="background:rgba(245, 158, 11, 0.15); border:1px solid rgba(245, 158, 11, 0.4); justify-content:center;" onclick="applyAiPreset('groq')">
+          ⚡ Groq Cloud (Tekin)
+        </button>
+        <button type="button" class="action-btn" style="background:rgba(168, 85, 247, 0.15); border:1px solid rgba(168, 85, 247, 0.4); justify-content:center;" onclick="applyAiPreset('openrouter')">
+          🌐 OpenRouter (Tekin)
+        </button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr; gap:14px;">
+        <div class="form-group">
+          <label class="form-label">🔗 AI API URL (Endpoint)</label>
+          <input type="text" id="set-llm-api-url" class="form-input" placeholder="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">🧠 AI Model Nomi</label>
+          <input type="text" id="set-llm-model" class="form-input" placeholder="gemini-1.5-flash">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">🔑 AI API Kaliti (API Key)</label>
+          <div style="position:relative;">
+            <input type="password" id="set-llm-api-key" class="form-input" placeholder="AI API kalitingizni kiriting..." style="padding-right:45px;">
+            <button type="button" onclick="toggleApiKeyVisibility()" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-size:16px;">👁</button>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+            💡 <b>Google Gemini</b> kalitini mutlaqo bepul olish: <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent-color);">Google AI Studio</a> | <b>Groq</b> kaliti: <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent-color);">Groq Console</a> (Kredit karta shart emas).
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px; margin-top:8px;">
+          <button class="action-btn btn-primary" style="flex:1; justify-content:center; padding:12px;" onclick="saveSettings()">💾 AI Sozlamalarini Saqlash</button>
+          <button class="action-btn" style="background:rgba(59, 130, 246, 0.2); border:1px solid #3b82f6; color:#60a5fa; justify-content:center; padding:12px;" onclick="testAiGeneration()">🧪 AI Sinov (Test)</button>
+        </div>
+
+        <!-- AI TEST RESULTS BOX -->
+        <div id="ai-test-box" style="display:none; background:rgba(15, 23, 42, 0.6); border:1px solid rgba(255, 255, 255, 0.1); border-radius:10px; padding:14px; margin-top:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="font-weight:600; font-size:13px; color:var(--text-main);">🎯 AI Generatsiya Natijalari:</span>
+            <span id="ai-test-count" class="badge badge-emerald">0 ta nom</span>
+          </div>
+          <div id="ai-test-results" style="display:flex; flex-wrap:wrap; gap:8px; max-height:160px; overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- MANDATORY CHANNELS PANEL -->
     <div class="glass-panel" style="margin-top:24px;">
       <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -1501,6 +1561,88 @@ async function saveSettings() {
     });
     showToast("💾 Sozlamalar saqlandi", "success");
   } catch(e) { showToast("Xatolik", "error"); }
+}
+
+function applyAiPreset(provider) {
+  const urlInput = document.getElementById('set-llm-api-url');
+  const modelInput = document.getElementById('set-llm-model');
+  const keyInput = document.getElementById('set-llm-api-key');
+
+  if (provider === 'gemini') {
+    urlInput.value = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+    modelInput.value = 'gemini-1.5-flash';
+    keyInput.placeholder = 'AIzaSy... (Google AI Studio kaliti)';
+    showToast("🌟 Google Gemini tanlandi (aistudio.google.com da tekin)", "info");
+  } else if (provider === 'groq') {
+    urlInput.value = 'https://api.groq.com/openai/v1/chat/completions';
+    modelInput.value = 'llama-3.3-70b-versatile';
+    keyInput.placeholder = 'gsk_... (Groq Cloud kaliti)';
+    showToast("⚡ Groq Cloud tanlandi (console.groq.com da tekin)", "info");
+  } else if (provider === 'openrouter') {
+    urlInput.value = 'https://openrouter.ai/api/v1/chat/completions';
+    modelInput.value = 'google/gemini-2.0-flash-exp:free';
+    keyInput.placeholder = 'sk-or-... (OpenRouter kaliti)';
+    showToast("🌐 OpenRouter Free tanlandi (openrouter.ai da tekin)", "info");
+  }
+}
+
+function toggleApiKeyVisibility() {
+  const input = document.getElementById('set-llm-api-key');
+  if (input) {
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+}
+
+async function testAiGeneration() {
+  const key = document.getElementById('set-llm-api-key').value.trim();
+  const model = document.getElementById('set-llm-model').value.trim();
+  const url = document.getElementById('set-llm-api-url').value.trim();
+  
+  if (!key) {
+    showToast("Iltimos, avval AI API kalitini kiriting!", "warning");
+    return;
+  }
+  
+  const box = document.getElementById('ai-test-box');
+  const resultsDiv = document.getElementById('ai-test-results');
+  const countBadge = document.getElementById('ai-test-count');
+  
+  box.style.display = 'block';
+  resultsDiv.innerHTML = '<span style="color:var(--text-muted); font-size:12px;">⏳ AI modelidan nomzodlar so\'ralmoqda...</span>';
+  countBadge.textContent = 'Yuklanmoqda...';
+  
+  try {
+    const res = await fetch('/api/admin/llm/test', {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        category: 'brend',
+        language: 'uz',
+        api_key: key,
+        model: model,
+        api_url: url
+      })
+    });
+    const d = await res.json();
+    if (d.ok && d.candidates && d.candidates.length > 0) {
+      countBadge.textContent = `${d.candidates.length} ta nom topildi`;
+      countBadge.className = 'badge badge-emerald';
+      resultsDiv.innerHTML = d.candidates.map(u => 
+        `<span style="background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); color:#93c5fd; padding:4px 10px; border-radius:6px; font-size:12px; font-family:monospace;">@${u}</span>`
+      ).join('');
+      showToast(`✅ AI ishladi! ${d.candidates.length} ta username tayyor`, "success");
+    } else {
+      countBadge.textContent = '0 ta nom';
+      countBadge.className = 'badge badge-danger';
+      resultsDiv.innerHTML = '<span style="color:#ef4444; font-size:12px;">⚠️ AI nomzod qaytarmadi. API kalit yoki model nomini tekshiring.</span>';
+      showToast("AI javob qaytarmadi", "error");
+    }
+  } catch(e) {
+    countBadge.textContent = 'Xatolik';
+    countBadge.className = 'badge badge-danger';
+    resultsDiv.innerHTML = `<span style="color:#ef4444; font-size:12px;">Xatolik: ${e.message}</span>`;
+    showToast("Sinovda xatolik: " + e.message, "error");
+  }
 }
 
 let broadcastTargetType = 'all';
