@@ -650,7 +650,7 @@ from bot.words import (
 # ─── LLM USERNAME GENERATOR ─────────────────────────────────────────────
 # Google Gemini (Tekin), Groq Cloud (Tekin) yoki OpenRouter (Tekin modellar)
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")   
-LLM_MODEL   = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+LLM_MODEL   = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 LLM_API_URL = os.getenv("LLM_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 
 def build_llm_prompt(category: str, language: str, base_word: str, theme: str, excluded_part: str) -> str:

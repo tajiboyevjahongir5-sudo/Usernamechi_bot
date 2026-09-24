@@ -1575,9 +1575,9 @@ function applyAiPreset(provider) {
     showToast("🌟 Google Gemini tanlandi (aistudio.google.com da tekin)", "info");
   } else if (provider === 'groq') {
     urlInput.value = 'https://api.groq.com/openai/v1/chat/completions';
-    modelInput.value = 'llama-3.3-70b-versatile';
+    modelInput.value = 'openai/gpt-oss-120b';
     keyInput.placeholder = 'gsk_... (Groq Cloud kaliti)';
-    showToast("⚡ Groq Cloud tanlandi (console.groq.com da tekin)", "info");
+    showToast("⚡ Groq Cloud tanlandi (openai/gpt-oss-120b modeli)", "info");
   } else if (provider === 'openrouter') {
     urlInput.value = 'https://openrouter.ai/api/v1/chat/completions';
     modelInput.value = 'google/gemini-2.0-flash-exp:free';
