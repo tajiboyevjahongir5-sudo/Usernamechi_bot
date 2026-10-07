@@ -3042,7 +3042,7 @@ async function pollSearchResults() {
     const res = await fetch(`${API}/api/search/results?search_id=${currentSearchId}&init_data=${encodeURIComponent(tg.initData)}`);
     const d = await res.json();
     if(d.ok) {
-      const foundCount = d.results ? d.results.filter(r => r.status !== 'claimed').length : 0;
+      const foundCount = d.results ? d.results.filter(r => r.status !== 'claimed' && r.status !== 'seen').length : 0;
       if(d.status === 'completed') {
         clearInterval(searchPollInterval);
         document.getElementById('search-status-text').innerHTML = `✅ Qidiruv yakunlandi. (Topildi: ${foundCount})`;
@@ -3077,7 +3077,7 @@ let cachedFreeResults = [];
 
 function renderSearchResults(results) {
   const list = document.getElementById('results-list');
-  cachedFreeResults = results.filter(r => r.status !== 'claimed');
+  cachedFreeResults = results.filter(r => r.status !== 'claimed' && r.status !== 'seen');
   
   if(cachedFreeResults.length === 0) {
     const isCompleted = document.getElementById('search-status-text').innerHTML.includes('yakunlandi');
@@ -3186,6 +3186,8 @@ async function nextSearch() {
     const d = await res.json();
     if (d.ok) {
       currentSearchId = d.search_id;
+      currentResultIndex = 0;
+      cachedFreeResults = [];
       document.getElementById('results-list').innerHTML = '';
       document.getElementById('search-status-text').textContent = '⏳ Yangi variantlar qidirilmoqda...';
       selectedUsernames.clear();
