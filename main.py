@@ -7806,9 +7806,9 @@ async def api_admin_join_channels_add(request: Request, x_admin_token: str = Hea
     except: auto_approve = 1
     status = data.get('status', 'Active')
 
-    # Agar bitta identifier maydonidan kelgan bo'lsa
+    # Agar identifier maydonidan kelgan bo'lsa
     if identifier:
-        clean_id = identifier.replace("https://t.me/", "").replace("t.me/", "")
+        clean_id = identifier.replace("https://t.me/", "").replace("http://t.me/", "").replace("t.me/", "").strip()
         if clean_id.startswith("+") or "joinchat" in clean_id:
             invite_link = identifier
         elif clean_id.startswith("-") or clean_id.isdigit():
@@ -7817,7 +7817,10 @@ async def api_admin_join_channels_add(request: Request, x_admin_token: str = Hea
             channel_username = clean_id.replace("@", "")
 
     if channel_username:
-        channel_username = channel_username.replace("@", "").replace("https://t.me/", "").replace("t.me/", "").strip()
+        channel_username = channel_username.replace("@", "").strip()
+
+    if not channel_id and not channel_username and not invite_link:
+        return {"ok": False, "error": "Kanal ID yoki username kiritilmadi"}
 
     # Bot orqali kanal ma'lumotlarini tekshirish / to'ldirish
     global bot
@@ -7825,7 +7828,7 @@ async def api_admin_join_channels_add(request: Request, x_admin_token: str = Hea
         target = channel_id if channel_id and (channel_id.startswith("-") or channel_id.isdigit()) else (f"@{channel_username}" if channel_username else None)
         if target:
             try:
-                target_val = int(target) if (target.startswith("-") or target.isdigit()) else target
+                target_val = int(target) if (str(target).startswith("-") or str(target).isdigit()) else target
                 chat_info = await bot.get_chat(target_val)
                 if chat_info:
                     if not title:
@@ -7837,7 +7840,12 @@ async def api_admin_join_channels_add(request: Request, x_admin_token: str = Hea
                 logger.debug(f"get_chat auto-resolve: {e}")
 
     if not title:
-        title = channel_username or channel_id or "Zayafka Kanali"
+        if channel_username:
+            title = f"@{channel_username}"
+        elif channel_id:
+            title = f"Kanal ({channel_id})"
+        else:
+            title = "Zayafka Kanali"
 
     async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("""

@@ -894,35 +894,23 @@ body::before {
 
 <!-- ADD JOIN CHANNEL MODAL -->
 <div class="modal-overlay" id="modal-join-channel" onclick="if(event.target===this) closeModal('modal-join-channel')">
-  <div class="modal-box" style="max-width:520px;">
-    <h3 style="font-size:18px; font-weight:800; margin-bottom:16px;">📥 Yangi Zayafka (Join Request) Kanal Qo'shish</h3>
-    <div class="form-group">
-      <label class="form-label">Kanal Nomi (Masalan: Rasmiy Hamkor Kanal)</label>
-      <input type="text" id="new-jc-title" class="form-input" placeholder="Kanal nomi (ixtiyoriy, avtomatik aniqlanadi)">
+  <div class="modal-box" style="max-width:480px;">
+    <h3 style="font-size:18px; font-weight:800; margin-bottom:12px;">📥 Yangi Zayafka Kanal Qo'shish</h3>
+    <div style="font-size:13px; color:var(--text-muted); margin-bottom:16px; line-height:1.5;">
+      Kanalning <b>ID raqamini</b> (masalan: <code>-1001234567890</code>) yoki <b>username nomini</b> (masalan: <code>@kanal_user</code>) kiriting. Kanal nomi va ma'lumotlari avtomatik aniqlanadi.
     </div>
+
     <div class="form-group">
-      <label class="form-label">Kanal ID yoki Usernami (Masalan: -1001234567890 yoki @kanal_user)</label>
-      <input type="text" id="new-jc-ident" class="form-input" placeholder="-100... yoki @username">
-      <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Diqqat: Bot kanalda admin bo'lishi va "Foydalanuvchilarni qabul qilish" huquqiga ega bo'lishi kerak!</div>
+      <label class="form-label" style="font-size:13px; font-weight:700;">Kanal ID yoki Usernami:</label>
+      <input type="text" id="new-jc-ident" class="form-input" placeholder="-100... yoki @username" style="font-size:15px; padding:12px 14px;">
+      <div style="font-size:11px; color:#38bdf8; margin-top:6px;">
+        💡 <i>Bot ushbu kanalda administrator bo'lishi va "Foydalanuvchilarni qabul qilish" huquqiga ega bo'lishi kerak.</i>
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Taklif Havolasi (Invite Link / Zayafka link, ixtiyoriy)</label>
-      <input type="text" id="new-jc-link" class="form-input" placeholder="https://t.me/+...">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Tasdiqlash Usuli</label>
-      <select id="new-jc-auto" class="form-input">
-        <option value="1">⚡ Avtomatik — Zayafka kelishi bilanoq bot o'zi tasdiqlasin</option>
-        <option value="0">⏳ Qo'lda — Admin paneldagi tugma orqali tasdiqlansin</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Maxsus Xush Kelibsiz Xabari (Ixtiyoriy)</label>
-      <textarea id="new-jc-welcome" class="form-input" rows="4" placeholder="Bo'sh qoldirsangiz, bot standart chiroyli tanishtiruv xabarini yuboradi. {first_name} va {channel_title} teglaridan foydalanishingiz mumkin."></textarea>
-    </div>
+
     <div style="display:flex; gap:10px; margin-top:20px;">
-      <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitAddJoinChannel()">Qo'shish</button>
-      <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-join-channel')">Bekor Qilish</button>
+      <button class="action-btn btn-primary" style="flex:1; justify-content:center; padding:12px; font-size:14px; font-weight:700;" onclick="submitAddJoinChannel()">➕ Kanalni Qo'shish</button>
+      <button class="action-btn btn-secondary" style="flex:1; justify-content:center; padding:12px; font-size:14px;" onclick="closeModal('modal-join-channel')">Bekor Qilish</button>
     </div>
   </div>
 </div>
@@ -2437,46 +2425,39 @@ async function loadJoinChannels(silent = false) {
 }
 
 function openAddJoinChannelModal() {
-  document.getElementById('new-jc-title').value = '';
-  document.getElementById('new-jc-ident').value = '';
-  document.getElementById('new-jc-link').value = '';
-  document.getElementById('new-jc-welcome').value = '';
-  document.getElementById('new-jc-auto').value = '1';
+  const el = document.getElementById('new-jc-ident');
+  if (el) el.value = '';
   openModal('modal-join-channel');
+  setTimeout(() => { if (el) el.focus(); }, 150);
 }
 
 async function submitAddJoinChannel() {
-  const title = document.getElementById('new-jc-title').value.trim();
   const identifier = document.getElementById('new-jc-ident').value.trim();
-  const invite_link = document.getElementById('new-jc-link').value.trim();
-  const welcome_message = document.getElementById('new-jc-welcome').value.trim();
-  const auto_approve = parseInt(document.getElementById('new-jc-auto').value) || 1;
 
-  if (!identifier && !title) {
+  if (!identifier) {
     showToast("Kanal ID yoki usernami kiritilmadi", "error");
     return;
   }
+
+  showToast("⏳ Kanal ulanmoqda...", "info");
 
   try {
     const res = await fetch('/api/admin/join_channels/add', {
       method: 'POST',
       headers: { ...headers(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title,
-        identifier,
-        invite_link,
-        welcome_message,
-        auto_approve,
+        identifier: identifier,
+        auto_approve: 1,
         status: 'Active'
       })
     });
     const d = await res.json();
     if (d.ok) {
-      showToast("✅ Zayafka kanali qo'shildi", "success");
+      showToast("✅ Zayafka kanali muvaffaqiyatli qo'shildi!", "success");
       closeModal('modal-join-channel');
       loadJoinChannels();
     } else {
-      showToast(d.error || "Xatolik", "error");
+      showToast(d.error || "Xatolik yuz berdi", "error");
     }
   } catch(e) {
     showToast("Tarmoq xatosi: " + e.message, "error");
