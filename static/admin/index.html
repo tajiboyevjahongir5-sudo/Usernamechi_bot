@@ -647,6 +647,58 @@ body::before {
     </div>
 
 
+    <!-- JOIN REQUEST CHANNELS (ZAYAFKA KANALLARI) PANEL -->
+    <div class="glass-panel" style="margin-top:24px;">
+      <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="panel-title">📥 Zayafka (Join Request) Kanallari</div>
+            <span class="badge badge-emerald" style="display:inline-flex; align-items:center; gap:5px; font-size:11px;">
+              <span style="width:7px; height:7px; border-radius:50%; background:#10b981; display:inline-block; animation:pulse 1.5s infinite;"></span>
+              Realtime Jonli
+            </span>
+          </div>
+          <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">
+            Kanalga a'zo bo'lish so'rovi (zayafka) yuborgan har bir foydalanuvchiga bot avtomatik ma'lumot yuboradi, bot a'zosi qiladi va so'rovni tasdiqlaydi.
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="action-btn btn-emerald" style="padding:8px 16px; font-size:12px;" onclick="approveAllJoinRequests()" id="btn-approve-all-global" title="Barcha kutilayotgan zayafkalarni bitta bosishda tasdiqlash">
+            ⚡ Barchasini Tasdiqlash
+          </button>
+          <button class="action-btn btn-primary" style="padding:8px 16px; font-size:12px;" onclick="openAddJoinChannelModal()">
+            ➕ Yangi Zayafka Kanal
+          </button>
+        </div>
+      </div>
+
+      <!-- REALTIME STATS KPI COUNTERS -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:12px; margin-top:16px;">
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px 14px;">
+          <div style="font-size:11px; color:var(--text-muted); font-weight:600;">📥 JAMI ZAYAFKALAR</div>
+          <div id="join-stat-total" style="font-size:22px; font-weight:800; color:#38bdf8; margin-top:4px;">0</div>
+        </div>
+        <div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.25); border-radius:12px; padding:12px 14px;">
+          <div style="font-size:11px; color:#fbbf24; font-weight:600;">⏳ KUTILMOQDA (PENDING)</div>
+          <div id="join-stat-pending" style="font-size:22px; font-weight:800; color:#f59e0b; margin-top:4px;">0</div>
+        </div>
+        <div style="background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.25); border-radius:12px; padding:12px 14px;">
+          <div style="font-size:11px; color:#34d399; font-weight:600;">✅ TASDIQLANGAN</div>
+          <div id="join-stat-approved" style="font-size:22px; font-weight:800; color:#10b981; margin-top:4px;">0</div>
+        </div>
+        <div style="background:rgba(168,85,247,0.08); border:1px solid rgba(168,85,247,0.25); border-radius:12px; padding:12px 14px;">
+          <div style="font-size:11px; color:#c084fc; font-weight:600;">⚡ SO'NGGI 24 SOATDA</div>
+          <div id="join-stat-today" style="font-size:22px; font-weight:800; color:#a855f7; margin-top:4px;">0</div>
+        </div>
+      </div>
+
+      <!-- CHANNELS LIST -->
+      <div id="join-channels-list-container" style="display:flex; flex-direction:column; gap:12px; margin-top:16px;">
+        <div style="text-align:center; padding:20px; color:var(--text-muted);">Zayafka kanallari yuklanmoqda...</div>
+      </div>
+    </div>
+
+
     <!-- MULTI-CARD MANAGEMENT PANEL -->
     <div class="glass-panel" style="margin-top:24px;">
       <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -836,6 +888,54 @@ body::before {
     <div style="display:flex; gap:10px; margin-top:20px;">
       <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitAddChannel()">Qo'shish</button>
       <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-channel')">Bekor Qilish</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD JOIN CHANNEL MODAL -->
+<div class="modal-overlay" id="modal-join-channel" onclick="if(event.target===this) closeModal('modal-join-channel')">
+  <div class="modal-box" style="max-width:520px;">
+    <h3 style="font-size:18px; font-weight:800; margin-bottom:16px;">📥 Yangi Zayafka (Join Request) Kanal Qo'shish</h3>
+    <div class="form-group">
+      <label class="form-label">Kanal Nomi (Masalan: Rasmiy Hamkor Kanal)</label>
+      <input type="text" id="new-jc-title" class="form-input" placeholder="Kanal nomi (ixtiyoriy, avtomatik aniqlanadi)">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Kanal ID yoki Usernami (Masalan: -1001234567890 yoki @kanal_user)</label>
+      <input type="text" id="new-jc-ident" class="form-input" placeholder="-100... yoki @username">
+      <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Diqqat: Bot kanalda admin bo'lishi va "Foydalanuvchilarni qabul qilish" huquqiga ega bo'lishi kerak!</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Taklif Havolasi (Invite Link / Zayafka link, ixtiyoriy)</label>
+      <input type="text" id="new-jc-link" class="form-input" placeholder="https://t.me/+...">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tasdiqlash Usuli</label>
+      <select id="new-jc-auto" class="form-input">
+        <option value="1">⚡ Avtomatik — Zayafka kelishi bilanoq bot o'zi tasdiqlasin</option>
+        <option value="0">⏳ Qo'lda — Admin paneldagi tugma orqali tasdiqlansin</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Maxsus Xush Kelibsiz Xabari (Ixtiyoriy)</label>
+      <textarea id="new-jc-welcome" class="form-input" rows="4" placeholder="Bo'sh qoldirsangiz, bot standart chiroyli tanishtiruv xabarini yuboradi. {first_name} va {channel_title} teglaridan foydalanishingiz mumkin."></textarea>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:20px;">
+      <button class="action-btn btn-primary" style="flex:1; justify-content:center;" onclick="submitAddJoinChannel()">Qo'shish</button>
+      <button class="action-btn btn-secondary" style="flex:1; justify-content:center;" onclick="closeModal('modal-join-channel')">Bekor Qilish</button>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW JOIN REQUESTS MODAL -->
+<div class="modal-overlay" id="modal-join-requests-list" onclick="if(event.target===this) closeModal('modal-join-requests-list')">
+  <div class="modal-box" style="max-width:640px; max-height:85vh; display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h3 style="font-size:18px; font-weight:800;" id="modal-join-req-title">📋 Zayafkalar Tarixi</h3>
+      <button class="action-btn btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="closeModal('modal-join-requests-list')">✕</button>
+    </div>
+    <div id="modal-join-req-content" style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:8px; max-height:60vh; padding-right:4px;">
+      <div style="text-align:center; padding:20px; color:var(--text-muted);">Yuklanmoqda...</div>
     </div>
   </div>
 </div>
@@ -1548,6 +1648,7 @@ async function loadSettings() {
     
     loadCards();
     loadMandatoryChannels();
+    loadJoinChannels();
   } catch(e) {
     console.error("loadSettings error:", e);
     showToast("Sozlamalarni yuklashda xatolik: " + e.message, "error");
@@ -2197,6 +2298,363 @@ async function deleteChannel(id) {
   } catch(e) {
     showToast("Tarmoq xatosi", "error");
   }
+}
+
+// ── ZAYAFKA (JOIN REQUEST) CHANNELS JAVASCRIPT ────
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+let joinChannelsInterval = null;
+
+async function loadJoinChannels(silent = false) {
+  try {
+    const res = await fetch('/api/admin/join_channels?t=' + Date.now(), { headers: headers() });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      if (!silent) showToast("Zayafka kanallarini yuklashda xatolik: " + (data.detail || "Server xatosi"), "error");
+      return;
+    }
+
+    // Realtime KPI statslarni yangilash
+    const stats = data.stats || { total: 0, pending: 0, approved: 0, today: 0 };
+    const elTotal = document.getElementById('join-stat-total');
+    const elPending = document.getElementById('join-stat-pending');
+    const elApproved = document.getElementById('join-stat-approved');
+    const elToday = document.getElementById('join-stat-today');
+    if (elTotal) elTotal.innerText = Number(stats.total).toLocaleString();
+    if (elPending) elPending.innerText = Number(stats.pending).toLocaleString();
+    if (elApproved) elApproved.innerText = Number(stats.approved).toLocaleString();
+    if (elToday) elToday.innerText = Number(stats.today).toLocaleString();
+
+    // Global approve button statusi
+    const btnApproveAll = document.getElementById('btn-approve-all-global');
+    if (btnApproveAll) {
+      if (stats.pending > 0) {
+        btnApproveAll.disabled = false;
+        btnApproveAll.style.opacity = '1';
+        btnApproveAll.innerHTML = `⚡ Barchasini Tasdiqlash (${stats.pending})`;
+      } else {
+        btnApproveAll.disabled = true;
+        btnApproveAll.style.opacity = '0.6';
+        btnApproveAll.innerHTML = `✅ Kutilayotgan zayafka yo'q`;
+      }
+    }
+
+    const container = document.getElementById('join-channels-list-container');
+    if (!container) return;
+
+    const channels = data.channels || [];
+    if (!channels.length) {
+      container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted);">Hozircha zayafka kanallari qo\'shilmagan. Yuqoridagi "➕ Yangi Zayafka Kanal" tugmasi orqali kanal qo\'shing.</div>';
+      return;
+    }
+
+    container.innerHTML = channels.map((ch) => {
+      const isAuto = ch.auto_approve === 1;
+      const pendingCount = ch.pending_requests || 0;
+      const totalCount = ch.total_requests || 0;
+      const approvedCount = ch.approved_requests || 0;
+      const todayCount = ch.today_requests || 0;
+
+      return `
+      <div style="background:rgba(30,41,59,0.7); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+        <div style="display:flex; align-items:flex-start; gap:14px; flex:1; min-width:280px;">
+          <div style="width:42px; height:42px; border-radius:12px; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.3); color:#38bdf8; font-weight:800; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">
+            📥
+          </div>
+          <div>
+            <div style="font-size:16px; font-weight:800; color:#f8fafc; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              ${escapeHtml(ch.title)}
+              <span style="font-size:10px; padding:2px 7px; border-radius:6px; background:${ch.status==='Active'?'rgba(16,185,129,0.2)':'rgba(244,63,94,0.2)'}; color:${ch.status==='Active'?'#34d399':'#fb7185'}; font-weight:600;">
+                ${ch.status}
+              </span>
+              <span style="font-size:10px; padding:2px 7px; border-radius:6px; background:${isAuto?'rgba(56,189,248,0.15)':'rgba(245,158,11,0.15)'}; color:${isAuto?'#38bdf8':'#fbbf24'}; font-weight:600;">
+                ${isAuto ? '⚡ Avto-tasdiqlash: Yoqilgan' : '⏳ Qo\'lda tasdiqlash'}
+              </span>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">
+              ${ch.channel_username ? '@' + ch.channel_username : ''} 
+              ${ch.channel_id ? '(ID: ' + ch.channel_id + ')' : ''}
+              ${ch.invite_link ? ` | <a href="${ch.invite_link}" target="_blank" style="color:#38bdf8; text-decoration:none;">Havola</a>` : ''}
+            </div>
+
+            <!-- Realtime Counters for this channel -->
+            <div style="display:flex; gap:12px; margin-top:8px; flex-wrap:wrap; font-size:12px;">
+              <span style="color:#94a3b8;">Jami: <b style="color:#f8fafc;">${totalCount}</b></span>
+              <span style="color:#fbbf24;">Kutilmoqda: <b style="color:#f59e0b; font-size:13px;">${pendingCount}</b></span>
+              <span style="color:#34d399;">Tasdiqlangan: <b style="color:#10b981;">${approvedCount}</b></span>
+              <span style="color:#c084fc;">Bugun: <b style="color:#a855f7;">${todayCount}</b></span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          ${pendingCount > 0 ? `
+            <button class="action-btn btn-emerald" style="font-size:12px; padding:8px 14px; font-weight:700;" onclick="approveChannelRequests('${ch.channel_id || ch.channel_username}', ${ch.id})" title="Shu kanalga kelgan barcha kutilayotgan zayafkalarni tasdiqlash">
+              ✅ Tasdiqlash (${pendingCount})
+            </button>
+          ` : `
+            <button class="action-btn" style="font-size:12px; padding:8px 14px; opacity:0.5; cursor:not-allowed;" disabled>
+              ✅ Barchasi tasdiqlangan
+            </button>
+          `}
+
+          <button class="action-btn btn-secondary" style="font-size:12px; padding:8px 12px;" onclick="viewChannelRequests('${ch.channel_id || ch.channel_username}', '${encodeURIComponent(ch.title)}')" title="Kelgan zayafkalar ro'yxatini ko'rish">
+            👁️ Tarix
+          </button>
+
+          <select style="padding:7px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.3); color:#fff; font-size:12px;" onchange="updateJoinChannelAuto(${ch.id}, this.value)" title="Avtomatik tasdiqlash holati">
+            <option value="1" ${isAuto ? 'selected' : ''}>⚡ Avto-tasdiqlash</option>
+            <option value="0" ${!isAuto ? 'selected' : ''}>⏳ Qo'lda tasdiqlash</option>
+          </select>
+
+          <select style="padding:7px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.3); color:#fff; font-size:12px;" onchange="updateJoinChannelStatus(${ch.id}, this.value)">
+            <option value="Active" ${ch.status==='Active'?'selected':''}>Active</option>
+            <option value="Disabled" ${ch.status==='Disabled'?'selected':''}>Disabled</option>
+          </select>
+
+          <button class="action-btn btn-rose" style="font-size:12px; padding:8px 12px; border-radius:8px;" onclick="deleteJoinChannel(${ch.id})" title="O'chirish">
+            🗑️
+          </button>
+        </div>
+      </div>
+      `;
+    }).join('');
+
+  } catch (e) {
+    if (!silent) {
+      console.error("loadJoinChannels error:", e);
+      showToast("Zayafka kanallarini yuklashda xatolik: " + e.message, "error");
+    }
+  }
+}
+
+function openAddJoinChannelModal() {
+  document.getElementById('new-jc-title').value = '';
+  document.getElementById('new-jc-ident').value = '';
+  document.getElementById('new-jc-link').value = '';
+  document.getElementById('new-jc-welcome').value = '';
+  document.getElementById('new-jc-auto').value = '1';
+  openModal('modal-join-channel');
+}
+
+async function submitAddJoinChannel() {
+  const title = document.getElementById('new-jc-title').value.trim();
+  const identifier = document.getElementById('new-jc-ident').value.trim();
+  const invite_link = document.getElementById('new-jc-link').value.trim();
+  const welcome_message = document.getElementById('new-jc-welcome').value.trim();
+  const auto_approve = parseInt(document.getElementById('new-jc-auto').value) || 1;
+
+  if (!identifier && !title) {
+    showToast("Kanal ID yoki usernami kiritilmadi", "error");
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/admin/join_channels/add', {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        identifier,
+        invite_link,
+        welcome_message,
+        auto_approve,
+        status: 'Active'
+      })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Zayafka kanali qo'shildi", "success");
+      closeModal('modal-join-channel');
+      loadJoinChannels();
+    } else {
+      showToast(d.error || "Xatolik", "error");
+    }
+  } catch(e) {
+    showToast("Tarmoq xatosi: " + e.message, "error");
+  }
+}
+
+async function updateJoinChannelAuto(id, val) {
+  try {
+    await fetch('/api/admin/join_channels/update', {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, auto_approve: parseInt(val) })
+    });
+    showToast("Avto-tasdiqlash holati saqlandi", "success");
+    loadJoinChannels(true);
+  } catch(e) {
+    showToast("Xatolik", "error");
+  }
+}
+
+async function updateJoinChannelStatus(id, val) {
+  try {
+    await fetch('/api/admin/join_channels/update', {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status: val })
+    });
+    showToast("Holat saqlandi", "success");
+    loadJoinChannels(true);
+  } catch(e) {
+    showToast("Xatolik", "error");
+  }
+}
+
+async function deleteJoinChannel(id) {
+  if (!confirm("Ushbu zayafka kanalini ro'yxatdan o'chirmoqchimisiz?")) return;
+  try {
+    const res = await fetch('/api/admin/join_channels/delete', {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Kanal o'chirildi", "success");
+      loadJoinChannels();
+    } else {
+      showToast(d.error || "Xatolik", "error");
+    }
+  } catch(e) {
+    showToast("Tarmoq xatosi", "error");
+  }
+}
+
+async function approveChannelRequests(channel_id, id) {
+  showToast("⏳ Zayafkalar tasdiqlanmoqda...", "info");
+  try {
+    const res = await fetch('/api/admin/join_channels/approve_all', {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel_id, id })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`✅ ${d.approved_count || 0} ta zayafka muvaffaqiyatli tasdiqlandi!`, "success");
+      loadJoinChannels(true);
+    } else {
+      showToast(d.error || "Xatolik yuz berdi", "error");
+    }
+  } catch(e) {
+    showToast("Tarmoq xatosi: " + e.message, "error");
+  }
+}
+
+async function approveAllJoinRequests() {
+  if (!confirm("Barcha kanallardagi barcha kutilayotgan zayafkalarni tasdiqlashni xohlaysizmi?")) return;
+  showToast("⏳ Barcha zayafkalar tasdiqlanmoqda...", "info");
+  try {
+    const res = await fetch('/api/admin/join_channels/approve_all', {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`🎉 ${d.approved_count || 0} ta zayafka muvaffaqiyatli tasdiqlandi!`, "success");
+      loadJoinChannels(true);
+    } else {
+      showToast(d.error || "Xatolik yuz berdi", "error");
+    }
+  } catch(e) {
+    showToast("Tarmoq xatosi: " + e.message, "error");
+  }
+}
+
+async function viewChannelRequests(channel_id, titleEncoded) {
+  const title = decodeURIComponent(titleEncoded || "Kanal");
+  document.getElementById('modal-join-req-title').innerText = `📋 ${title} — Zayafkalar Tarixi`;
+  const content = document.getElementById('modal-join-req-content');
+  content.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Yuklanmoqda...</div>';
+  openModal('modal-join-requests-list');
+
+  try {
+    const res = await fetch(`/api/admin/join_channels/requests?channel_id=${encodeURIComponent(channel_id)}&limit=100`, {
+      headers: headers()
+    });
+    const data = await res.json();
+    if (!data.ok || !data.requests || !data.requests.length) {
+      content.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Hozircha ushbu kanal bo\'yicha zayafkalar kelmagan.</div>';
+      return;
+    }
+
+    content.innerHTML = data.requests.map((r) => {
+      const isPending = r.status === 'pending';
+      const timeStr = r.created_at ? new Date(r.created_at * 1000).toLocaleString('uz-UZ') : '-';
+      return `
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div>
+            <div style="font-size:14px; font-weight:700; color:#f8fafc;">
+              ${escapeHtml(r.first_name || 'Foydalanuvchi')}
+              <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">(${r.username ? '@' + r.username : 'ID: ' + r.user_id})</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">
+              Vaqti: ${timeStr} | Holat: <b style="color:${isPending ? '#f59e0b' : '#10b981'};">${isPending ? '⏳ Kutilmoqda' : '✅ Tasdiqlangan'}</b>
+            </div>
+          </div>
+          <div>
+            ${isPending ? `
+              <button class="action-btn btn-emerald" style="font-size:11px; padding:6px 12px;" onclick="approveSingleRequest(${r.id}, this)">
+                Tasdiqlash
+              </button>
+            ` : `
+              <span style="font-size:12px; color:#10b981;">✅ Qabul qilingan</span>
+            `}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch(e) {
+    content.innerHTML = `<div style="text-align:center; padding:20px; color:#ef4444;">Yuklashda xato: ${e.message}</div>`;
+  }
+}
+
+async function approveSingleRequest(req_id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/admin/join_channels/approve_single', {
+      method: 'POST',
+      headers: { ...headers(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_id: req_id })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast("✅ Zayafka tasdiqlandi", "success");
+      if (btn) {
+        btn.parentElement.innerHTML = '<span style="font-size:12px; color:#10b981;">✅ Qabul qilingan</span>';
+      }
+      loadJoinChannels(true);
+    } else {
+      showToast(d.error || "Xatolik", "error");
+      if (btn) btn.disabled = false;
+    }
+  } catch(e) {
+    showToast("Tarmoq xatosi", "error");
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Realtime interval - Sozlamalar sahifasida har 4 soniyada zayafkalarni yangilab turadi
+if (!joinChannelsInterval) {
+  joinChannelsInterval = setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      const sPage = document.getElementById('page-settings');
+      if (sPage && sPage.classList.contains('active')) {
+        loadJoinChannels(true);
+      }
+    }
+  }, 4000);
 }
 
 checkAuth();

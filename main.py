@@ -372,6 +372,35 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS join_request_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT DEFAULT '',
+                channel_username TEXT DEFAULT '',
+                title TEXT NOT NULL,
+                invite_link TEXT DEFAULT '',
+                welcome_message TEXT DEFAULT '',
+                auto_approve INTEGER DEFAULT 1,
+                status TEXT DEFAULT 'Active',
+                sort_order INTEGER DEFAULT 0,
+                created_at REAL DEFAULT (strftime('%s','now'))
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS channel_join_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                first_name TEXT DEFAULT '',
+                username TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                created_at REAL DEFAULT (strftime('%s','now')),
+                approved_at REAL
+            )
+        """)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_channel_id ON channel_join_requests(channel_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_status ON channel_join_requests(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_user ON channel_join_requests(user_id);")
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS pending_referrals (
                 telegram_id INTEGER PRIMARY KEY,
                 referrer_id INTEGER,
@@ -3016,33 +3045,85 @@ async def on_chat_join_request(event: ChatJoinRequest):
         first_name = event.from_user.first_name or "Foydalanuvchi"
         last_name = event.from_user.last_name or ""
         username = event.from_user.username or ""
+        chat_id_str = str(event.chat.id)
+        chat_username = (event.chat.username or "").lower().replace("@", "")
         chat_title = event.chat.title or "kanalimiz"
 
-        logger.info(f"📥 Yangi kanal zayafkasi: user_id={user_id} (@{username}) kanal='{chat_title}'")
+        logger.info(f"📥 Yangi kanal zayafkasi: user_id={user_id} (@{username}) kanal='{chat_title}' (id={chat_id_str})")
 
         # 1. Foydalanuvchini bazaga qo'shamiz (yangi bo'lsa darhol bot a'zosi bo'ladi)
         await create_user(user_id, first_name, last_name, username)
 
-        # 2. Kanalga zayafkani avtomatik tasdiqlashga harakat qilamiz
-        try:
-            await event.approve()
-            logger.info(f"✅ Zayafka avtomatik qabul qilindi: user_id={user_id}")
-        except Exception as approve_err:
-            logger.debug(f"Zayafkani tasdiqlashda ogohlantirish: {approve_err}")
+        # 2. Kanal sozlamasini tekshiramiz
+        auto_approve = 1
+        custom_welcome = ""
 
-        # 3. Foydalanuvchiga shaxsiy xabarda (PM) bot haqida qisqa, tushunarli va chiroyli ma'lumot yuboramiz
+        try:
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(
+                    "SELECT * FROM join_request_channels WHERE channel_id = ? OR (channel_username != '' AND LOWER(channel_username) = ?) LIMIT 1",
+                    (chat_id_str, chat_username)
+                ) as c:
+                    ch_row = await c.fetchone()
+                    if ch_row:
+                        auto_approve = ch_row["auto_approve"] if ch_row["auto_approve"] is not None else 1
+                        custom_welcome = ch_row["welcome_message"] or ""
+                        # Agar channel_id bo'sh bo'lsa yangilab qo'yamiz
+                        if not ch_row["channel_id"] or ch_row["channel_id"] == "0":
+                            await db.execute("UPDATE join_request_channels SET channel_id = ?, title = ? WHERE id = ?", (chat_id_str, chat_title, ch_row["id"]))
+                            await db.commit()
+        except Exception as db_err:
+            logger.warning(f"Zayafka kanalini tekshirishda xatolik: {db_err}")
+
+        # 3. Zayafkani tasdiqlash
+        approved = False
+        if auto_approve == 1:
+            try:
+                await event.approve()
+                approved = True
+                logger.info(f"✅ Zayafka avtomatik qabul qilindi: user_id={user_id}")
+            except Exception as approve_err:
+                logger.warning(f"Zayafkani tasdiqlashda ogohlantirish: {approve_err}")
+
+        # 4. Zayafkani DBga yozish (realtime hisobot va tasdiqlash uchun)
+        try:
+            now_ts = time.time()
+            approved_ts = now_ts if approved else None
+            status_str = "approved" if approved else "pending"
+            async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                await db.execute(
+                    """
+                    INSERT INTO channel_join_requests (channel_id, user_id, first_name, username, status, created_at, approved_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (chat_id_str, user_id, first_name, username, status_str, now_ts, approved_ts)
+                )
+                await db.commit()
+        except Exception as rec_err:
+            logger.warning(f"channel_join_requests yozishda xato: {rec_err}")
+
+        # 5. Foydalanuvchiga shaxsiy xabarda (PM) bot haqida qisqa, tushunarli va chiroyli ma'lumot yuboramiz
         bot_username = await get_cached_bot_username()
-        welcome_text = (
-            f"👋 <b>Assalomu alaykum, {first_name}!</b>\n\n"
-            f"Siz <b>{chat_title}</b> kanaliga qoʻshilish soʻrovini yubordingiz va arizangiz muvaffaqiyatli qabul qilindi! 🎉\n\n"
-            f"🤖 <b>Usernamechi Bot</b> — Telegramdagi eng sara, chiroyli va qimmatbaho usernamelarni topish, poylash hamda avtomatik band qilish xizmati!\n\n"
-            f"✨ <b>Bot imkoniyatlari:</b>\n"
-            f"• 🧠 <b>Sun'iy Intellekt:</b> Ism, kasb yoki brendingizga mos boʻsh nomlarni 1 soniyada topadi\n"
-            f"• 🎯 <b>Sniper & Monitoring:</b> Band qilingan nomni 24/7 poylaydi va boʻshashi bilan ilib oladi\n"
-            f"• 🏪 <b>Username Bozori:</b> Chiroyli nomlarni xavfsiz sotib olish va sotish\n"
-            f"• 🎁 <b>Kunlik bonuslar va referal mukofotlari!</b>\n\n"
-            f"👇 <i>Quyidagi tugma orqali botni ishga tushiring va oʻzingizga mos username tanlang:</i>"
-        )
+        if custom_welcome and custom_welcome.strip():
+            welcome_text = (
+                custom_welcome
+                .replace("{first_name}", first_name)
+                .replace("{channel_title}", chat_title)
+                .replace("{bot_username}", bot_username)
+            )
+        else:
+            welcome_text = (
+                f"👋 <b>Assalomu alaykum, {first_name}!</b>\n\n"
+                f"Siz <b>{chat_title}</b> kanaliga qoʻshilish soʻrovini yubordingiz va arizangiz qabul qilindi! 🎉\n\n"
+                f"🤖 <b>Usernamechi Bot</b> — Telegramdagi eng sara, chiroyli va qimmatbaho usernamelarni topish, poylash hamda avtomatik band qilish xizmati!\n\n"
+                f"✨ <b>Bot imkoniyatlari:</b>\n"
+                f"• 🧠 <b>Sun'iy Intellekt:</b> Ism, kasb yoki brendingizga mos boʻsh nomlarni 1 soniyada topadi\n"
+                f"• 🎯 <b>Sniper & Monitoring:</b> Band qilingan nomni 24/7 poylaydi va boʻshashi bilan ilib oladi\n"
+                f"• 🏪 <b>Username Bozori:</b> Chiroyli nomlarni xavfsiz sotib olish va sotish\n"
+                f"• 🎁 <b>Kunlik bonuslar va referal mukofotlari!</b>\n\n"
+                f"👇 <i>Quyidagi tugma orqali botni ishga tushiring va oʻzingizga mos username tanlang:</i>"
+            )
 
         buttons = [
             [InlineKeyboardButton(text="🚀 Botni ishga tushirish", url=f"https://t.me/{bot_username}?start=joinreq")],
@@ -3059,6 +3140,7 @@ async def on_chat_join_request(event: ChatJoinRequest):
         logger.info(f"✉️ Zayafka yuborgan foydalanuvchiga ({user_id}) bot haqida ma'lumot yuborildi")
     except Exception as e:
         logger.warning(f"handle_chat_join_request xatolik: {e}")
+
 
 @router.message(CommandStart())
 async def start_cmd(message: Message):
@@ -7644,6 +7726,314 @@ async def api_admin_channels_delete(request: Request, x_admin_token: str = Heade
         await db.commit()
 
     return {"ok": True}
+
+
+# ── ADMIN JOIN REQUEST (ZAYAFKA) CHANNELS ────
+@app.get("/api/admin/join_channels")
+async def api_admin_join_channels(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+        db.row_factory = aiosqlite.Row
+        # Global realtime stats
+        async with db.execute("""
+            SELECT 
+                COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+                COALESCE(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END), 0) AS approved,
+                COALESCE(SUM(CASE WHEN created_at >= (strftime('%s','now') - 86400) THEN 1 ELSE 0 END), 0) AS today
+            FROM channel_join_requests
+        """) as c:
+            stats_row = await c.fetchone()
+            stats = {
+                "total": int(stats_row["total"] or 0) if stats_row else 0,
+                "pending": int(stats_row["pending"] or 0) if stats_row else 0,
+                "approved": int(stats_row["approved"] or 0) if stats_row else 0,
+                "today": int(stats_row["today"] or 0) if stats_row else 0,
+            }
+
+        # Kanallar ro'yxati va ularning statistikasi
+        async with db.execute("""
+            SELECT 
+                c.*,
+                COALESCE((
+                    SELECT COUNT(*) FROM channel_join_requests r 
+                    WHERE (c.channel_id != '' AND r.channel_id = c.channel_id) 
+                       OR (c.channel_username != '' AND r.channel_id = c.channel_username)
+                ), 0) AS total_requests,
+                COALESCE((
+                    SELECT COUNT(*) FROM channel_join_requests r 
+                    WHERE ((c.channel_id != '' AND r.channel_id = c.channel_id) 
+                       OR (c.channel_username != '' AND r.channel_id = c.channel_username))
+                      AND r.status = 'pending'
+                ), 0) AS pending_requests,
+                COALESCE((
+                    SELECT COUNT(*) FROM channel_join_requests r 
+                    WHERE ((c.channel_id != '' AND r.channel_id = c.channel_id) 
+                       OR (c.channel_username != '' AND r.channel_id = c.channel_username))
+                      AND r.status = 'approved'
+                ), 0) AS approved_requests,
+                COALESCE((
+                    SELECT COUNT(*) FROM channel_join_requests r 
+                    WHERE ((c.channel_id != '' AND r.channel_id = c.channel_id) 
+                       OR (c.channel_username != '' AND r.channel_id = c.channel_username))
+                      AND r.created_at >= (strftime('%s','now') - 86400)
+                ), 0) AS today_requests
+            FROM join_request_channels c
+            ORDER BY c.sort_order ASC, c.id DESC
+        """) as c:
+            rows = await c.fetchall()
+            channels = [dict(r) for r in rows]
+
+        return {"ok": True, "stats": stats, "channels": channels}
+
+@app.post("/api/admin/join_channels/add")
+async def api_admin_join_channels_add(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+
+    data = await request.json()
+    title = data.get('title', '').strip()
+    identifier = data.get('identifier', '').strip()
+    channel_username = data.get('channel_username', '').strip()
+    channel_id = data.get('channel_id', '').strip()
+    invite_link = data.get('invite_link', '').strip()
+    welcome_message = data.get('welcome_message', '').strip()
+    try: auto_approve = int(data.get('auto_approve', 1))
+    except: auto_approve = 1
+    status = data.get('status', 'Active')
+
+    # Agar bitta identifier maydonidan kelgan bo'lsa
+    if identifier:
+        clean_id = identifier.replace("https://t.me/", "").replace("t.me/", "")
+        if clean_id.startswith("+") or "joinchat" in clean_id:
+            invite_link = identifier
+        elif clean_id.startswith("-") or clean_id.isdigit():
+            channel_id = clean_id
+        else:
+            channel_username = clean_id.replace("@", "")
+
+    if channel_username:
+        channel_username = channel_username.replace("@", "").replace("https://t.me/", "").replace("t.me/", "").strip()
+
+    # Bot orqali kanal ma'lumotlarini tekshirish / to'ldirish
+    global bot
+    if bot:
+        target = channel_id if channel_id and (channel_id.startswith("-") or channel_id.isdigit()) else (f"@{channel_username}" if channel_username else None)
+        if target:
+            try:
+                target_val = int(target) if (target.startswith("-") or target.isdigit()) else target
+                chat_info = await bot.get_chat(target_val)
+                if chat_info:
+                    if not title:
+                        title = chat_info.title or ""
+                    channel_id = str(chat_info.id)
+                    if chat_info.username:
+                        channel_username = chat_info.username
+            except Exception as e:
+                logger.debug(f"get_chat auto-resolve: {e}")
+
+    if not title:
+        title = channel_username or channel_id or "Zayafka Kanali"
+
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+        await db.execute("""
+            INSERT INTO join_request_channels (channel_id, channel_username, title, invite_link, welcome_message, auto_approve, status, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        """, (channel_id, channel_username, title, invite_link, welcome_message, auto_approve, status))
+        await db.commit()
+
+    return {"ok": True}
+
+@app.post("/api/admin/join_channels/update")
+async def api_admin_join_channels_update(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+
+    data = await request.json()
+    cid = data.get('id')
+    if not cid:
+        return {"ok": False, "error": "ID kiritilmadi"}
+
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+        fields = []
+        vals = []
+        if 'title' in data and data['title']:
+            fields.append("title = ?")
+            vals.append(data['title'].strip())
+        if 'status' in data:
+            fields.append("status = ?")
+            vals.append(data['status'])
+        if 'auto_approve' in data:
+            try: vals.append(int(data['auto_approve']))
+            except: vals.append(1)
+            fields.append("auto_approve = ?")
+        if 'welcome_message' in data:
+            fields.append("welcome_message = ?")
+            vals.append(data['welcome_message'])
+        if 'invite_link' in data:
+            fields.append("invite_link = ?")
+            vals.append(data['invite_link'])
+        if 'channel_id' in data:
+            fields.append("channel_id = ?")
+            vals.append(data['channel_id'])
+        if 'sort_order' in data:
+            try: vals.append(int(data['sort_order']))
+            except: vals.append(0)
+            fields.append("sort_order = ?")
+
+        if fields:
+            vals.append(cid)
+            query = f"UPDATE join_request_channels SET {', '.join(fields)} WHERE id = ?"
+            await db.execute(query, tuple(vals))
+            await db.commit()
+
+    return {"ok": True}
+
+@app.post("/api/admin/join_channels/delete")
+async def api_admin_join_channels_delete(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+
+    data = await request.json()
+    cid = data.get('id')
+    if cid:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+            await db.execute("DELETE FROM join_request_channels WHERE id = ?", (cid,))
+            await db.commit()
+
+    return {"ok": True}
+
+@app.post("/api/admin/join_channels/approve_all")
+async def api_admin_join_channels_approve_all(request: Request, x_admin_token: str = Header(default="")):
+    """Kutilayotgan zayafkalarni Telegram API orqali tasdiqlash."""
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+
+    try: data = await request.json()
+    except: data = {}
+    channel_id = data.get('channel_id', '')
+    cid = data.get('id')
+    approve_all = data.get('all', False)
+
+    global bot
+
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Agar kanal ichki IDsi berilgan bo'lsa
+        if cid and not channel_id:
+            async with db.execute("SELECT channel_id, channel_username FROM join_request_channels WHERE id = ?", (cid,)) as c:
+                row = await c.fetchone()
+                if row:
+                    channel_id = row['channel_id'] or row['channel_username']
+
+        if approve_all or not channel_id:
+            query = "SELECT id, channel_id, user_id FROM channel_join_requests WHERE status = 'pending' ORDER BY id ASC LIMIT 500"
+            params = ()
+        else:
+            query = "SELECT id, channel_id, user_id FROM channel_join_requests WHERE status = 'pending' AND (channel_id = ? OR channel_id = (SELECT channel_username FROM join_request_channels WHERE channel_id = ? LIMIT 1)) ORDER BY id ASC LIMIT 500"
+            params = (str(channel_id), str(channel_id))
+
+        async with db.execute(query, params) as c:
+            pending_reqs = await c.fetchall()
+
+        approved_count = 0
+        now_ts = time.time()
+        for req in pending_reqs:
+            req_cid = req['channel_id']
+            req_uid = req['user_id']
+            req_id = req['id']
+            try:
+                cid_val = int(req_cid) if (str(req_cid).startswith("-") or str(req_cid).isdigit()) else req_cid
+                if bot:
+                    await bot.approve_chat_join_request(chat_id=cid_val, user_id=int(req_uid))
+                await db.execute("UPDATE channel_join_requests SET status = 'approved', approved_at = ? WHERE id = ?", (now_ts, req_id))
+                approved_count += 1
+            except Exception as err:
+                err_str = str(err)
+                logger.warning(f"Zayafkani tasdiqlashda xato (user={req_uid}, chat={req_cid}): {err_str}")
+                # Agar allaqachon a'zo bo'lsa yoki so'rov bekor qilingan bo'lsa bazada holatini yangilaymiz
+                if "USER_ALREADY_PARTICIPANT" in err_str or "HIDE_REQUESTER_MISSING" in err_str or "USER_NOT_FOUND" in err_str:
+                    await db.execute("UPDATE channel_join_requests SET status = 'approved', approved_at = ? WHERE id = ?", (now_ts, req_id))
+                    approved_count += 1
+            await asyncio.sleep(0.04)
+
+        await db.commit()
+
+    return {
+        "ok": True,
+        "approved_count": approved_count,
+        "message": f"{approved_count} ta zayafka muvaffaqiyatli tasdiqlandi!"
+    }
+
+@app.get("/api/admin/join_channels/requests")
+async def api_admin_join_channels_requests(channel_id: str = "", status: str = "", limit: int = 50, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+        db.row_factory = aiosqlite.Row
+        where_clauses = []
+        params = []
+        if channel_id:
+            where_clauses.append("(channel_id = ?)")
+            params.append(str(channel_id))
+        if status and status != 'all':
+            where_clauses.append("status = ?")
+            params.append(status)
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        query = f"SELECT * FROM channel_join_requests {where_sql} ORDER BY id DESC LIMIT ?"
+        params.append(min(limit, 200))
+
+        async with db.execute(query, tuple(params)) as c:
+            rows = await c.fetchall()
+            return {"ok": True, "requests": [dict(r) for r in rows]}
+
+@app.post("/api/admin/join_channels/approve_single")
+async def api_admin_join_channels_approve_single(request: Request, x_admin_token: str = Header(default="")):
+    for aid in ADMIN_IDS:
+        if get_admin_token(aid) == x_admin_token: break
+    else: raise HTTPException(403)
+
+    data = await request.json()
+    req_id = data.get('request_id')
+    if not req_id:
+        return {"ok": False, "error": "request_id kiritilmadi"}
+
+    global bot
+
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM channel_join_requests WHERE id = ?", (req_id,)) as c:
+            req = await c.fetchone()
+            if not req:
+                return {"ok": False, "error": "Zayafka topilmadi"}
+
+        req_cid = req['channel_id']
+        req_uid = req['user_id']
+        try:
+            cid_val = int(req_cid) if (str(req_cid).startswith("-") or str(req_cid).isdigit()) else req_cid
+            if bot:
+                await bot.approve_chat_join_request(chat_id=cid_val, user_id=int(req_uid))
+        except Exception as err:
+            err_str = str(err)
+            if not ("USER_ALREADY_PARTICIPANT" in err_str or "HIDE_REQUESTER_MISSING" in err_str):
+                return {"ok": False, "error": f"Telegram xatosi: {err_str}"}
+
+        now_ts = time.time()
+        await db.execute("UPDATE channel_join_requests SET status = 'approved', approved_at = ? WHERE id = ?", (now_ts, req_id))
+        await db.commit()
+
+    return {"ok": True, "message": "Zayafka muvaffaqiyatli tasdiqlandi"}
 
 
 # ── ADMIN BROADCAST & DIRECT MESSAGING ────
