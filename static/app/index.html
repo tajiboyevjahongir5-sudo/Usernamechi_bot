@@ -18,6 +18,7 @@
     --border: rgba(255, 255, 255, 0.06);
     --border-hover: rgba(167, 139, 250, 0.25);
     --border-glow: rgba(167, 139, 250, 0.35);
+    --primary: #8b5cf6;
     --accent: #8b5cf6;
     --accent-light: #c084fc;
     --accent2: #06b6d4;
@@ -3112,6 +3113,15 @@ function renderCarousel() {
   
   const prevDisabled = currentResultIndex === 0;
   const nextDisabled = currentResultIndex === total - 1;
+
+  let badgeHtml = '';
+  if (r.username.length <= 5) {
+    badgeHtml = `<span style="display:inline-block; margin-left:6px; font-size:10px; font-weight:800; padding:2px 7px; border-radius:6px; background:linear-gradient(135deg, #ffd700, #ff9800); color:#000; letter-spacing:0.3px;">💎 5 HARF • NOYOB</span>`;
+  } else if (r.username.length === 6) {
+    badgeHtml = `<span style="display:inline-block; margin-left:6px; font-size:10px; font-weight:700; padding:2px 7px; border-radius:6px; background:linear-gradient(135deg, #00c6ff, #0072ff); color:#fff; letter-spacing:0.3px;">⭐ 6 HARF • SUPER</span>`;
+  } else {
+    badgeHtml = `<span style="display:inline-block; margin-left:6px; font-size:10px; font-weight:600; padding:2px 6px; border-radius:6px; background:rgba(255,255,255,0.12); color:#cbd5e1;">✨ ${r.username.length} BELGI</span>`;
+  }
   
   list.innerHTML = `
     <div style="padding:8px 14px 4px; display:flex; align-items:center; justify-content:space-between;">
@@ -3128,8 +3138,11 @@ function renderCarousel() {
       <label style="flex:1; display:flex; align-items:center; padding:14px 16px; border-radius:12px; background:rgba(255,255,255,0.05); border:2px solid ${isChecked ? 'var(--primary)' : 'rgba(255,255,255,0.1)'}; cursor:${disabled?'not-allowed':'pointer'}; opacity:${disabled?'0.5':'1'}; transition:all .2s;">
         <input type="checkbox" value="${r.username}" onchange="toggleSelection(this)" ${isChecked ? 'checked' : ''} ${disabled ? 'disabled' : ''}
           style="width:20px; height:20px; accent-color:var(--primary); flex-shrink:0; margin-right:12px;">
-        <div>
-          <div style="font-weight:700; font-size:16px;">@${r.username}</div>
+        <div style="flex:1;">
+          <div style="font-weight:700; font-size:16px; display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
+            <span>@${r.username}</span>
+            ${badgeHtml}
+          </div>
           <div style="font-size:12px; color:var(--muted); margin-top:2px;">${isChecked ? '✅ Tanlangan' : (disabled ? '🔒 Limit to\'ldi' : '⬜ Tanlash uchun bosing')}</div>
         </div>
       </label>
@@ -3230,13 +3243,16 @@ function updateSelectionUI() {
   document.getElementById('selected-count').textContent = count;
 
   const buyBtn = document.getElementById('buy-btn');
-  // Foydalanuvchi to'lagan miqdorcha tanlasa aktiv bo'ladi
-  if (count > 0 && count === paidQty) {
+  // Agar topilganlar soni paidQty dan kam bo'lsa, topilgan barcha nomlarni band qilishga ruxsat beramiz
+  const maxAvailable = (cachedFreeResults && cachedFreeResults.length > 0) ? cachedFreeResults.length : paidQty;
+  const targetQty = Math.min(paidQty, maxAvailable);
+
+  if (count > 0 && (count === paidQty || count >= targetQty)) {
     buyBtn.disabled = false;
     buyBtn.innerHTML = `✅ ${count} ta nomni band qilish`;
   } else if (count > 0) {
     buyBtn.disabled = true;
-    buyBtn.innerHTML = `✅ Yana ${paidQty - count} ta tanlang...`;
+    buyBtn.innerHTML = `✅ Yana ${targetQty - count} ta tanlang...`;
   } else {
     buyBtn.disabled = true;
     buyBtn.innerHTML = `✅ Tanlanganlarni band qilish`;

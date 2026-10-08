@@ -64,6 +64,7 @@ API_HASH      = os.getenv("API_HASH", "")
 ADMIN_IDS     = [int(x) for x in os.getenv("ADMIN_IDS", "0").split(",") if x.strip()]
 DB_PATH       = os.getenv("DB_PATH", "/app/data/usernamechi.db")
 WEB_URL       = os.getenv("WEB_URL", os.getenv("WEB_HOST", "https://your-app.railway.app"))
+STEALTH_SESSIONS = [s.strip() for s in os.getenv("STEALTH_SESSIONS", "").split(",") if s.strip()]
 
 # Server ishga tushgan vaqt — har deploy/restart da yangilanadi (kesh busting uchun)
 APP_BUILD_VERSION = str(int(time.time()))
@@ -149,7 +150,7 @@ async def init_db():
         
     async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
         await db.execute("PRAGMA journal_mode=WAL;")
-        await db.execute("PRAGMA busy_timeout=5000;")
+        await db.execute("PRAGMA busy_timeout=20000;")
         await db.execute("PRAGMA synchronous=NORMAL;")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -400,6 +401,9 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_channel_id ON channel_join_requests(channel_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_status ON channel_join_requests(status);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_user ON channel_join_requests(user_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_channel_status ON channel_join_requests(channel_id, status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_channel_user ON channel_join_requests(channel_id, user_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_cjr_status_created ON channel_join_requests(status, created_at);")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS pending_referrals (
                 telegram_id INTEGER PRIMARY KEY,
@@ -435,6 +439,7 @@ async def init_db():
         
         # ─── BD INDEKSLARI (Tezlikni 10x-50x oshirish uchun) ───
         await db.execute("CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_users_referrer ON users(referrer_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_monitoring_status ON monitoring_tasks(status);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_monitoring_uname ON monitoring_tasks(username);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);")
@@ -442,8 +447,15 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_search_tasks_status ON search_tasks(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_search_tasks_telegram_id ON search_tasks(telegram_id);")
         await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_search_results_unique ON search_results(search_id, username);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_search_results_sid ON search_results(search_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_search_results_search_status ON search_results(search_id, status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_search_results_composite ON search_results(search_id, username, status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_jrc_channel_id ON join_request_channels(channel_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_jrc_channel_username ON join_request_channels(channel_username);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_jrc_status_sort ON join_request_channels(status, sort_order);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_payment_cards_active ON payment_cards(is_active, sort_order);")
 
         # Admin premium username hunter jadvali
         await db.execute("""
@@ -691,21 +703,25 @@ def build_llm_prompt(category: str, language: str, base_word: str, theme: str, e
 
     if cat_lower == "ism":
         if is_uz:
-            return f"""You are a professional Uzbek naming expert. Generate 30 beautiful, authentic Uzbek personal first names for Telegram.
+            return f"""You are a professional Uzbek naming expert. Generate 30 beautiful, authentic, SHORT Uzbek personal names for Telegram.
 STRICT RULES:
-- 4 to 12 letters, ONLY latin letters (a-z). NO numbers, NO underscores.
+- Exactly 5 to 9 letters (MAX 10 letters), ONLY latin letters (a-z). NO numbers, NO underscores.
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters.
 - NEVER duplicate suffixes (FORBIDDEN: 'diyorbekbek', 'azizbekbek', 'anvarjonjon', 'boburbekbek').
 - NEVER add male suffixes to female names (FORBIDDEN: 'yulduzbek', 'nilufarbek'). Female names can have 'bonu' or 'xon' (e.g. 'yulduzbonu', 'madinaxon').
-- Authentic Uzbek names and combinations (e.g. diyorbek, anvarjon, jasur, sardor, shohruh, behzod, dilshod, kamron, nilufar, sevarabonu, madinaxon, azizbek, laylo, umidjon, rustambek).
-- NO English words, NO English suffixes (do not use official, vip, pro, the_, real_).
+- Authentic, clean Uzbek names (e.g. diyor, diyorbek, anvar, anvarjon, jasur, sardor, shohruh, behzod, dilshod, kamron, nilufar, sevara, madina, azizbek, laylo, umidjon, rustam).
+- NO English words, NO English suffixes.
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["name1", "name2", ...]"""
         else:
-            return f"""You are a professional international naming expert. Generate 30 popular, clean personal first names for Telegram.
+            return f"""You are a professional international naming expert. Generate 30 popular, clean, SHORT personal first names for Telegram.
 STRICT RULES:
-- 4 to 12 letters, ONLY latin letters (a-z). NO numbers, NO underscores.
-- Real, clean names (e.g. alex, daniel, michael, sophia, emma, oliver, david, lucas, james).
+- Exactly 5 to 9 letters (MAX 10 letters), ONLY latin letters (a-z). NO numbers, NO underscores.
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters.
+- Real, clean, short names (e.g. alex, daniel, michael, sophia, emma, oliver, david, lucas, james, noah, leo, liam).
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["name1", "name2", ...]"""
@@ -713,19 +729,23 @@ FORMAT: Return ONLY a valid JSON array of strings, nothing else:
     elif cat_lower == "familiya":
         if is_uz:
             return f"""You are an expert in authentic Uzbek surnames for Telegram.
-TASK: Generate 30 popular, respectable Uzbek surnames.
+TASK: Generate 30 popular, respectable, SHORT Uzbek surnames.
 STRICT RULES:
-- 5 to 14 letters, ONLY latin letters (a-z).
-- Real authentic surnames in Uzbek latin (e.g. rahimov, karimov, aliev, tursunov, usmonov, abdullaev, ahmedov, hasanov, nazarov, qodirov, toshmatov, juraev).
-- NO duplicate suffixes, NO English words.
+- Exactly 5 to 9 letters (MAX 10 letters), ONLY latin letters (a-z). NO numbers, NO underscores.
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters.
+- Real authentic surnames in Uzbek latin (e.g. rahimov, karimov, aliev, usmonov, ahmedov, hasanov, nazarov, qodirov, juraev).
+- NO duplicate suffixes, NO long combinations, NO English words.
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["surname1", "surname2", ...]"""
         else:
             return f"""You are a naming expert in international surnames.
-TASK: Generate 30 respectable surnames.
+TASK: Generate 30 respectable, SHORT surnames.
 STRICT RULES:
-- 5 to 14 letters, ONLY latin letters (a-z).
+- Exactly 5 to 9 letters (MAX 10 letters), ONLY latin letters (a-z). NO numbers, NO underscores.
+- SHORTER IS ALWAYS BETTER.
+- FORBIDDEN: Any usernames longer than 10 letters.
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["surname1", "surname2", ...]"""
@@ -733,19 +753,23 @@ FORMAT: Return ONLY a valid JSON array of strings, nothing else:
     elif cat_lower == "brend":
         if is_uz:
             return f"""You are an Uzbek branding specialist.
-TASK: Generate 30 modern, catchy, memorable Uzbek brand / business / shop usernames for Telegram.
+TASK: Generate 30 modern, catchy, SHORT Uzbek brand and shop usernames for Telegram.
 STRICT RULES:
-- 4 to 16 letters, lowercase latin letters and optional single underscore.
-- STRICT: ONLY Uzbek words, Uzbek concepts, and local market naming (e.g. uzmarket, modauz, aslsavdo, barakauz, ishonch_savdo, milliybrend, orzubozor, nurmarket, tezkor_savdo, arzonbozor, osonsavdo, vatanmarket).
-- ABSOLUTELY NO random English words like 'craftzone', 'trendify', 'swiftpay', 'techlynx'.
+- Exactly 5 to 9 letters (MAX 10 letters), lowercase latin letters and optional single underscore.
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters. NEVER make long phrases or multi-word titles.
+- ONLY Uzbek words and local market naming (e.g. uzmarket, modauz, aslsavdo, barakauz, nurmarket, orzutop, osonuz, tezkoruz, milliyuz, navouz).
+- ABSOLUTELY NO random English words or long phrases.
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["brand1", "brand2", ...]"""
         else:
             return f"""You are a branding specialist.
-TASK: Generate 30 modern, catchy, memorable brand / business / tech usernames for Telegram.
+TASK: Generate 30 modern, catchy, SHORT brand / tech usernames for Telegram.
 STRICT RULES:
-- 4 to 16 letters, lowercase latin letters and optional single underscore (e.g. novabrand, techzone, trendshop, quickpay, apextech, voltlabs).
+- Exactly 5 to 9 letters (MAX 10 letters), lowercase latin letters and optional single underscore (e.g. novabrand, techzone, trendshop, apextech, voltlabs, pixeltop).
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters.
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["brand1", "brand2", ...]"""
@@ -753,28 +777,34 @@ FORMAT: Return ONLY a valid JSON array of strings, nothing else:
     elif cat_lower in ("lavozim", "kasb"):
         if is_uz:
             return f"""You are an Uzbek career and profession naming specialist.
-TASK: Generate 30 authentic Uzbek profession, trade, and job usernames for Telegram.
+TASK: Generate 30 authentic, SHORT Uzbek profession and trade usernames for Telegram.
 STRICT RULES:
-- 4 to 18 letters, lowercase latin letters and optional single underscore.
-- STRICT: ONLY authentic Uzbek job titles and combinations (e.g. dasturchi_uz, shifokor_uz, bosh_usta, advokat_uz, muhandis_uz, mohir_usta, oshpaz_uz, haydovchi_uz, usta_uz, tarjimon_uz, buxgalter_uz, hamshira_uz, suvoqchi, duradgor_uz, zargar_uz).
-- ABSOLUTELY NO English words like 'coder', 'developer', 'driver', 'masterpro', 'doc', 'trader'.
+- Exactly 5 to 9 letters (MAX 10 letters), lowercase latin letters and optional single underscore.
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters. NEVER make long compound titles.
+- Authentic compact Uzbek job titles (e.g. dasturchi, shifokor, bosh_usta, usta_uz, oshpaz_uz, novvoy_uz, zargar_uz, muhandis, tabib_uz).
+- ABSOLUTELY NO long compound titles, NO English words.
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["job1", "job2", ...]"""
         else:
             return f"""You are a professional career naming specialist.
-TASK: Generate 30 creative career and profession usernames for Telegram.
+TASK: Generate 30 creative, SHORT career and profession usernames for Telegram.
 STRICT RULES:
-- 4 to 16 letters, lowercase latin letters and optional single underscore (e.g. dev_pro, coderhq, designhub, lawyerpro, techlead, analystpro).
+- Exactly 5 to 9 letters (MAX 10 letters), lowercase latin letters and optional single underscore (e.g. dev_pro, coderhq, lawyerpro, techlead, doc_pro).
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters.
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["job1", "job2", ...]"""
 
     elif cat_lower == "qisqa":
         if is_uz:
-            return f"""You are a professional username naming specialist. Create very SHORT (5-7 letters), MEANINGFUL, single-word UZBEK usernames.
+            return f"""You are a professional username naming specialist. Create very SHORT (5 to 7 letters, MAX 9 letters), MEANINGFUL, single-word UZBEK usernames.
 STRICT RULES:
-- Exactly 5 to 7 letters — NO numbers, NO underscores at all.
+- Exactly 5 to 7 letters (MAX 9 letters, NEVER >10 letters) — NO numbers, NO underscores at all.
+- SHORTER IS ALWAYS BETTER (5-6 letters preferred).
+- FORBIDDEN: Any usernames longer than 9 letters.
 - Must be a SINGLE Uzbek word.
 - Examples: oltin, bahor, bulut, quyosh, yulduz, chinor, lochin, shonli, saboh, sarvar, tulpor, qalqon, gavhar, orzum, qanot, umidim, quyun.
 - NO English words like 'flame', 'storm', 'titan'.
@@ -783,9 +813,11 @@ TASK: Generate 25 unique, short, meaningful Uzbek usernames following ALL above 
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["word1", "word2", ...]"""
         else:
-            return f"""You are a professional username naming specialist. Create very SHORT (5-7 letters), MEANINGFUL, single-word usernames.
+            return f"""You are a professional username naming specialist. Create very SHORT (5 to 7 letters, MAX 9 letters), MEANINGFUL, single-word usernames.
 STRICT RULES:
-- Exactly 5 to 7 letters — NO numbers, NO underscores at all.
+- Exactly 5 to 7 letters (MAX 9 letters, NEVER >10 letters) — NO numbers, NO underscores at all.
+- SHORTER IS ALWAYS BETTER (5-6 letters preferred).
+- FORBIDDEN: Any usernames longer than 9 letters.
 - Single word, easy to pronounce (e.g. flame, lunar, storm, titan, alpha, prime, nexus, spark, blitz).
 {excluded_part}
 TASK: Generate 25 unique, short, meaningful usernames following ALL above rules.
@@ -794,19 +826,22 @@ FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 
     elif cat_lower == "turli":
         if is_uz:
-            return f"""You are an Uzbek username generator. Create 25 usernames in VARIOUS STYLES using authentic Uzbek words.
+            return f"""You are an Uzbek username generator. Create 25 SHORT, stylish usernames using authentic Uzbek words.
 RULES:
-- Only lowercase latin letters, numbers, and underscores (5-16 characters).
-- Uzbek words, Uzbek cities/regions (uz, toshkent, samarqand), topics, nature, prestige.
-- NO English words.
+- Exactly 5 to 9 letters (MAX 10 letters), lowercase latin letters, numbers, and underscores.
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters. NO long phrases, NO English words.
+- Uzbek words, nature, prestige.
 THEME: {theme or 'general'}
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["variant1", "variant2", ...]"""
         else:
-            return f"""You are a professional Telegram username generator. Create 25 usernames in VARIOUS STYLES.
+            return f"""You are a professional Telegram username generator. Create 25 SHORT, stylish usernames.
 RULES:
-- Only lowercase letters, numbers, and underscores (5-16 characters).
+- Exactly 5 to 9 letters (MAX 10 letters), lowercase letters, numbers, and underscores.
+- SHORTER IS ALWAYS BETTER (5 to 8 letters preferred).
+- FORBIDDEN: Any usernames longer than 10 letters.
 THEME: {theme or 'general'}
 {excluded_part}
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
@@ -818,20 +853,22 @@ FORMAT: Return ONLY a valid JSON array of strings, nothing else:
             return f"""You are a professional Telegram username naming expert. Generate SHORT, CREATIVE, MEANINGFUL Uzbek usernames inspired by: "{word}".
 CRITICAL RULES:
 - Only lowercase letters (a-z), numbers, and underscores (_).
-- 5 to 16 characters total — shorter is better.
-- Authentic Uzbek style, translations, synonyms, and natural combinations.
+- Exactly 5 to 9 letters (MAX 10 letters) — shorter is always better.
+- FORBIDDEN: Any usernames longer than 10 letters. NEVER generate long multi-word usernames.
+- Authentic Uzbek style, translations, synonyms, and natural compact combinations.
 - Do NOT mix random English words.
 {excluded_part}
-TASK: Generate 30 unique, creative usernames inspired by "{word}".
+TASK: Generate 30 unique, short, creative usernames inspired by "{word}".
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["variant1", "variant2", ...]"""
         else:
             return f"""You are a professional Telegram username naming expert. Generate SHORT, CREATIVE, MEANINGFUL usernames inspired by the THEME: "{word}".
 CRITICAL RULES:
 - Only lowercase letters (a-z), numbers, and underscores (_).
-- 5 to 16 characters total — shorter is better.
+- Exactly 5 to 9 letters (MAX 10 letters) — shorter is always better.
+- FORBIDDEN: Any usernames longer than 10 letters.
 {excluded_part}
-TASK: Generate 30 unique, creative usernames inspired by the theme "{word}".
+TASK: Generate 30 unique, short, creative usernames inspired by the theme "{word}".
 FORMAT: Return ONLY a valid JSON array of strings, nothing else:
 ["variant1", "variant2", ...]"""
 
@@ -896,29 +933,68 @@ async def llm_generate_candidates(
         text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         if not text:
             content = data.get("content", [{}])
-            text = content[0].get("text", "") if content else ""
+            text = content[0].get("text", "") if isinstance(content, list) and content else ""
 
-        text = text.strip()
+        text = (text or "").strip()
         if "```" in text:
-            text = text.split("```")[-2] if text.count("```") >= 2 else text
-            text = text.removeprefix("json").strip()
+            parts = text.split("```")
+            for p in parts:
+                p_clean = p.strip()
+                if p_clean.startswith("json"):
+                    p_clean = p_clean[4:].strip()
+                if p_clean.startswith("[") and "]" in p_clean:
+                    text = p_clean
+                    break
+            else:
+                text = text.replace("```json", "").replace("```", "").strip()
+
         start = text.find("[")
         end = text.rfind("]")
-        if start != -1 and end != -1:
+        if start != -1 and end != -1 and end > start:
             text = text[start:end+1]
 
-        raw = _json.loads(text)
-        candidates = []
-        TELEGRAM_RE = re.compile(r'^[a-z0-9][a-z0-9_]{3,30}[a-z0-9]$')
-        for item in raw:
-            if isinstance(item, dict):
-                uname = item.get("username", "") or item.get("name", "")
+        # Trailing comma tozalash: e.g. ["a", "b",] -> ["a", "b"]
+        clean_json = re.sub(r',\s*\]', ']', text)
+
+        raw = None
+        try:
+            raw = _json.loads(clean_json)
+        except Exception as json_err:
+            logger.debug(f"LLM JSON parse xatosi ({json_err}), regex fallback ishlatilmoqda")
+            # Fallback 1: tirnoq ichidagi mos username nomzodlarini ajratib olish
+            extracted = re.findall(r'["\']([a-zA-Z0-9_]{5,10})["\']', text)
+            if extracted:
+                raw = extracted
             else:
-                uname = str(item)
-            uname = uname.strip().lower().replace("@", "")
-            if uname and 5 <= len(uname) <= 32 and bool(TELEGRAM_RE.match(uname)):
-                candidates.append(uname)
-        logger.info(f"🤖 LLM {len(candidates)} ta ma'noli nomzod qaytardi (kategoriya={category})")
+                # Fallback 2: qatorma-qator so'zlardan ajratish
+                lines = [re.sub(r'^[0-9\.\-\*\s]+', '', l).strip() for l in text.splitlines()]
+                raw = [l for l in lines if l]
+
+        if isinstance(raw, dict):
+            raw = raw.get("usernames") or raw.get("candidates") or raw.get("names") or list(raw.values())
+
+        candidates = []
+        TELEGRAM_RE = re.compile(r'^[a-z0-9][a-z0-9_]{3,8}[a-z0-9]$')
+        if isinstance(raw, (list, tuple)):
+            for item in raw:
+                if isinstance(item, dict):
+                    uname = item.get("username", "") or item.get("name", "")
+                else:
+                    uname = str(item)
+                uname = uname.strip().lower().replace("@", "")
+                # Talab 2: qat'iy 5 <= len(uname) <= 10 (uzun usernamelar qat'iy chetlatiladi)
+                if (
+                    uname
+                    and 5 <= len(uname) <= 10
+                    and "__" not in uname
+                    and not uname.startswith("_")
+                    and not uname.endswith("_")
+                    and bool(TELEGRAM_RE.match(uname))
+                ):
+                    if uname not in candidates:
+                        candidates.append(uname)
+
+        logger.info(f"🤖 LLM {len(candidates)} ta qisqa nomzod qaytardi (kategoriya={category})")
         return candidates
 
     except Exception as e:
@@ -1005,7 +1081,7 @@ async def llm_find_best_usernames(
             if not TELEGRAM_RE.match(uname):
                 tried.add(uname)
                 continue
-            if "__" in uname or len(uname) < 5 or len(uname) > 32:
+            if "__" in uname or len(uname) < 5 or len(uname) > 10:
                 tried.add(uname)
                 continue
             # Qisqa kategoriya uchun qo'shimcha tekshiruv
@@ -1042,7 +1118,7 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
     TELEGRAM_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$')
 
     def valid(u: str) -> bool:
-        return (5 <= len(u) <= 32
+        return (5 <= len(u) <= 10
                 and '__' not in u
                 and not u.startswith('_')
                 and not u.endswith('_')
@@ -1051,12 +1127,12 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
     pool = []
 
     if lang == 'uz':
-        prefixes = ['', 'sof_', 'asl_', 'top_', 'mega_', 'super_', 'zor_', 'bizning_', 'uz_', 'uzb_', 'yangi_']
-        suffixes = ['', '_uz', '_uzb', '_bot', '_official', '_pro', '_media', '_tv', '_kanal', '_guruh', '_savdo', '_bozor', '_markaz', '_xizmat', '_info', '_online']
+        prefixes = ['', 'sof_', 'asl_', 'top_', 'zor_', 'uz_']
+        suffixes = ['', '_uz', '_uzb', '_bot', '_pro', '_tv']
     else:
-        prefixes = ['', 'the_', 'real_', 'my_', 'mr_', 'mrs_', 'dr_', 'pro_', 'vip_', 'super_', 'mega_', 'top_', 'best_', 'true_', 'iam_', 'official_', 'go_', 'get_', 'one_', 'club_', 'hub_', 'app_', 'new_', 'hot_', 'cool_', 'fast_', 'king_', 'boss_', 'dark_', 'neo_', 'ultra_', 'max_']
-        suffixes = ['', '_official', '_bot', '_pro', '_vip', '_top', '_blog', '_channel', '_tv', '_media', '_news', '_store', '_shop', '_life', '_style', '_music', '_art', '_dev', '_tech', '_zone', '_group', '_org', '_info', '_studio', '_page', '_net', '_online', '_hub', '_lab', '_hq', '_real', '_live', '_plus', '_max', '_mini', '_app', '_base']
-    numbers = ['', '1', '2', '3', '4', '5', '7', '8', '9', '10', '11', '24', '25', '77', '88', '99', '100', '777', '888', '999', '2024', '2025', '2026', '007', '01', '07', '700', '900']
+        prefixes = ['', 'the_', 'real_', 'my_', 'mr_', 'iam_', 'pro_', 'top_', 'go_', 'hot_', 'neo_']
+        suffixes = ['', '_bot', '_pro', '_vip', '_top', '_tv', '_dev', '_hub', '_lab', '_hq', '_app']
+    numbers = ['', '1', '7', '8', '9', '24', '77', '99', '777', '01', '07']
 
     # ─── Semantik mavzu xaritasi: o'zbekcha so'z → ingliz va o'zbek sinonimlar ───
     _THEME_KEYWORDS = {
@@ -1190,69 +1266,59 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                     break
 
         if lang == 'uz' and theme_keys_uz:
-            nice_pfx_uz = ['sof', 'asl', 'top', 'mega', 'super', 'yangi', 'tezkor', 'taniqli']
-            nice_sfx_uz = ['uz', 'uzb', 'pro', 'official', 'online', 'bek', 'jon']
+            nice_pfx_uz = ['sof', 'asl', 'top']
+            nice_sfx_uz = ['uz', 'uzb', 'pro', 'bek', 'jon']
             for kw in theme_keys_uz:
                 if valid(kw): c_set.add(kw)
                 for pfx in nice_pfx_uz:
-                    if valid(f'{pfx}_{kw}'): c_set.add(f'{pfx}_{kw}')
-                    if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                    for combo in [f'{pfx}_{kw}', f'{pfx}{kw}']:
+                        if len(combo) <= 10 and valid(combo): c_set.add(combo)
                 for sfx in nice_sfx_uz:
                     if sfx in ('bek', 'jon'):
-                        if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                        combo = f'{kw}{sfx}'
+                        if len(combo) <= 10 and valid(combo): c_set.add(combo)
                     else:
-                        if valid(f'{kw}_{sfx}'): c_set.add(f'{kw}_{sfx}')
-                        if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
-            # Fallback/English combinations as well but with UZ style
+                        for combo in [f'{kw}_{sfx}', f'{kw}{sfx}']:
+                            if len(combo) <= 10 and valid(combo): c_set.add(combo)
             if theme_keys_en:
                 for kw_en in theme_keys_en:
-                    if valid(f'{kw_en}_uz'): c_set.add(f'{kw_en}_uz')
-                    if valid(f'{kw_en}_uzb'): c_set.add(f'{kw_en}_uzb')
-                    if valid(f'{kw_en}pro'): c_set.add(f'{kw_en}pro')
+                    for combo in [f'{kw_en}_uz', f'{kw_en}pro']:
+                        if len(combo) <= 10 and valid(combo): c_set.add(combo)
         elif lang == 'en' and theme_keys_en:
-            nice_pfx = ['real','the','my','mr','iam','pro','neo','top','vip','super','mega','dark','hot','cool']
-            nice_sfx = ['pro','vip','top','bot','ai','go','hub','zone','official','online']
+            nice_pfx = ['real','the','my','mr','iam','pro','top']
+            nice_sfx = ['pro','vip','top','bot','hub','app']
             for kw in theme_keys_en:
                 if valid(kw): c_set.add(kw)
-                for pfx in nice_pfx[:10]:
+                for pfx in nice_pfx:
                     combo = f'{pfx}{kw}'
-                    if valid(combo): c_set.add(combo)
-                for sfx in nice_sfx[:10]:
+                    if len(combo) <= 10 and valid(combo): c_set.add(combo)
+                for sfx in nice_sfx:
                     combo = f'{kw}{sfx}'
-                    if valid(combo): c_set.add(combo)
+                    if len(combo) <= 10 and valid(combo): c_set.add(combo)
                     combo2 = f'{kw}_{sfx}'
-                    if valid(combo2): c_set.add(combo2)
-                for sfx2 in ['pro', 'official', 'online']:
-                    if valid(f'{kw}{sfx2}'): c_set.add(f'{kw}{sfx2}')
-                # Kalit so'z juftliklari
-                for kw2 in theme_keys_en:
-                    if kw2 != kw:
-                        combo = f'{kw}{kw2}'
-                        if valid(combo): c_set.add(combo)
+                    if len(combo2) <= 10 and valid(combo2): c_set.add(combo2)
 
         # 2. Original so'z va uning qisqa shakli bilan kombinatsiyalar
-        short_cw = cw[:6]  # Max 6 harf — qisqa variant
+        short_cw = cw[:5]  # Max 5 harf — qisqa variant
         
         custom_prefixes = list(prefixes)
         custom_suffixes = list(suffixes)
         
         if lang == 'uz':
-            # Agar so'z maxsus tematik (kasb, narsa) bo'lmasa, yoki aniq ismlar ro'yxatida bo'lsa,
-            # demak u ism. Unga ismlarga xos qo'shimchalarni qo'shamiz.
             if not theme_keys_uz or cw in UZ_MALE_NAMES or cw in UZ_FEMALE_NAMES:
-                custom_prefixes.extend(['shox_', 'mir_'])
-                custom_suffixes.extend(['bek', 'xon', 'jon', 'voy', 'boy'])
+                custom_prefixes.extend(['mir_'])
+                custom_suffixes.extend(['bek', 'xon', 'jon', 'ali'])
 
         for base in [cw, short_cw]:
             if valid(base): c_set.add(base)
-            for p in custom_prefixes[:20]:
+            for p in custom_prefixes:
                 if p:
-                    if valid(f'{p}{base}'): c_set.add(f'{p}{base}')
-                    if valid(f'{p}_{base}'): c_set.add(f'{p}_{base}')
-            for s in custom_suffixes[:25]:
+                    for combo in [f'{p}{base}', f'{p}_{base}']:
+                        if len(combo) <= 10 and valid(combo): c_set.add(combo)
+            for s in custom_suffixes:
                 if s:
-                    if valid(f'{base}{s}'): c_set.add(f'{base}{s}')
-                    if valid(f'{base}_{s}'): c_set.add(f'{base}_{s}')
+                    for combo in [f'{base}{s}', f'{base}_{s}']:
+                        if len(combo) <= 10 and valid(combo): c_set.add(combo)
         pool = list(c_set)
 
     elif cat == 'qisqa':
@@ -1298,8 +1364,8 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
     elif cat == 'ism':
         var_pool = []
         if lang == 'uz':
-            m_names = [str(w).lower() for w in set(UZ_MALE_NAMES) if str(w).isalpha() and 3 <= len(str(w)) <= 12]
-            f_names = [str(w).lower() for w in set(UZ_FEMALE_NAMES) if str(w).isalpha() and 3 <= len(str(w)) <= 12]
+            m_names = [str(w).lower() for w in set(UZ_MALE_NAMES) if str(w).isalpha() and 3 <= len(str(w)) <= 7]
+            f_names = [str(w).lower() for w in set(UZ_FEMALE_NAMES) if str(w).isalpha() and 3 <= len(str(w)) <= 7]
             random.shuffle(m_names)
             random.shuffle(f_names)
 
@@ -1311,14 +1377,14 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                 elif (w.endswith('boy') or w.endswith('voy')) and len(w) > 5: root = w[:-3]
                 elif w.endswith('ali') and len(w) > 5: root = w[:-3]
 
-                for sfx in ['bek', 'jon', 'ali', '_uz', '_uzb', '_rasmiy', '777', '2025', '2026']:
+                for sfx in ['bek', 'jon', 'ali', '_uz', '777', '01']:
                     cand = f"{root}{sfx}" if not sfx.startswith('_') and not sfx.isdigit() else f"{w}{sfx}"
-                    if 'bekbek' not in cand and 'jonjon' not in cand and 'boyboy' not in cand:
+                    if len(cand) <= 10 and 'bekbek' not in cand and 'jonjon' not in cand and 'boyboy' not in cand:
                         if valid(cand): var_pool.append(cand)
                 
-                for pfx in ['asl_', 'sof_', 'mir_', 'shoh_']:
-                    if valid(f"{pfx}{w}"): var_pool.append(f"{pfx}{w}")
-                    if valid(f"{pfx}{root}"): var_pool.append(f"{pfx}{root}")
+                for pfx in ['asl_', 'sof_', 'mir_']:
+                    cand = f"{pfx}{root}"
+                    if len(cand) <= 10 and valid(cand): var_pool.append(cand)
 
             for w in f_names[:500]:
                 if valid(w): var_pool.append(w)
@@ -1327,74 +1393,69 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                 elif w.endswith('bonu') and len(w) > 6: root = w[:-4]
                 elif w.endswith('oy') and len(w) > 4: root = w[:-2]
 
-                # Ayollar uchun: ASLO bek yoki boy qo'shilmaydi!
-                for sfx in ['xon', 'bonu', 'oy', 'gul', '_uz', '_uzb', '777', '2025', '2026']:
+                for sfx in ['xon', 'bonu', 'oy', 'gul', '_uz', '777']:
                     cand = f"{root}{sfx}" if not sfx.startswith('_') and not sfx.isdigit() else f"{w}{sfx}"
-                    if 'xonxon' not in cand and 'bonubonu' not in cand:
+                    if len(cand) <= 10 and 'xonxon' not in cand and 'bonubonu' not in cand:
                         if valid(cand): var_pool.append(cand)
                 
                 for pfx in ['asl_', 'nur_', 'gul_']:
-                    if valid(f"{pfx}{w}"): var_pool.append(f"{pfx}{w}")
-                    if valid(f"{pfx}{root}"): var_pool.append(f"{pfx}{root}")
+                    cand = f"{pfx}{root}"
+                    if len(cand) <= 10 and valid(cand): var_pool.append(cand)
         else:
             bases = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES))
-            suffixes_ism = ['', '_official', '_real', '_vip', '_pro', '_online', '_me', '777', '2025', '2026']
-            prefixes_ism = ['', 'real_', 'the_', 'iam_', 'official_']
-            bases = [str(w).lower() for w in bases if str(w).isalpha() and 3 <= len(str(w)) <= 10]
+            suffixes_ism = ['', '_pro', '_vip', '_bot', '_me', '777', '01']
+            prefixes_ism = ['', 'iam_', 'the_', 'mr_']
+            bases = [str(w).lower() for w in bases if str(w).isalpha() and 3 <= len(str(w)) <= 6]
             random.shuffle(bases)
             for w in bases[:1000]:
                 if valid(w): var_pool.append(w)
                 for sfx in suffixes_ism:
-                    if sfx and valid(f"{w}{sfx}"): var_pool.append(f"{w}{sfx}")
+                    cand = f"{w}{sfx}"
+                    if len(cand) <= 10 and valid(cand): var_pool.append(cand)
                 for pfx in prefixes_ism:
-                    if pfx and valid(f"{pfx}{w}"): var_pool.append(f"{pfx}{w}")
+                    cand = f"{pfx}{w}"
+                    if len(cand) <= 10 and valid(cand): var_pool.append(cand)
 
         random.shuffle(var_pool)
         pool = var_pool
 
     elif cat == 'familiya':
         bases = list(set(UZ_SURNAMES))
-        if lang == 'uz':
-            suffixes_fam = ['', '_uz', '_uzb', '_rasmiy', '777', '2025', '2026']
-        else:
-            suffixes_fam = ['', '_official', '_pro', '_online', '777', '2025', '2026']
-        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 12]
+        suffixes_fam = ['', '_uz', '_uzb', '777'] if lang == 'uz' else ['', '_pro', '_vip', '777']
+        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 8]
         random.shuffle(bases)
         var_pool = []
         for w in bases[:1000]:
             if valid(w): var_pool.append(w)
             for sfx in suffixes_fam:
-                if sfx and valid(f"{w}{sfx}"): var_pool.append(f"{w}{sfx}")
+                cand = f"{w}{sfx}"
+                if len(cand) <= 10 and valid(cand): var_pool.append(cand)
         random.shuffle(var_pool)
         pool = var_pool
 
     elif cat in ('brend', 'biznes', 'business'):
         if lang == 'uz':
             bases = [
-                'savdo', 'bozor', 'dokon', 'market', 'servis', 'uz', 'tijorat',
-                'shirin', 'orzu', 'oliy', 'ishonch', 'hamkor', 'umid', 'baraka', 'omad',
-                'zamon', 'yulduz', 'makon', 'avlod', 'nur', 'parvoz', 'sifat', 'milliy',
-                'ishonchli', 'tezkor', 'oson', 'arzon', 'gozal', 'asl', 'sof', 'ideal',
-                'tarmoq', 'sarmoya', 'moliya', 'baho', 'qulay', 'tanlov'
+                'orzu', 'oliy', 'umid', 'omad', 'zamon', 'avlod', 'nur', 'sifat',
+                'oson', 'arzon', 'asl', 'sof', 'ideal', 'baho', 'qulay', 'baraka'
             ]
-            b_words = ['savdo', 'bozor', 'dokon', 'market', 'servis', 'uz', 'tijorat', 'markaz', 'baza']
+            b_words = ['uz', 'pro', 'hub', 'top', 'app', 'shop']
         else:
             bases = [
-                'apex', 'prime', 'elite', 'vertex', 'nova', 'pulse', 'spark', 'flux', 'vortex', 
-                'orbit', 'axis', 'zenith', 'summit', 'peak', 'cortex', 'nexus', 'sonic', 'glow', 
-                'pure', 'smart', 'swift', 'bold', 'meta', 'quantum', 'matrix', 'delta', 'alpha', 
-                'omega', 'focus', 'vision', 'mind', 'gear', 'capital', 'global', 'future', 'smart'
+                'apex', 'prime', 'elite', 'nova', 'pulse', 'spark', 'flux', 'orbit',
+                'axis', 'peak', 'nexus', 'pure', 'swift', 'bold', 'meta', 'alpha'
             ]
-            b_words = ['store', 'shop', 'market', 'trade', 'brand', 'group', 'company', 'corp', 'studio', 'agency', 'media', 'express', 'center', 'global', 'service', 'hub', 'lab']
+            b_words = ['hub', 'lab', 'hq', 'pro', 'app', 'box', 'top', 'ai']
         
         random.shuffle(bases)
         var_pool = []
         for w in bases:
             if valid(w): var_pool.append(w)
-            for bw in b_words[:8]:
-                var_pool.append(f"{w}_{bw}")
-                var_pool.append(f"{w}{bw}")
-                var_pool.append(f"{bw}_{w}")
+            for bw in b_words:
+                cand1 = f"{w}_{bw}"
+                cand2 = f"{w}{bw}"
+                if len(cand1) <= 10 and valid(cand1): var_pool.append(cand1)
+                if len(cand2) <= 10 and valid(cand2): var_pool.append(cand2)
         random.shuffle(var_pool)
         pool = var_pool
 
@@ -1412,57 +1473,64 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         
         c_set = set()
         if lang == 'uz':
-            nice_pfx_uz = ['bosh_', 'usta_', 'asl_', 'sof_', 'yangi_', 'tezkor_', 'mohir_', 'shox_']
-            nice_sfx_uz = ['_uz', '_uzb', '_rasmiy', '_markaz', '_baza', '_xizmat', '_tijorat', '_savdo', '_bozor', '777', '2025', '2026']
-            # FAQAT o'zbekcha kasb so'zlari (inglizcha so'zlar aralashmasin!)
+            nice_pfx_uz = ['bosh_', 'usta_', 'asl_', 'sof_']
+            nice_sfx_uz = ['_uz', '_uzb', '777']
             for kw in theme_keys_uz:
                 if valid(kw): c_set.add(kw)
                 for pfx in nice_pfx_uz:
-                    if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                    cand = f'{pfx}{kw}'
+                    if len(cand) <= 10 and valid(cand): c_set.add(cand)
                 for sfx in nice_sfx_uz:
-                    if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                    cand = f'{kw}{sfx}'
+                    if len(cand) <= 10 and valid(cand): c_set.add(cand)
         else:
-            nice_pfx = ['real_','the_','my_','mr_','iam_','pro_','neo_','top_','vip_','super_','mega_']
-            nice_sfx = ['_pro','_vip','_top','_bot','_hub','_zone','_official','_online','777','2025','2026']
+            nice_pfx = ['real_','pro_','top_','iam_']
+            nice_sfx = ['_pro','_vip','_top','_hub','_lab']
             for kw in theme_keys_en:
                 if valid(kw): c_set.add(kw)
                 for pfx in nice_pfx:
-                    if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                    cand = f'{pfx}{kw}'
+                    if len(cand) <= 10 and valid(cand): c_set.add(cand)
                 for sfx in nice_sfx:
-                    if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                    cand = f'{kw}{sfx}'
+                    if len(cand) <= 10 and valid(cand): c_set.add(cand)
         pool = list(c_set)
 
     elif cat in ('gaming', 'game'):
-        g_words = ['game', 'gaming', 'play', 'player', 'pro', 'gg', 'craft', 'sniper', 'kill', 'quest', 'clan', 'squad', 'legend', 'cyber', 'esports']
+        g_words = ['game', 'pro', 'gg', 'play', 'top', 'clan', 'apex']
         if lang == 'uz':
             bases = list(set(UZ_MALE_NAMES + UZ_WORDS_CLEAN))
         else:
             bases = list(set(EN_COOL_CLEAN + nouns))
-        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 6]
         random.shuffle(bases)
         var_pool = []
-        for w in bases[:800]:
-            for gw in g_words[:8]:
-                var_pool.append(f"{w}_{gw}")
-                var_pool.append(f"{w}{gw}")
-                var_pool.append(f"{gw}_{w}")
+        for w in bases[:500]:
+            if valid(w): var_pool.append(w)
+            for gw in g_words:
+                cand1 = f"{w}_{gw}"
+                cand2 = f"{w}{gw}"
+                if len(cand1) <= 10 and valid(cand1): var_pool.append(cand1)
+                if len(cand2) <= 10 and valid(cand2): var_pool.append(cand2)
         random.shuffle(var_pool)
         pool = var_pool
 
     elif cat in ('kripto', 'crypto'):
-        c_words = ['crypto', 'coin', 'token', 'ton', 'btc', 'eth', 'trade', 'invest', 'hodl', 'dex', 'nft', 'chain', 'capital', 'fund']
+        c_words = ['ton', 'btc', 'eth', 'dex', 'nft', 'coin', 'bot']
         if lang == 'uz':
             bases = list(set(UZ_WORDS_CLEAN + uz_dict))
         else:
             bases = list(set(nouns + EN_COOL_CLEAN))
-        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 10]
+        bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 6]
         random.shuffle(bases)
         var_pool = []
-        for w in bases[:800]:
-            for cw_kw in c_words[:8]:
-                var_pool.append(f"{w}_{cw_kw}")
-                var_pool.append(f"{w}{cw_kw}")
-                var_pool.append(f"{cw_kw}_{w}")
+        for w in bases[:500]:
+            if valid(w): var_pool.append(w)
+            for cw_kw in c_words:
+                cand1 = f"{w}_{cw_kw}"
+                cand2 = f"{w}{cw_kw}"
+                if len(cand1) <= 10 and valid(cand1): var_pool.append(cand1)
+                if len(cand2) <= 10 and valid(cand2): var_pool.append(cand2)
         random.shuffle(var_pool)
         pool = var_pool
 
@@ -1471,55 +1539,60 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
         if selected_style == 'ism':
             if lang == 'uz':
                 bases = list(set(UZ_MALE_NAMES + UZ_FEMALE_NAMES))
-                suffixes = ['', '_uz', '_uzb', '_official', 'bek', 'jon', '_pro', '_online']
-                prefixes = ['', 'real_', 'sof_', 'asl_']
+                suffixes = ['', '_uz', '_uzb', 'bek', 'jon', '_pro']
+                prefixes = ['', 'sof_', 'asl_']
             else:
                 bases = list(set(EN_MALE_NAMES + EN_FEMALE_NAMES))
-                suffixes = ['', '_official', '_real', '_vip', '_pro', '_online']
-                prefixes = ['', 'real_', 'the_', 'iam_', 'official_']
-            bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 9]
+                suffixes = ['', '_pro', '_vip', '_top']
+                prefixes = ['', 'iam_', 'the_', 'mr_']
+            bases = [str(w).lower() for w in bases if str(w).isalpha() and 4 <= len(str(w)) <= 6]
             random.shuffle(bases)
             var_pool = []
-            for w in bases[:800]:
+            for w in bases[:500]:
                 if valid(w): var_pool.append(w)
-                for sfx in suffixes[:6]:
-                    if sfx: var_pool.append(f"{w}{sfx}")
-                for pfx in prefixes[:2]:
-                    if pfx: var_pool.append(f"{pfx}{w}")
+                for sfx in suffixes:
+                    cand = f"{w}{sfx}"
+                    if len(cand) <= 10 and valid(cand): var_pool.append(cand)
+                for pfx in prefixes:
+                    cand = f"{pfx}{w}"
+                    if len(cand) <= 10 and valid(cand): var_pool.append(cand)
             pool = var_pool
         elif selected_style == 'brend':
             if lang == 'uz':
-                bases = ['shirin', 'orzu', 'oliy', 'ishonch', 'hamkor', 'umid', 'baraka', 'omad', 'sayohat', 'zamon', 'yulduz', 'makon', 'avlod']
-                b_words = ['savdo', 'bozor', 'dokon', 'market', 'servis', 'group', 'studio']
+                bases = ['orzu', 'oliy', 'umid', 'baraka', 'omad', 'zamon', 'nur', 'sifat']
+                b_words = ['uz', 'pro', 'hub', 'top', 'app']
             else:
-                bases = ['apex', 'prime', 'elite', 'vertex', 'nova', 'pulse', 'spark', 'flux', 'vortex', 'orbit']
-                b_words = ['store', 'shop', 'market', 'brand', 'group', 'company', 'studio']
+                bases = ['apex', 'prime', 'elite', 'nova', 'pulse', 'spark', 'flux', 'orbit']
+                b_words = ['hub', 'lab', 'hq', 'pro', 'app', 'top']
             random.shuffle(bases)
             var_pool = []
             for w in bases:
                 if valid(w): var_pool.append(w)
                 for bw in b_words:
-                    var_pool.append(f"{w}_{bw}")
-                    var_pool.append(f"{w}{bw}")
-                    var_pool.append(f"{bw}_{w}")
+                    cand1 = f"{w}_{bw}"
+                    cand2 = f"{w}{bw}"
+                    if len(cand1) <= 10 and valid(cand1): var_pool.append(cand1)
+                    if len(cand2) <= 10 and valid(cand2): var_pool.append(cand2)
             pool = var_pool
         elif selected_style == 'tabiat':
             if lang == 'uz':
-                bases = ['osmon', 'yulduz', 'daryo', 'tog', 'olov', 'shamol', 'bulut', 'qoplon', 'arslon', 'lochin', 'burgut']
-                suffixes = ['_uz', '_uzb', '_pro', '_vip', '_official']
-                prefixes = ['real_', 'the_', 'mega_', 'super_']
+                bases = ['osmon', 'yulduz', 'daryo', 'tog', 'olov', 'shamol', 'bulut', 'lochin']
+                suffixes = ['_uz', '_uzb', '_pro', '_vip']
+                prefixes = ['asl_', 'sof_']
             else:
-                bases = ['storm', 'forge', 'nova', 'spark', 'echo', 'flux', 'edge', 'core', 'drift', 'vault', 'lynx', 'hawk']
-                suffixes = ['_pro', '_hq', '_club', '_hub', '_lab']
-                prefixes = ['real_', 'the_', 'neo_', 'cyber_']
+                bases = ['storm', 'nova', 'spark', 'echo', 'flux', 'edge', 'core', 'drift', 'hawk']
+                suffixes = ['_pro', '_hq', '_hub', '_lab']
+                prefixes = ['the_', 'neo_']
             random.shuffle(bases)
             var_pool = []
             for w in bases:
                 if valid(w): var_pool.append(w)
                 for sfx in suffixes:
-                    var_pool.append(f"{w}{sfx}")
+                    cand = f"{w}{sfx}"
+                    if len(cand) <= 10 and valid(cand): var_pool.append(cand)
                 for pfx in prefixes:
-                    var_pool.append(f"{pfx}{w}")
+                    cand = f"{pfx}{w}"
+                    if len(cand) <= 10 and valid(cand): var_pool.append(cand)
             pool = var_pool
         else: # kasb
             prof = random.choice(list(_THEME_KEYWORDS.keys()))
@@ -1528,27 +1601,31 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
             theme_keys_uz = t_vals.get('uz', [])
             c_set = set()
             if lang == 'uz':
-                nice_pfx_uz = ['sof', 'asl', 'top', 'mega']
-                nice_sfx_uz = ['uz', 'uzb', 'pro', 'official', 'bek', 'jon']
+                nice_pfx_uz = ['sof', 'asl', 'top']
+                nice_sfx_uz = ['uz', 'uzb', 'pro', 'bek', 'jon']
                 for kw in theme_keys_uz:
                     if valid(kw): c_set.add(kw)
                     for pfx in nice_pfx_uz:
-                        if valid(f'{pfx}_{kw}'): c_set.add(f'{pfx}_{kw}')
-                        if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                        for combo in [f'{pfx}_{kw}', f'{pfx}{kw}']:
+                            if len(combo) <= 10 and valid(combo): c_set.add(combo)
                     for sfx in nice_sfx_uz:
                         if sfx in ('bek', 'jon'):
-                            if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                            combo = f'{kw}{sfx}'
+                            if len(combo) <= 10 and valid(combo): c_set.add(combo)
                         else:
-                            if valid(f'{kw}_{sfx}'): c_set.add(f'{kw}_{sfx}')
+                            for combo in [f'{kw}_{sfx}', f'{kw}{sfx}']:
+                                if len(combo) <= 10 and valid(combo): c_set.add(combo)
             else:
-                nice_pfx = ['real','the','my','mr','iam','pro','neo','top']
-                nice_sfx = ['pro','vip','top','bot','ai']
+                nice_pfx = ['real','the','mr','pro','top']
+                nice_sfx = ['pro','vip','top','bot','hub']
                 for kw in theme_keys_en:
                     if valid(kw): c_set.add(kw)
                     for pfx in nice_pfx:
-                        if valid(f'{pfx}{kw}'): c_set.add(f'{pfx}{kw}')
+                        combo = f'{pfx}{kw}'
+                        if len(combo) <= 10 and valid(combo): c_set.add(combo)
                     for sfx in nice_sfx:
-                        if valid(f'{kw}{sfx}'): c_set.add(f'{kw}{sfx}')
+                        combo = f'{kw}{sfx}'
+                        if len(combo) <= 10 and valid(combo): c_set.add(combo)
             pool = list(c_set)
 
     else:
@@ -1674,6 +1751,8 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
             seen.add(u)
             res.append(u)
 
+    # Eng qisqa va qulay nomlar doimo birinchi o'rinda chiqadi (5, 6, 7 belgilar oldinda)
+    res.sort(key=lambda x: (len(x), random.random()))
     return res[:limit]
 
 
@@ -3166,7 +3245,7 @@ async def _start_cmd_inner(message: Message):
                     async with db.execute("SELECT referred_by FROM users WHERE telegram_id=?", (message.from_user.id,)) as c:
                         existing = await c.fetchone()
                     if existing and (existing[0] is None or existing[0] == 0):
-                        await db.execute("UPDATE users SET referred_by=? WHERE telegram_id=?", (ref_id, message.from_user.id))
+                        await db.execute("UPDATE users SET referred_by=?, referrer_id=? WHERE telegram_id=?", (ref_id, ref_id, message.from_user.id))
                         await db.execute("INSERT OR REPLACE INTO pending_referrals (telegram_id, referrer_id) VALUES (?, ?)", (message.from_user.id, ref_id))
                         await db.commit()
         except Exception:
@@ -3533,7 +3612,7 @@ async def run_sniper(bot, telegram_id, order_id, category, qty):
     await search_sniper(telegram_id, order_id, category)
     
     async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-        async with db.execute("SELECT username FROM search_results WHERE search_id=?", (order_id,)) as c:
+        async with db.execute("SELECT username FROM search_results WHERE search_id=? ORDER BY LENGTH(username) ASC, id ASC", (order_id,)) as c:
             found = [r[0] for r in await c.fetchall()]
     
     if found:
@@ -3661,20 +3740,21 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
             if lang == 'uz':
                 for t in targets[:300]:
                     clean_t = t.rstrip('_')
-                    for sfx in ['_uz', '_uzb', '_rasmiy', '2025', '2026', '777', '01', '700', '_baza', '_markaz', 'asl_', 'sof_']:
+                    for sfx in ['_uz', '_uzb', '777', '01', '700', 'asl_', 'sof_']:
                         cand = f"{clean_t}{sfx}" if not sfx.startswith('asl_') and not sfx.startswith('sof_') else f"{sfx}{clean_t}"
-                        if 'bekbek' not in cand and 'jonjon' not in cand and 'boyboy' not in cand:
+                        if len(cand) <= 10 and 'bekbek' not in cand and 'jonjon' not in cand and 'boyboy' not in cand:
                             extra_targets.append(cand)
             else:
                 for t in targets[:300]:
                     clean_t = t.rstrip('_')
-                    extra_targets.extend([
-                        f"{clean_t}_official", f"{clean_t}_bot", f"{clean_t}2025", f"{clean_t}2026",
-                        f"real_{clean_t}", f"{clean_t}_me", f"the_{clean_t}", f"{clean_t}_pro", f"{clean_t}1",
+                    for cand in [
+                        f"{clean_t}_bot", f"real_{clean_t}", f"{clean_t}_me", f"the_{clean_t}", f"{clean_t}_pro", f"{clean_t}1",
                         f"{clean_t}99", f"{clean_t}777", f"{clean_t}_vip", f"{clean_t}_tv", f"{clean_t}_top",
                         f"my{clean_t}", f"mr{clean_t}", f"{clean_t}hub", f"{clean_t}lab", f"{clean_t}hq",
                         f"go{clean_t}", f"{clean_t}go", f"{clean_t}x", f"{clean_t}ai", f"neo{clean_t}"
-                    ])
+                    ]:
+                        if len(cand) <= 10:
+                            extra_targets.append(cand)
             random.shuffle(extra_targets)
 
         # 5-32 belgili va toza Telegram username talablariga moslash
@@ -3694,7 +3774,7 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     and bool(TELEGRAM_RE.match(u_clean))):
                 seen_t.add(u_clean)
                 all_targets.append(u_clean)
-        random.shuffle(all_targets)
+        all_targets.sort(key=lambda x: (len(x), random.random()))
 
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
@@ -3748,12 +3828,13 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     logger.info(f"🤖 [AI QIDIRUV] AI {len(ai_candidates)} ta sara nomzod generatsiya qildi!")
                     clean_ai = [
                         u for u in ai_candidates 
-                        if u not in seen_t and u not in seen_history and 5 <= len(u) <= 32 and bool(TELEGRAM_RE.match(u))
+                        if u not in seen_t and u not in seen_history and 5 <= len(u) <= 10 and bool(TELEGRAM_RE.match(u))
                     ]
                     for cu in clean_ai:
                         seen_t.add(cu)
-                    # AI nomzodlarini eng birinchi navbatda tekshiriladigan qilib qo'shamiz:
+                    # AI nomzodlarini qo'shib, barchasini yana uzunligi bo'yicha saralaymiz:
                     all_targets = clean_ai + all_targets
+                    all_targets.sort(key=lambda x: (len(x), random.random()))
             except Exception as ai_err:
                 logger.warning(f"AI generatsiya xatosi (statik lug'at bilan davom etiladi): {ai_err}")
 
@@ -3806,28 +3887,30 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
 
         def _matches_category(uname: str, cat: str) -> bool:
             """Username kategoriyaga mos kelishini tekshirish."""
+            if not (5 <= len(uname) <= 10):
+                return False
             cat_key = cat.split(':')[0].strip().lower() if ':' in cat else cat.strip().lower()
             if cat_key == 'qisqa':
                 # Qisqa noyob: faqat 5-7 harf, hech qanday raqam va pastki chiziq yo'q
                 return uname.isalpha() and 5 <= len(uname) <= 7
             elif cat_key == 'turli':
-                # Turli ko'rinishdagi: 6-14 belgi, chiroyli kombinatsiyalar
-                return 6 <= len(uname) <= 14
+                # Turli ko'rinishdagi: 5-10 belgi, chiroyli kombinatsiyalar
+                return 5 <= len(uname) <= 10
             elif cat_key == 'ism':
-                return uname.isalpha() and 4 <= len(uname) <= 12
+                return uname.isalpha() and 5 <= len(uname) <= 10
             elif cat_key == 'familiya':
-                return uname.isalpha() and 5 <= len(uname) <= 14
+                return uname.isalpha() and 5 <= len(uname) <= 10
             elif cat_key == 'brend':
-                return 4 <= len(uname) <= 26
+                return 5 <= len(uname) <= 10
             elif cat_key in ('lavozim', 'kasb'):
-                return 4 <= len(uname) <= 28
+                return 5 <= len(uname) <= 10
             elif cat_key == 'custom':
                 # O'zim kiritaman: so'zning o'zi yoki unga tegishli kombinatsiya
                 base = cat.split(':', 1)[1].strip().lower() if ':' in cat else ''
                 if not base:
-                    return True  # base yo'q bo'lsa — hammani qabul qilish
-                return base in uname or uname.startswith(base[:4])
-            return True  # Boshqa kategoriyalar uchun filtr yo'q
+                    return 5 <= len(uname) <= 10
+                return (base in uname or uname.startswith(base[:4])) and 5 <= len(uname) <= 10
+            return 5 <= len(uname) <= 10  # Boshqa kategoriyalar uchun 5-10 belgi kafolatlangan
 
         async def verify_target(http_session, uname: str):
             nonlocal found_count
@@ -7361,7 +7444,7 @@ async def api_search_results(search_id: int, init_data: str = ""):
             if not task:
                 return {"ok": False, "error": "Topilmadi"}
                 
-        async with db.execute("SELECT id, username, status FROM search_results WHERE search_id=? AND status != 'seen' ORDER BY id ASC", (search_id,)) as c:
+        async with db.execute("SELECT id, username, status FROM search_results WHERE search_id=? AND status != 'seen' ORDER BY LENGTH(username) ASC, id ASC", (search_id,)) as c:
             results = [dict(r) for r in await c.fetchall()]
             
         return {"ok": True, "status": task['status'], "results": results}
@@ -8301,6 +8384,25 @@ async def api_admin_analytics(x_admin_token: str = Header(default="")):
         "chart_labels": labels if labels else ["Bugun"],
         "chart_data": sales_data if sales_data else [0]
     }
+def verify_telegram_auth_data(params: dict, bot_token: str) -> bool:
+    """Telegram Login Widget hash tekshiruvi (HMAC SHA256)"""
+    if not params or "hash" not in params:
+        return False
+    check_hash = params["hash"]
+    data_check_arr = [f"{k}={v}" for k, v in sorted(params.items()) if k != "hash"]
+    data_check_string = "\n".join(data_check_arr)
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calculated_hash, check_hash):
+        return False
+    try:
+        auth_date = int(params.get("auth_date", 0))
+        if time.time() - auth_date > 86400 * 2:  # 2 kunlik eskirish chegarasi
+            return False
+    except Exception:
+        return False
+    return True
+
 @app.get("/api/admin/auth")
 async def admin_auth(request: Request):
     """Telegram Login Widget orqali kirish"""
@@ -8309,9 +8411,19 @@ async def admin_auth(request: Request):
         # Bot ga redirect qilamiz
         bot_username = await get_cached_bot_username()
         return RedirectResponse(f"https://t.me/{bot_username}?start=admin")
-    tid = int(params.get('id', 0))
-    if tid not in ADMIN_IDS:
+    
+    # Xavfsizlik: hash parametrini bot tokeni bilan tekshirish
+    if not verify_telegram_auth_data(params, BOT_TOKEN):
+        logger.warning(f"Ruxsatsiz admin kirish urinishi: params={params}")
+        return HTMLResponse("<h2>Ruxsat berilmadi: Autentifikatsiya imzosi noto'g'ri</h2>", status_code=403)
+
+    try:
+        tid = int(params.get('id', 0))
+    except Exception:
         return HTMLResponse("<h2>Ruxsat yo'q</h2>", status_code=403)
+
+    if tid not in ADMIN_IDS:
+        return HTMLResponse("<h2>Ruxsat yo'q: Siz administrator emassiz</h2>", status_code=403)
     token = get_admin_token(tid)
     return RedirectResponse(f"/admin?token={token}")
 
@@ -8715,6 +8827,7 @@ import time as _time
 
 _spam_tracker: dict = defaultdict(list)   # {user_id: [timestamps]}
 _spam_blocked: dict = {}                   # {user_id: block_until}
+_spam_warned: dict = {}                    # {user_id: last_warn_timestamp}
 
 
 # ─── SAVE USER INFO MIDDLEWARE ─────────────────
@@ -8761,7 +8874,9 @@ class AntiSpamMiddleware(BaseMiddleware):
             # Agar bloklangan bo'lsa
             if uid in _spam_blocked:
                 if now < _spam_blocked[uid]:
-                    if isinstance(event, Message):
+                    last_warn = _spam_warned.get(uid, 0)
+                    if now - last_warn > 10.0 and isinstance(event, Message):
+                        _spam_warned[uid] = now
                         try:
                             remain = int(_spam_blocked[uid] - now)
                             await event.answer(f"⚠️ Siz spam qilyapsiz! {remain} soniyadan so'ng qayta urinib ko'ring.")
@@ -8769,7 +8884,8 @@ class AntiSpamMiddleware(BaseMiddleware):
                             pass
                     return
                 else:
-                    del _spam_blocked[uid]
+                    _spam_blocked.pop(uid, None)
+                    _spam_warned.pop(uid, None)
 
             # So'rovlar vaqtini saqlaymiz va eskilerini tozalaymiz
             timestamps = _spam_tracker[uid]
