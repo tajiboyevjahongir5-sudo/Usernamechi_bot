@@ -3775,7 +3775,9 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     and bool(TELEGRAM_RE.match(u_clean))):
                 seen_t.add(u_clean)
                 all_targets.append(u_clean)
-        all_targets.sort(key=lambda x: (len(x), random.random()))
+        # Sifat bo'yicha saralash: ma'noli, toza va qisqa nomlar BIRINCHI tekshiriladi
+        # (score_username raqam/pastki chiziqni jarima qiladi, toza harflarni mukofotlaydi)
+        all_targets.sort(key=lambda x: (-score_username(x, cat_key_for_llm), len(x), random.random()))
 
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
@@ -3833,9 +3835,9 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     ]
                     for cu in clean_ai:
                         seen_t.add(cu)
-                    # AI nomzodlarini qo'shib, barchasini yana uzunligi bo'yicha saralaymiz:
+                    # AI nomzodlarini qo'shib, barchasini yana sifat bo'yicha saralaymiz:
                     all_targets = clean_ai + all_targets
-                    all_targets.sort(key=lambda x: (len(x), random.random()))
+                    all_targets.sort(key=lambda x: (-score_username(x, cat_key_for_llm), len(x), random.random()))
             except Exception as ai_err:
                 logger.warning(f"AI generatsiya xatosi (statik lug'at bilan davom etiladi): {ai_err}")
 
@@ -7451,7 +7453,12 @@ async def api_search_results(search_id: int, init_data: str = ""):
             if not task:
                 return {"ok": False, "error": "Topilmadi"}
                 
-        async with db.execute("SELECT id, username, status FROM search_results WHERE search_id=? AND status != 'seen' ORDER BY LENGTH(username) ASC, id ASC", (search_id,)) as c:
+        # Eng sifatli (toza — raqam/pastki chiziqsiz), keyin eng qisqa nomlar BIRINCHI ko'rsatiladi
+        async with db.execute(
+            "SELECT id, username, status FROM search_results WHERE search_id=? AND status != 'seen' "
+            "ORDER BY (username GLOB '*[0-9_]*') ASC, LENGTH(username) ASC, id ASC",
+            (search_id,)
+        ) as c:
             results = [dict(r) for r in await c.fetchall()]
             
         return {"ok": True, "status": task['status'], "results": results}
