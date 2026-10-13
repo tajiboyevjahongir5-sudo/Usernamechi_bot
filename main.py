@@ -3775,7 +3775,9 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     and bool(TELEGRAM_RE.match(u_clean))):
                 seen_t.add(u_clean)
                 all_targets.append(u_clean)
-        all_targets.sort(key=lambda x: (len(x), random.random()))
+        # Sifat bo'yicha saralash: ma'noli, toza va qisqa nomlar BIRINCHI tekshiriladi
+        # (score_username raqam/pastki chiziqni jarima qiladi, toza harflarni mukofotlaydi)
+        all_targets.sort(key=lambda x: (-score_username(x, cat_key_for_llm), len(x), random.random()))
 
         user = await get_user(telegram_id)
         session_string = user["session_string"] if user else None
@@ -3833,9 +3835,9 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     ]
                     for cu in clean_ai:
                         seen_t.add(cu)
-                    # AI nomzodlarini qo'shib, barchasini yana uzunligi bo'yicha saralaymiz:
+                    # AI nomzodlarini qo'shib, barchasini yana sifat bo'yicha saralaymiz:
                     all_targets = clean_ai + all_targets
-                    all_targets.sort(key=lambda x: (len(x), random.random()))
+                    all_targets.sort(key=lambda x: (-score_username(x, cat_key_for_llm), len(x), random.random()))
             except Exception as ai_err:
                 logger.warning(f"AI generatsiya xatosi (statik lug'at bilan davom etiladi): {ai_err}")
 
@@ -6906,7 +6908,14 @@ async def api_seller_withdraw(request: Request):
         return {"ok": False, "error": f"Sotuvchi balansingiz yetarli emas ({seller_bal:,} so'm)"}
     
     async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-        await db.execute("UPDATE users SET seller_balance=seller_balance-? WHERE telegram_id=?", (amount, tid))
+        # ATOMIK: balans yetarli BO'LGANDAGINA yechamiz (bir vaqtda ikki so'rov pulni ikki marta yechmasin)
+        cur = await db.execute(
+            "UPDATE users SET seller_balance=seller_balance-? WHERE telegram_id=? AND seller_balance>=?",
+            (amount, tid, amount)
+        )
+        if cur.rowcount == 0:
+            await db.commit()
+            return {"ok": False, "error": f"Sotuvchi balansingiz yetarli emas ({seller_bal:,} so'm)"}
         await db.execute("INSERT INTO withdrawals (telegram_id, amount, card_number, card_owner) VALUES (?,?,?,?)",
                          (tid, amount, card_number, card_owner))
         await db.commit()
@@ -7208,9 +7217,18 @@ async def api_monitor_start(request: Request):
                 "error": f"Balans yetarli emas (Kerak: {total_price:,} so'm, Mavjud: {user_balance:,} so'm)"
             }
             
-        # Deduct balance
-        await db.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (total_price, tid))
-        
+        # ATOMIK: balans yetarli BO'LGANDAGINA yechamiz (bir vaqtda ikki so'rov pulni ikki marta yechmasin)
+        dcur = await db.execute(
+            "UPDATE users SET balance = balance - ? WHERE telegram_id = ? AND balance >= ?",
+            (total_price, tid, total_price)
+        )
+        if dcur.rowcount == 0:
+            await db.commit()
+            return {
+                "ok": False,
+                "error": f"Balans yetarli emas (Kerak: {total_price:,} so'm, Mavjud: {user_balance:,} so'm)"
+            }
+
         # Insert all new targets (paid_amount saqlaymiz — keyin refund uchun)
         for u in new_targets:
             await db.execute(
@@ -7451,7 +7469,12 @@ async def api_search_results(search_id: int, init_data: str = ""):
             if not task:
                 return {"ok": False, "error": "Topilmadi"}
                 
-        async with db.execute("SELECT id, username, status FROM search_results WHERE search_id=? AND status != 'seen' ORDER BY LENGTH(username) ASC, id ASC", (search_id,)) as c:
+        # Eng sifatli (toza — raqam/pastki chiziqsiz), keyin eng qisqa nomlar BIRINCHI ko'rsatiladi
+        async with db.execute(
+            "SELECT id, username, status FROM search_results WHERE search_id=? AND status != 'seen' "
+            "ORDER BY (username GLOB '*[0-9_]*') ASC, LENGTH(username) ASC, id ASC",
+            (search_id,)
+        ) as c:
             results = [dict(r) for r in await c.fetchall()]
             
         return {"ok": True, "status": task['status'], "results": results}
