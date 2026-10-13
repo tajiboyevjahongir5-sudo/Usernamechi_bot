@@ -6908,7 +6908,14 @@ async def api_seller_withdraw(request: Request):
         return {"ok": False, "error": f"Sotuvchi balansingiz yetarli emas ({seller_bal:,} so'm)"}
     
     async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-        await db.execute("UPDATE users SET seller_balance=seller_balance-? WHERE telegram_id=?", (amount, tid))
+        # ATOMIK: balans yetarli BO'LGANDAGINA yechamiz (bir vaqtda ikki so'rov pulni ikki marta yechmasin)
+        cur = await db.execute(
+            "UPDATE users SET seller_balance=seller_balance-? WHERE telegram_id=? AND seller_balance>=?",
+            (amount, tid, amount)
+        )
+        if cur.rowcount == 0:
+            await db.commit()
+            return {"ok": False, "error": f"Sotuvchi balansingiz yetarli emas ({seller_bal:,} so'm)"}
         await db.execute("INSERT INTO withdrawals (telegram_id, amount, card_number, card_owner) VALUES (?,?,?,?)",
                          (tid, amount, card_number, card_owner))
         await db.commit()
@@ -7210,9 +7217,18 @@ async def api_monitor_start(request: Request):
                 "error": f"Balans yetarli emas (Kerak: {total_price:,} so'm, Mavjud: {user_balance:,} so'm)"
             }
             
-        # Deduct balance
-        await db.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (total_price, tid))
-        
+        # ATOMIK: balans yetarli BO'LGANDAGINA yechamiz (bir vaqtda ikki so'rov pulni ikki marta yechmasin)
+        dcur = await db.execute(
+            "UPDATE users SET balance = balance - ? WHERE telegram_id = ? AND balance >= ?",
+            (total_price, tid, total_price)
+        )
+        if dcur.rowcount == 0:
+            await db.commit()
+            return {
+                "ok": False,
+                "error": f"Balans yetarli emas (Kerak: {total_price:,} so'm, Mavjud: {user_balance:,} so'm)"
+            }
+
         # Insert all new targets (paid_amount saqlaymiz — keyin refund uchun)
         for u in new_targets:
             await db.execute(
