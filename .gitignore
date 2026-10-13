@@ -3,8 +3,17 @@
 *.sqlite
 *.sqlite3
 
+# Telethon / bot session files (MAXFIY — hech qachon commit qilinmasin!)
+*.session
+*.session-journal
+
+# Logs
+*.log
+
 # Python cache
 __pycache__/
 *.pyc
+
+# Secrets / env
 .env
 check_username.py

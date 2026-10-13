@@ -455,7 +455,7 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jrc_channel_id ON join_request_channels(channel_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jrc_channel_username ON join_request_channels(channel_username);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jrc_status_sort ON join_request_channels(status, sort_order);")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_payment_cards_active ON payment_cards(is_active, sort_order);")
+        # NOTE: idx_payment_cards_active indeksi payment_cards jadvali yaratilgandan keyin quriladi (pastda)
 
         # Admin premium username hunter jadvali
         await db.execute("""
@@ -517,6 +517,7 @@ async def init_db():
                 sort_order INTEGER DEFAULT 0
             )
         """)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_payment_cards_active ON payment_cards(is_active, sort_order);")
         # Eski payment_card sozlamasidan birinchi karta sifatida ko'chirish
         _c = await db.execute("SELECT COUNT(*) FROM payment_cards")
         _cnt = (await _c.fetchone())[0]
@@ -5913,6 +5914,29 @@ async def api_marketplace_list(request: Request):
             except Exception as e:
                 logger.error(f"Marketplace channel broadcast xato ({mkt_channel}): {e}")
 
+        # 2. KALIT SO'Z OBUNACHILARIGA XABAR — yangi username ularning kalit so'ziga mos kelsa
+        try:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT DISTINCT user_id FROM keyword_subscriptions WHERE ? LIKE '%' || keyword || '%'",
+                (username.lower(),)
+            ) as c:
+                subs = await c.fetchall()
+            for sub in subs:
+                sub_uid = sub['user_id']
+                if sub_uid == tid:
+                    continue  # Sotuvchining o'ziga xabar yubormaymiz
+                try:
+                    await bot.send_message(
+                        sub_uid,
+                        f"🔔 <b>Xushxabar!</b>\n\nSiz poylagan so'zga mos <b>@{username}</b> bozorda sotuvga chiqdi!\nNarxi: <b>{price:,} so'm</b>",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+        except Exception as ke:
+            logger.warning(f"Keyword subscription notify xato: {ke}")
+
     return {"ok": True, "warning": None if has_2fa else "2FA"}
 
 
@@ -5968,23 +5992,6 @@ async def update_channel_listing_post(listing_id: int, status: str = 'sold'):
     except Exception as e:
         logger.error(f"update_channel_listing_post error for listing {listing_id}: {e}")
 
-
-        # 2. KEYWORD SUBSCRIPTION NOTIFICATIONS
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT DISTINCT user_id FROM keyword_subscriptions WHERE ? LIKE '%' || keyword || '%'", (username,)) as c:
-            subs = await c.fetchall()
-            
-            if subs:
-                for sub in subs:
-                    try:
-                        await bot.send_message(
-                            sub['user_id'], 
-                            f"🔔 <b>Xushxabar!</b>\n\nSiz poylagan so'zga mos <b>@{username}</b> bozorda sotuvga chiqdi!\nNarxi: <b>{price:,} so'm</b>",
-                            parse_mode="HTML"
-                        )
-                    except: pass
-                
-    return {"ok": True}
 
 @app.post("/api/marketplace/cancel")
 async def api_marketplace_cancel(request: Request):
@@ -6334,7 +6341,7 @@ async def api_marketplace_buy_via_admin(request: Request):
                 user_id=bot_input,
                 is_admin=True
             ))
-            logger.info(f"Garant: Bot @{bot_info.username} guruhga admin sifatida qo'shildi.")
+            logger.info(f"Garant: Bot @{bot_username} guruhga admin sifatida qo'shildi.")
         except Exception as be:
             logger.warning(f"Garant: Botni guruhga qo'shib bo'lmadi: {be}")
 
