@@ -169,7 +169,7 @@
   /* FLOATING PILL NAV BAR */
   nav {
     position: fixed;
-    bottom: 24px;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
     width: min(92%, 420px);
@@ -871,7 +871,7 @@
   </div>
 
   <div class="balance-card card" style="position: relative;">
-    <div class="label" style="display:inline-flex; align-items:center; gap:6px;"><span class="icon-badge badge-amber icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Coin/3D/coin_3d.png" class="icon-3d-img"></span> Joriy Balansingiz</div>
+    <div class="label" style="display:inline-flex; align-items:center; gap:6px;"><span class="icon-badge badge-amber icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Coin/3D/coin_3d.png" class="icon-3d-img"></span> Joriy Balansingiz</div>
     <div class="balance-row">
       <div class="amount" id="home-balance">0</div>
       <div class="sub">so'm</div>
@@ -923,12 +923,12 @@
 
   <div class="stats">
     <div class="stat-card">
-      <div class="icon-badge badge-purple"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Rocket/3D/rocket_3d.png" class="icon-3d-img"></div>
+      <div class="icon-badge badge-purple"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Rocket/3D/rocket_3d.png" class="icon-3d-img"></div>
       <div class="val" id="stat-orders">0</div>
       <div class="lbl">Buyurtmalar</div>
     </div>
     <div class="stat-card">
-      <div class="icon-badge badge-cyan"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Gem%20stone/3D/gem_stone_3d.png" class="icon-3d-img"></div>
+      <div class="icon-badge badge-cyan"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Gem%20stone/3D/gem_stone_3d.png" class="icon-3d-img"></div>
       <div class="val" id="stat-usernames">0</div>
       <div class="lbl">Band qilingan</div>
     </div>
@@ -937,7 +937,7 @@
 
   <!-- TOP LISTINGS CAROUSEL -->
   <div class="card" id="top-carousel-card" style="display:none; padding:18px 18px 14px;">
-    <div class="section-title" style="margin-bottom:12px;"><span class="icon-badge badge-amber icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Fire/3D/fire_3d.png" class="icon-3d-img"></span> <span>TOP</span> E'lonlar</div>
+    <div class="section-title" style="margin-bottom:12px;"><span class="icon-badge badge-amber icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Fire/3D/fire_3d.png" class="icon-3d-img"></span> <span>TOP</span> E'lonlar</div>
     <div id="top-carousel-wrap" style="display:flex; gap:12px; overflow-x:auto; padding-bottom:8px; scrollbar-width:none;">
       <!-- Carousel items will drop here -->
     </div>
@@ -945,7 +945,7 @@
 
   <!-- USERNAME SOTIB OLISH FORMASI -->
   <div class="card">
-    <div class="section-title"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Magic%20wand/3D/magic_wand_3d.png" class="icon-3d-img"></span> <span>Username</span> sotib olish</div>
+    <div class="section-title"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Magic%20wand/3D/magic_wand_3d.png" class="icon-3d-img"></span> <span>Username</span> sotib olish</div>
 
     <div class="card" id="no-session-warn" style="display:none;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);border-radius:18px;padding:14px 18px;margin-bottom:18px;color:#f87171;font-size:13.5px;font-weight:600;align-items:center;gap:10px;">
       <i class="fa-solid fa-circle-exclamation" style="font-size:18px;"></i>
@@ -1063,7 +1063,7 @@
 
 <!-- MONITORING PAGE -->
 <div class="page" id="page-monitor">
-  <div class="page-header"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img"></span> <span>Nishon olish</span> (Monitoring)</div>
+  <div class="page-header"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img"></span> <span>Nishon olish</span> (Monitoring)</div>
 
   <div class="card">
     <div style="font-size:13px; color:var(--muted); margin-bottom:16px;">
@@ -1077,13 +1077,13 @@
     </div>
 
     <button class="btn btn-primary" id="monitor-start-btn" onclick="startMonitor()">
-      <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img" style="margin-right:6px;"> Kuzatuvni boshlash
+      <img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img" style="margin-right:6px;"> Kuzatuvni boshlash
     </button>
   </div>
 
   <!-- POYLASH SECTION MOVED HERE -->
   <div class="card" id="subscriptions-wrap" style="display:none; margin-top:20px;">
-    <div style="font-weight:700; font-size:16px; margin-bottom:8px;"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bell/3D/bell_3d.png" class="icon-3d-img"></span> Poylash (Obunalar)</div>
+    <div style="font-weight:700; font-size:16px; margin-bottom:8px;"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Bell/3D/bell_3d.png" class="icon-3d-img"></span> Poylash (Obunalar)</div>
     <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">Kerakli so'zlarni kiriting. Sotuvda mos username chiqsa, bot sizga xabar beradi.</div>
     <div style="display:flex; gap:8px; margin-bottom:12px;">
       <input type="text" id="sub-keyword-input" placeholder="Masalan: biznes" style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border); background:rgba(255,255,255,0.05); color:#fff; font-size:14px; outline:none;">
@@ -1103,7 +1103,7 @@
 
 <!-- BALANCE PAGE -->
 <div class="page" id="page-balance">
-  <div class="page-header"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Purse/3D/purse_3d.png" class="icon-3d-img"></span> <span>Balans</span></div>
+  <div class="page-header"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Purse/3D/purse_3d.png" class="icon-3d-img"></span> <span>Balans</span></div>
 
   <div class="balance-card card">
     <div class="label">Joriy balans</div>
@@ -1121,7 +1121,7 @@
       </div>
     </div>
     <button class="btn btn-primary" onclick="requestTopup()">
-      <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Credit%20card/3D/credit_card_3d.png" class="icon-3d-img" style="margin-right:6px;"> Karta raqamini olish
+      <img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Credit%20card/3D/credit_card_3d.png" class="icon-3d-img" style="margin-right:6px;"> Karta raqamini olish
     </button>
   </div>
 
@@ -1156,7 +1156,7 @@
 <!-- MARKETPLACE PAGE -->
 <div class="page" id="page-market">
   <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; padding-bottom: 12px;">
-    <div><span class="icon-badge badge-amber icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Shopping%20cart/3D/shopping_cart_3d.png" class="icon-3d-img"></span> <span>Sotuv bozori</span></div>
+    <div><span class="icon-badge badge-amber icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Shopping%20cart/3D/shopping_cart_3d.png" class="icon-3d-img"></span> <span>Sotuv bozori</span></div>
     <button class="btn btn-primary" style="padding:10px 18px; width:auto; font-size:13px; margin:0; border-radius:14px; font-weight:700; gap:4px; box-shadow: 0 4px 14px rgba(6, 182, 212, 0.3);" onclick="openPostModal()"><i class="fa-solid fa-plus" style="font-size:11px;"></i> E'lon joylash</button>
   </div>
   
@@ -1298,7 +1298,7 @@
 
 <!-- ACCOUNT PAGE -->
 <div class="page" id="page-account">
-  <div class="page-header"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Gear/3D/gear_3d.png" class="icon-3d-img"></span> <span>Akkaunt</span></div>
+  <div class="page-header"><span class="icon-badge badge-purple icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Gear/3D/gear_3d.png" class="icon-3d-img"></span> <span>Akkaunt</span></div>
 
   <!-- AKKAUNT ULASH FORMASI (ENG TEPADA) -->
   <div class="account-status" id="account-status">
@@ -1310,7 +1310,7 @@
   </div>
 
   <div class="card" id="session-form-wrap">
-    <div class="section-title"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Link/3D/link_3d.png" class="icon-3d-img"></span> Telegramga <span>ulanish</span></div>
+    <div class="section-title"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Link/3D/link_3d.png" class="icon-3d-img"></span> Telegramga <span>ulanish</span></div>
     
     <!-- BOSQICH 1: Telefon raqam -->
     <div id="auth-step-phone">
@@ -1360,7 +1360,7 @@
 
   <!-- PREMIUM SECTION -->
   <div class="card" id="premium-wrap" style="background:linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05)); border-color:rgba(245,158,11,0.3); margin-bottom:18px;">
-    <div style="font-weight:700; font-size:16px; margin-bottom:8px; color:#fbbf24; display:flex; align-items:center; gap:6px;"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Crown/3D/crown_3d.png" class="icon-3d-img" style="width:20px!important;height:20px!important;"> Premium Akkaunt</div>
+    <div style="font-weight:700; font-size:16px; margin-bottom:8px; color:#fbbf24; display:flex; align-items:center; gap:6px;"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Crown/3D/crown_3d.png" class="icon-3d-img" style="width:20px!important;height:20px!important;"> Premium Akkaunt</div>
     <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">Sotuv komissiyasini 5% gacha kamaytiring va e'lonlaringizni ajratib ko'rsating. (Narxi: <span id="lbl-premium-price">20,000</span> so'm / 30 kun)</div>
     <button class="btn btn-primary" id="btn-buy-premium" onclick="buyPremium()" style="background:linear-gradient(135deg, #f59e0b, #d97706); margin:0;">Sotib olish</button>
   </div>
@@ -1459,7 +1459,7 @@
   <!-- FOYDALANUVCHI STATISTIKASI CARD -->
   <div class="card" style="background:linear-gradient(135deg, rgba(30,41,59,0.7) 0%, rgba(15,23,42,0.8) 100%); border:1px solid rgba(255,255,255,0.1); box-shadow:0 10px 30px rgba(0,0,0,0.3);">
     <div class="section-title" style="margin-bottom:14px;">
-      <span class="icon-badge badge-purple icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bar%20chart/3D/bar_chart_3d.png" class="icon-3d-img"></span>
+      <span class="icon-badge badge-purple icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Bar%20chart/3D/bar_chart_3d.png" class="icon-3d-img"></span>
       <span>Mening Statistikam</span>
     </div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
@@ -1486,7 +1486,7 @@
 
   <div class="card" style="background:linear-gradient(135deg, rgba(139,92,246,0.22) 0%, rgba(6,182,212,0.14) 100%); border:1px solid rgba(167,139,250,0.4); box-shadow:0 12px 32px rgba(139,92,246,0.18);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <div class="section-title" style="margin:0;"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Wrapped%20gift/3D/wrapped_gift_3d.png" class="icon-3d-img"></span> <span>Taklif & Bonus</span></div>
+      <div class="section-title" style="margin:0;"><span class="icon-badge badge-cyan icon-badge-sm"><img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Wrapped%20gift/3D/wrapped_gift_3d.png" class="icon-3d-img"></span> <span>Taklif & Bonus</span></div>
       <div style="background:rgba(16,185,129,0.2); border:1px solid rgba(16,185,129,0.4); color:#34d399; font-size:11px; font-weight:800; padding:4px 10px; border-radius:12px; display:inline-flex; align-items:center; gap:4px;">
         🎁 1,000 SO'M
       </div>
@@ -1521,23 +1521,23 @@
 <nav id="main-nav">
   <div class="nav-droplet" id="nav-droplet"></div>
   <button class="active" id="nav-home" onclick="goPage('home')">
-    <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/House/3D/house_3d.png" class="icon-3d-img" alt="Bosh">
+    <img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/House/3D/house_3d.png" class="icon-3d-img" alt="Bosh">
     Bosh
   </button>
   <button id="nav-balance" onclick="goPage('balance')">
-    <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Purse/3D/purse_3d.png" class="icon-3d-img" alt="Balans">
+    <img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Purse/3D/purse_3d.png" class="icon-3d-img" alt="Balans">
     Balans
   </button>
   <button id="nav-monitor" onclick="goPage('monitor')">
-    <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img" alt="Nishon">
+    <img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img" alt="Nishon">
     Nishon
   </button>
   <button id="nav-market" onclick="goPage('market')">
-    <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Shopping%20cart/3D/shopping_cart_3d.png" class="icon-3d-img" alt="Sotuv">
+    <img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Shopping%20cart/3D/shopping_cart_3d.png" class="icon-3d-img" alt="Sotuv">
     Sotuv
   </button>
   <button id="nav-account" onclick="goPage('account')">
-    <img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Gear/3D/gear_3d.png" class="icon-3d-img" alt="Akkaunt">
+    <img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Gear/3D/gear_3d.png" class="icon-3d-img" alt="Akkaunt">
     Akkaunt
   </button>
 </nav>
@@ -2776,7 +2776,7 @@ async function startMonitor() {
   } catch(e) { showToast('Tarmoq xatosi','error'); }
   finally {
     // Tugmani qayta yoqish
-    if (btn) { btn.disabled = false; btn.innerHTML = '<img src="https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img" style="margin-right:6px;"> Kuzatuvni boshlash'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<img src="https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@main/assets/Bullseye/3D/bullseye_3d.png" class="icon-3d-img" style="margin-right:6px;"> Kuzatuvni boshlash'; }
   }
 }
 
