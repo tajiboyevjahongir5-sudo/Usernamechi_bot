@@ -14,8 +14,8 @@
 <style>
   :root {
     --bg: #07070d;
-    --card: rgba(18, 18, 30, 0.72);
-    --border: rgba(255, 255, 255, 0.06);
+    --card: rgba(22, 23, 38, 0.46);
+    --border: rgba(255, 255, 255, 0.1);
     --border-hover: rgba(167, 139, 250, 0.25);
     --border-glow: rgba(167, 139, 250, 0.35);
     --primary: #8b5cf6;
@@ -30,6 +30,41 @@
     --warning: #f59e0b;
     --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
     --premium-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+
+    /* ─── LIQUID GLASS (iOS 26 uslubi) ─── */
+    --glass: rgba(22, 23, 38, 0.42);
+    --glass-strong: rgba(26, 27, 46, 0.55);
+    --glass-blur: blur(26px) saturate(185%) brightness(1.06);
+    --glass-border: rgba(255, 255, 255, 0.14);
+    --glass-highlight: rgba(255, 255, 255, 0.55);
+    --glass-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Shisha yuzasining ustki qirrasidagi yorug'lik (specular highlight) —
+     har bir shisha elementga yaltiroq "nur" chizig'i beradi */
+  .card::after,
+  .btn-primary::after,
+  .balance-card::after,
+  nav::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      160deg,
+      var(--glass-highlight) 0%,
+      rgba(255, 255, 255, 0.08) 22%,
+      transparent 48%,
+      transparent 82%,
+      rgba(255, 255, 255, 0.10) 100%
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    opacity: 0.9;
+    z-index: 2;
   }
   
   /* STRICT 3D HD ICON SIZING & GLOW STYLES */
@@ -143,10 +178,10 @@
     content: '';
     position: fixed; top: -20%; left: -20%; right: -20%; bottom: -20%;
     background: 
-      radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.16) 0%, transparent 40%),
-      radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.14) 0%, transparent 40%),
-      radial-gradient(circle at 50% 50%, rgba(244, 63, 94, 0.04) 0%, transparent 50%),
-      radial-gradient(circle at 80% 10%, rgba(236, 72, 153, 0.05) 0%, transparent 45%);
+      radial-gradient(circle at 10% 18%, rgba(139, 92, 246, 0.26) 0%, transparent 42%),
+      radial-gradient(circle at 90% 82%, rgba(6, 182, 212, 0.22) 0%, transparent 42%),
+      radial-gradient(circle at 50% 45%, rgba(244, 63, 94, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 82% 8%, rgba(236, 72, 153, 0.1) 0%, transparent 46%);
     pointer-events: none; z-index: 0;
     will-change: transform;
     animation: ambientMovement 24s ease-in-out infinite alternate;
@@ -173,9 +208,9 @@
     left: 50%;
     transform: translateX(-50%);
     width: min(92%, 420px);
-    background: rgba(14, 14, 25, 0.85);
-    backdrop-filter: blur(10px) saturate(140%);
-    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    background: var(--glass-strong);
+    backdrop-filter: blur(30px) saturate(190%) brightness(1.08);
+    -webkit-backdrop-filter: blur(30px) saturate(190%) brightness(1.08);
     border-radius: 40px;
     display: flex;
     align-items: center;
@@ -257,23 +292,30 @@
 
   /* PREMIUM GLASSMORPHISM CARDS */
   .card {
-    background: var(--card);
-    backdrop-filter: blur(8px) saturate(130%);
-    -webkit-backdrop-filter: blur(8px) saturate(130%);
-    border: 1px solid var(--border);
-    border-radius: 24px;
+    background: var(--glass);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 26px;
     padding: 22px;
     margin-bottom: 18px;
-    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    box-shadow:
+      var(--glass-shadow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -1px 1px rgba(0, 0, 0, 0.3);
     transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
                 border-color 0.3s ease,
                 box-shadow 0.3s ease;
+    position: relative;
     overflow: hidden;
   }
   .card:hover {
     transform: translateY(-4px) scale(1.005);
-    border-color: var(--border-hover);
-    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55), 0 0 25px rgba(139, 92, 246, 0.1);
+    border-color: var(--border-glow);
+    box-shadow:
+      0 24px 56px rgba(0, 0, 0, 0.6),
+      0 0 30px rgba(139, 92, 246, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
   }
 
   /* BALANCE CARD - METALLIC SHINE */
@@ -355,7 +397,7 @@
   .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
   .stat-card {
     background: var(--card);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(22px) saturate(180%);
     border: 1px solid var(--border);
     border-radius: 20px;
     padding: 18px 14px;
@@ -408,21 +450,28 @@
   .btn-primary {
     background: var(--accent-gradient);
     color: white; margin-bottom: 12px;
-    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.3);
+    box-shadow:
+      0 6px 20px rgba(139, 92, 246, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -2px 6px rgba(0, 0, 0, 0.2);
   }
   .btn-primary:hover {
-    box-shadow: 0 8px 25px rgba(139, 92, 246, 0.45);
-    opacity: 0.95;
+    box-shadow:
+      0 10px 28px rgba(139, 92, 246, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    opacity: 0.97;
   }
   .btn-outline {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border);
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
     color: var(--text); margin-bottom: 12px;
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
   }
   .btn-outline:hover {
-    border-color: var(--accent-light);
-    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--border-glow);
+    background: var(--glass-strong);
   }
   .btn-success { 
     background: linear-gradient(135deg, #059669, #10b981); 
@@ -440,13 +489,16 @@
   .form-group label { display: block; color: var(--muted); font-size: 12px; font-weight: 600; margin-bottom: 8px; letter-spacing: 0.5px; text-transform: uppercase; }
   input, textarea, select {
     width: 100%;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
+    background: var(--glass);
+    backdrop-filter: blur(18px) saturate(170%);
+    -webkit-backdrop-filter: blur(18px) saturate(170%);
+    border: 1px solid var(--glass-border);
+    border-radius: 15px;
     padding: 14px 18px;
     color: var(--text);
     font-size: 15px;
     font-family: 'Inter', system-ui, sans-serif;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
     outline: none; transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   input::placeholder, textarea::placeholder {
@@ -466,7 +518,7 @@
   /* ORDER / LISTING ITEM */
   .order-item {
     background: var(--card);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(22px) saturate(180%);
     border: 1px solid var(--border);
     border-radius: 20px;
     padding: 18px;
@@ -665,8 +717,8 @@
   .toast {
     position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
     background: rgba(18, 18, 28, 0.93); 
-    backdrop-filter: blur(8px) saturate(130%);
-    -webkit-backdrop-filter: blur(8px) saturate(130%);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
     border: 1px solid var(--border);
     border-radius: 16px; padding: 14px 24px;
     font-size: 14px; font-weight: 600;
