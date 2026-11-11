@@ -1580,11 +1580,21 @@ def generate_usernames(base_word: str, lang: str = 'uz', limit: int = 5000) -> l
                 add(w)
                 for pfx in ['mr', 'its', 'iam', 'hey', 'the', 'real', 'just']:
                     add(f'{pfx}{w}')
+        # Toza ismlar deyarli har doim band — bo'sh bo'lishi mumkin bezakli variantlar
+        # (raqam/qo'shimcha). Natijalar ko'rsatilganda toza ismlar baribir birinchi turadi.
+        name_src = (UZ_MALE_NAMES + UZ_FEMALE_NAMES) if uz else (EN_MALE_NAMES + EN_FEMALE_NAMES)
+        dec_sfx = (['_uz', '_uzb', '_pro', '7', '777', '01', '1', '99', '07']
+                   if uz else ['_pro', '_vip', '_me', '7', '777', '01', '1', '99', '_official'])
+        for w in clean_words(name_src, 3, 8):
+            for d in dec_sfx:
+                add(f'{w}{d}')
 
     elif cat == 'familiya':
         if uz:
             for w in clean_words(UZ_SURNAMES, 5, 10):
                 add(w)
+                for d in ['_uz', '7', '777', '01']:
+                    add(f'{w}{d}')
             # Ismdan yasalgan haqiqiy ko'rinishdagi familiyalar: anvar → anvarov, ali → aliyev
             for n in clean_words(UZ_MALE_NAMES, 3, 8):
                 if n[-1] in 'aeiou':
@@ -3860,15 +3870,20 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     and bool(TELEGRAM_RE.match(u_clean))):
                 seen_t.add(u_clean)
                 all_targets.append(u_clean)
-        # Saralash: avval KATEGORIYAGA MOSLIK (category_fit), keyin sifat (toza va qisqa).
-        # Kichik tasodifiy siljish bir xil uzunlikdagi (asosan band) nomlarga tiqilib qolmaslik uchun.
-        target_fit = {u: category_fit(u, category, lang) for u in all_targets}
+        # TEKSHIRISH tartibi: bo'sh bo'lish EHTIMOLI yuqori nomlar BIRINCHI tekshiriladi.
+        # (Toza, qisqa va ommabop nomlar Telegram'da deyarli har doim band — ularni
+        #  birinchi tekshirsak vaqt behuda ketib, bo'sh nomlar topilmay qoladi.)
+        # Natijalar foydalanuvchiga sifat bo'yicha /api/search/results da qayta saralanadi.
+        def _free_rank(u: str) -> float:
+            r = float(len(u))               # uzunroq = bo'sh bo'lish ehtimoli yuqori
+            if any(c.isdigit() for c in u):
+                r += 4.0                    # raqamli nomlar ko'proq bo'sh
+            if '_' in u:
+                r += 3.0                    # pastki chiziqli nomlar ko'proq bo'sh
+            return r + random.uniform(0, 2.5)
 
         def _sort_targets():
-            all_targets.sort(key=lambda x: (
-                -target_fit.get(x, 0),
-                -(score_username(x, cat_key_for_llm) + random.uniform(0, 12))
-            ))
+            all_targets.sort(key=_free_rank, reverse=True)
         _sort_targets()
 
         user = await get_user(telegram_id)
@@ -3927,11 +3942,12 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
                     ]
                     for cu in clean_ai:
                         seen_t.add(cu)
-                        # AI aynan shu kategoriya uchun yasagan — toza nomzodlar eng mos qatlamga kiradi
-                        ai_fit = category_fit(cu, category, lang)
-                        target_fit[cu] = max(ai_fit, 3) if cu.isalpha() else ai_fit
+                    # AI nomzodlari oldinga qo'yiladi (ko'pincha bo'sh bo'lishi uchun maxsus yasalgan),
+                    # qolganlari bo'sh-ehtimoli bo'yicha tekshiriladi.
                     all_targets = clean_ai + all_targets
-                    _sort_targets()
+                    rest = all_targets[len(clean_ai):]
+                    rest.sort(key=_free_rank, reverse=True)
+                    all_targets = clean_ai + rest
             except Exception as ai_err:
                 logger.warning(f"AI generatsiya xatosi (statik lug'at bilan davom etiladi): {ai_err}")
 
@@ -4058,23 +4074,8 @@ async def search_sniper(telegram_id: int, search_id: int, category: str, lang: s
 
         async with aiohttp.ClientSession(headers=req_headers) as http_session:
             batch_size = 15  # Rate limit (429) ga tushmaslik uchun optimal parallel soni
-            # Eng mos qatlam deyarli band bo'lib chiqsa, vaqt tugamasdan keyingi qatlamga o'tamiz
-            # (aks holda foydalanuvchi hech narsa topilmay qoladi).
-            skip_marks = [45, 85]
-            i = -batch_size
-            while i + batch_size < len(all_targets):
-                i += batch_size
+            for i in range(0, len(all_targets), batch_size):
                 elapsed = asyncio.get_event_loop().time() - start_time
-                if skip_marks and elapsed > skip_marks[0]:
-                    skip_marks.pop(0)
-                    if found_count < paid_qty:
-                        cur_fit = target_fit.get(all_targets[i], 0)
-                        j = i
-                        while j < len(all_targets) and target_fit.get(all_targets[j], 0) >= cur_fit:
-                            j += 1
-                        if j < len(all_targets):
-                            logger.info(f"Search {search_id}: {elapsed:.0f}s da {found_count} ta topildi — keyingi qatlamga o'tildi ({i}→{j})")
-                            i = j
                 if elapsed > MAX_SECONDS:
                     logger.info(f"Search {search_id}: time limit reached ({elapsed:.1f}s)")
                     break
