@@ -4894,10 +4894,27 @@ _CURATED_PREMIUM_WHITELIST = {
 }
 
 def load_all_premium_targets() -> dict:
-    """Faqat 100% qo'lda tasdiqlangan sara nomlarni qaytaradi.
-    Tashqi lug'at yoki so'zlar bazasidan HECH QANDAY so'z olinmaydi.
+    """Poylanadigan premium nomlar: qo'lda tanlangan sara ism/brendlar +
+    ma'noli, toza, QO'SHIMCHASIZ o'zbekcha lug'at so'zlari (dasturchi, hamyon,
+    hozir, shaxsiy kabi). Hammasi faqat harfdan iborat, 5-10 belgi, talaffuzli.
     """
-    return dict(_CURATED_PREMIUM_WHITELIST)
+    pool = dict(_CURATED_PREMIUM_WHITELIST)
+    try:
+        from bot.words import UZ_WORDS_CLEAN, uz_dict, _is_pronounceable
+        # UZ_WORDS_CLEAN — saralangan keng tarqalgan so'zlar (yuqoriroq ball);
+        # uz_dict — kengroq lug'at (bazaviy ball).
+        for src, score in ((UZ_WORDS_CLEAN, 115), (uz_dict, 100)):
+            for w in src:
+                w = str(w).strip().lower()
+                if (w.isascii() and w.isalpha()
+                        and 5 <= len(w) <= 10
+                        and w not in _BAD_WORDS
+                        and not w.endswith('moq')      # fe'l shakllari emas
+                        and _is_pronounceable(w)):
+                    pool.setdefault(w, score)
+    except Exception as e:
+        logger.warning(f"🏆 Premium lug'at so'zlarini yuklashda xato: {e}")
+    return pool
 
 
 async def admin_premium_hunter_loop(bot):
@@ -4937,18 +4954,21 @@ async def admin_premium_hunter_loop(bot):
             if now - last_refill_ts > REFILL_INTERVAL:
                 targets = load_all_premium_targets()
                 async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-                    # Barcha eski xom/tasodifiy nomlarni BUTUNLAY tozalaymiz:
-                    await db.execute("DELETE FROM admin_premium_targets")
+                    # Yangi nomlarni qo'shamiz, LEKIN band qilingan/so'ralgan/rad etilgan
+                    # nomlar holatini saqlaymiz (INSERT OR IGNORE — mavjudini o'zgartirmaydi).
                     await db.executemany(
-                        "INSERT OR REPLACE INTO admin_premium_targets (username, quality_score, status, last_checked) VALUES (?, ?, 'hunting', 0)",
+                        "INSERT OR IGNORE INTO admin_premium_targets (username, quality_score, status, last_checked) VALUES (?, ?, 'hunting', 0)",
                         [(w, score) for w, score in targets.items()]
                     )
+                    # Ro'yxatdan chiqarilgan eski 'hunting' nomlarni tozalaymiz
+                    async with db.execute("SELECT id, username FROM admin_premium_targets WHERE status='hunting'") as cur:
+                        stale = [(r[0],) for r in await cur.fetchall() if r[1] not in targets]
+                    if stale:
+                        await db.executemany("DELETE FROM admin_premium_targets WHERE id=?", stale)
                     await db.commit()
-                    
                     async with db.execute("SELECT COUNT(*) FROM admin_premium_targets WHERE status='hunting'") as cur:
                         total_cnt = (await cur.fetchone())[0]
-                        
-                logger.info(f"🏆 Admin Premium Hunter: Baza to'liq yangilandi! Faqat {total_cnt} ta 100% saralangan nom qoldi.")
+                logger.info(f"🏆 Admin Premium Hunter: baza yangilandi — {total_cnt} ta nom poylanmoqda.")
                 last_refill_ts = now
 
             # ── 2. Admin sessiyasini olish ──
@@ -5081,100 +5101,35 @@ async def admin_premium_hunter_loop(bot):
                         await asyncio.sleep(random.uniform(8, 14))
                         continue
 
-                    # 6c. BO'SH! Kanal ochib band qilamiz
-                    logger.info(f"🏆 [CLAIMING] @{uname} — kanal ochilmoqda...")
-                    claim_client = None
-                    ch_id = None
-                    ch_access_hash = None
-                    success = False
-                    try:
-                        _lock = _get_session_lock(admin_session)
-                        async with _lock:
-                            claim_client = await _get_fast_client(admin_session)
-                            ch = await claim_client(CreateChannelRequest(
-                                title=uname.capitalize(),
-                                about=f"Premium username @{uname} — @usernamechi_bot",
-                                megagroup=False
-                            ))
-                            ch_id = ch.chats[0].id
-                            ch_access_hash = ch.chats[0].access_hash
-                            
-                            await claim_client(UpdateUsernameRequest(
-                                channel=InputChannel(ch_id, ch_access_hash),
-                                username=uname
-                            ))
-                            success = True
+                    # 6c. BO'SH TOPILDI! O'zi band qilmaydi — adminlardan Ha/Yo'q so'raydi.
+                    logger.info(f"🏆 [BO'SH TOPILDI] @{uname} — adminlardan tasdiq so'ralmoqda...")
 
-                        # DB yangilash
-                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-                            await db.execute(
-                                "UPDATE admin_premium_targets SET status='claimed', claimed_at=? WHERE id=?",
-                                (time.time(), target_id)
-                            )
-                            await db.commit()
+                    # 'pending' holatiga o'tkazamiz (qayta bildirmaslik uchun)
+                    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+                        await db.execute(
+                            "UPDATE admin_premium_targets SET status='pending' WHERE id=?",
+                            (target_id,)
+                        )
+                        await db.commit()
 
-                        # Adminga xabar
+                    kb = InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="✅ Ha, band qil", callback_data=f"pfind_yes_{target_id}"),
+                        InlineKeyboardButton(text="❌ Yo'q", callback_data=f"pfind_no_{target_id}"),
+                    ]])
+                    notify_text = (
+                        f"🎯 <b>Bo'sh noyob username topildi!</b>\n\n"
+                        f"Username: <b>@{uname}</b>\n"
+                        f"Uzunlik: {len(uname)} harf\n\n"
+                        f"Bu username hozir <b>bo'sh</b>. Sizga band qilaymi?"
+                    )
+                    for _adm in ADMIN_IDS:
                         try:
-                            await bot.send_message(
-                                admin_id,
-                                f"🏆 <b>Premium username topildi va band qilindi!</b>\n\n"
-                                f"Username: <b>@{uname}</b>\n"
-                                f"Uzunlik: {len(uname)} harf\n"
-                                f"Kanal ID: <code>{ch_id}</code>\n\n"
-                                f"✅ Kanal ochildi va username biriktirildi!",
-                                parse_mode="HTML"
-                            )
-                        except Exception:
-                            pass
-
-                        logger.info(f"🏆🎉 MUVAFFAQIYAT! Premium @{uname} olindi! (Kanal: {ch_id})")
-
-                    except FloodWaitError as e:
-                        logger.warning(f"🏆 FloodWait {e.seconds}s — @{uname}")
-                        await asyncio.sleep(min(e.seconds + 5, 300))
-                        continue
-
-                    except ChannelsAdminPublicTooMuchError:
-                        logger.warning(f"🏆 Admin ommaviy link limiti tugagan (10 ta)! Hunter to'xtatildi.")
-                        try:
-                            await bot.send_message(
-                                admin_id,
-                                "🏆⚠️ <b>Premium Hunter to'xtatildi!</b>\n\n"
-                                "Ommaviy link limiti (10 ta) tugagan.\n"
-                                "Ba'zi kanallarni o'chirib joy bo'shating.",
-                                parse_mode="HTML"
-                            )
-                        except Exception:
-                            pass
-                        await asyncio.sleep(3600)  # 1 soat kutish
-                        continue
-
-                    except (UsernameOccupiedError,):
-                        logger.info(f"🏆 @{uname} claim paytida band bo'ldi (UsernameOccupied)")
-                        taken_cache[uname] = time.time() + 43200
-                        continue
-
-                    except Exception as ue:
-                        logger.warning(f"🏆 Claim xato @{uname}: {ue}")
-                        taken_cache[uname] = time.time() + 3600
-                        continue
-
-                    finally:
-                        # Muvaffaqiyatsiz kanal ochilgan bo'lsa — o'chiramiz
-                        if ch_id and ch_access_hash and not success and claim_client:
-                            try:
-                                await claim_client(DeleteChannelRequest(
-                                    channel=InputChannel(ch_id, ch_access_hash)
-                                ))
-                                logger.info(f"🏆🗑 Muvaffaqiyatsiz kanal o'chirildi: @{uname}")
-                            except Exception:
-                                pass
-                        if claim_client:
-                            try:
-                                await claim_client.disconnect()
-                            except Exception:
-                                pass
-                            _telethon_cache.pop(admin_session, None)
+                            await bot.send_message(_adm, notify_text, parse_mode="HTML", reply_markup=kb)
+                        except Exception as _ne:
+                            logger.debug(f"🏆 Admin {_adm} ga bildirish xatosi: {_ne}")
+                    logger.info(f"🏆 @{uname} bo'sh — adminlarga Ha/Yo'q so'rovi yuborildi.")
+                    # Keyingi tekshiruvgacha biroz kutamiz
+                    await asyncio.sleep(random.uniform(8, 12))
 
                 except Exception as target_err:
                     logger.debug(f"🏆 Target tekshiruv xatosi @{uname}: {target_err}")
@@ -5187,6 +5142,144 @@ async def admin_premium_hunter_loop(bot):
             logger.error(f"🏆 Admin Premium Hunter loop xato: {loop_err}\n{traceback.format_exc()}")
 
         await asyncio.sleep(5.0)
+
+
+async def _reserve_premium_username(session_string: str, uname: str):
+    """Berilgan sessiya ostida kanal ochib, username'ni band qiladi.
+    Qaytaradi: (success: bool, channel_id | None, error: str | None)."""
+    from telethon.tl.functions.channels import CreateChannelRequest, UpdateUsernameRequest, DeleteChannelRequest
+    from telethon.tl.types import InputChannel
+
+    client = None
+    ch_id = ch_hash = None
+    success = False
+    try:
+        _lock = _get_session_lock(session_string)
+        async with _lock:
+            client = await _get_fast_client(session_string)
+            ch = await client(CreateChannelRequest(
+                title=uname.capitalize(),
+                about=f"Premium username @{uname} — @usernamechi_bot",
+                megagroup=False
+            ))
+            ch_id = ch.chats[0].id
+            ch_hash = ch.chats[0].access_hash
+            await client(UpdateUsernameRequest(
+                channel=InputChannel(ch_id, ch_hash),
+                username=uname
+            ))
+            success = True
+        return True, ch_id, None
+    except Exception as e:
+        # Yarim ochilgan kanalni tozalaymiz
+        if ch_id and ch_hash and not success and client:
+            try:
+                await client(DeleteChannelRequest(channel=InputChannel(ch_id, ch_hash)))
+            except Exception:
+                pass
+        return False, None, str(e)
+
+
+@router.callback_query(F.data.startswith("pfind_yes_"))
+async def premium_find_yes(call: CallbackQuery):
+    """Admin 'Ha' bosdi — bo'sh premium username'ni band qilamiz."""
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer("Faqat adminlar uchun", show_alert=True)
+        return
+    try:
+        target_id = int(call.data.rsplit("_", 1)[1])
+    except Exception:
+        await call.answer("Xato")
+        return
+
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT username, status FROM admin_premium_targets WHERE id=?", (target_id,)) as c:
+            row = await c.fetchone()
+    if not row:
+        await call.answer("Topilmadi", show_alert=True)
+        return
+    uname = row['username']
+    if row['status'] == 'claimed':
+        await call.answer("Allaqachon band qilingan", show_alert=True)
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+
+    # Band qiluvchi sessiya: tugmani bosgan admin sessiyasi, bo'lmasa asosiy admin
+    presser = await get_user(call.from_user.id)
+    session_string = presser.get('session_string') if presser else None
+    if not session_string:
+        main_admin = await get_user(ADMIN_IDS[0])
+        session_string = main_admin.get('session_string') if main_admin else None
+    if not session_string:
+        await call.answer("Admin Telegram sessiyasi ulanmagan!", show_alert=True)
+        return
+
+    await call.answer("Band qilinmoqda...")
+    ok, ch_id, err = await _reserve_premium_username(session_string, uname)
+    if ok:
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+            await db.execute(
+                "UPDATE admin_premium_targets SET status='claimed', claimed_at=? WHERE id=?",
+                (time.time(), target_id)
+            )
+            await db.commit()
+        try:
+            await call.message.edit_text(
+                f"✅ <b>Band qilindi:</b> @{uname}\n"
+                f"Kanal ID: <code>{ch_id}</code>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+        logger.info(f"🏆 Admin {call.from_user.id} @{uname} ni band qildi (kanal {ch_id})")
+    else:
+        # Band qilib bo'lmadi — ehtimol oraliqda kimdir olib qo'ydi
+        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+            await db.execute("UPDATE admin_premium_targets SET status='hunting', last_checked=0 WHERE id=?", (target_id,))
+            await db.commit()
+        try:
+            await call.message.edit_text(
+                f"❌ <b>Band qilib bo'lmadi:</b> @{uname}\n"
+                f"Sabab: <code>{(err or '')[:150]}</code>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+        logger.warning(f"🏆 @{uname} band qilib bo'lmadi: {err}")
+
+
+@router.callback_query(F.data.startswith("pfind_no_"))
+async def premium_find_no(call: CallbackQuery):
+    """Admin 'Yo'q' bosdi — bu username o'tkazib yuboriladi."""
+    if call.from_user.id not in ADMIN_IDS:
+        await call.answer("Faqat adminlar uchun", show_alert=True)
+        return
+    try:
+        target_id = int(call.data.rsplit("_", 1)[1])
+    except Exception:
+        await call.answer("Xato")
+        return
+    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
+        await db.execute(
+            "UPDATE admin_premium_targets SET status='skipped' WHERE id=? AND status!='claimed'",
+            (target_id,)
+        )
+        await db.commit()
+    await call.answer("O'tkazib yuborildi")
+    try:
+        await call.message.edit_text(
+            (call.message.html_text or call.message.text or "") + "\n\n❌ <i>Rad etildi</i>",
+            parse_mode="HTML"
+        )
+    except Exception:
+        try:
+            await call.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
 
 # ─── FASTAPI APP ──────────────────────────────
 
