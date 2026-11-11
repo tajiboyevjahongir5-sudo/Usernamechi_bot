@@ -4,7 +4,7 @@ Telegram username qidirish/poylash/sotish boti. aiogram + FastAPI + Telethon + S
 
 ## Tuzilma
 - `main.py` (~9900 qator) — butun backend bitta faylda. **To'liq o'qima**: funksiyani `grep -n "def nom"` bilan top, keyin offset/limit bilan faqat o'sha qismni o'qi.
-  - DB sxema: `init_db`; qidiruv: `generate_usernames`, `search_sniper`, `score_username`; poylash: `monitoring_loop`, `api_monitor_start`; savdo: `api_marketplace_*`, `transfer_username`, `auction_close_loop`; admin API: `/api/admin/*` (`x_admin_token` + `for/else: raise 403`).
+  - DB sxema: `init_db`; qidiruv: `generate_usernames`, `search_sniper`, `score_username`, kategoriyaga moslik: `normalize_category`, `category_fit`; poylash: `monitoring_loop`, `api_monitor_start`; savdo: `api_marketplace_*`, `transfer_username`, `auction_close_loop`; admin API: `/api/admin/*` (`x_admin_token` + `for/else: raise 403`).
 - `bot/words.py` — so'z lug'atlari. `*.txt` lug'at fayllarini o'qima (katta).
 - `static/app/index.html` — mini-app, `static/admin/index.html` — admin panel.
 - E'tibor berma: `legacy/`, `create_files*.py`, `inject_*.py`, `temp.js`, `search*.py`, `do_grep.py`.
