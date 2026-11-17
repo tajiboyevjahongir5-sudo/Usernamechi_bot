@@ -5091,8 +5091,12 @@ async def admin_premium_hunter_loop(bot):
                             await db.commit()
                         await asyncio.sleep(5)
                         continue
+                    except FloodWaitError as fe:
+                        logger.warning(f"🏆 CheckUsername FloodWait {fe.seconds}s @{uname} — kutilmoqda")
+                        await asyncio.sleep(min(fe.seconds + 5, 300))
+                        continue
                     except Exception as ce:
-                        logger.debug(f"🏆 CheckUsername xato @{uname}: {ce}")
+                        logger.warning(f"🏆 CheckUsername xato @{uname}: {type(ce).__name__}: {ce}")
                         taken_cache[uname] = time.time() + 3600
                         await asyncio.sleep(8)
                         continue
