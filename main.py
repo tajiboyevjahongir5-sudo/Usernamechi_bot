@@ -645,11 +645,21 @@ async def create_or_update_user(user_data: dict):
     first_name = user_data.get('first_name', '')
     last_name = user_data.get('last_name', '')
     username = user_data.get('username', '')
-    async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-        await db.execute("INSERT OR IGNORE INTO users (telegram_id, balance) VALUES (?, 5000)", (tid,))
-        await db.execute("UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?", 
-                         (first_name, last_name, username, tid))
-        await db.commit()
+    # "database is locked" vaqtinchalik bo'lishi mumkin — bir necha marta qayta urinamiz
+    for _try in range(4):
+        try:
+            async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+                await db.execute("PRAGMA busy_timeout=30000")
+                await db.execute("INSERT OR IGNORE INTO users (telegram_id, balance) VALUES (?, 5000)", (tid,))
+                await db.execute("UPDATE users SET first_name=?, last_name=?, username=? WHERE telegram_id=?",
+                                 (first_name, last_name, username, tid))
+                await db.commit()
+            return
+        except Exception as e:
+            if 'locked' in str(e).lower() and _try < 3:
+                await asyncio.sleep(0.4 * (_try + 1))
+                continue
+            raise
 
 async def create_user(telegram_id, first_name='', last_name='', username=''):
     try:
@@ -4952,25 +4962,57 @@ async def admin_premium_hunter_loop(bot):
         try:
             now = time.time()
 
-            # ── 1. Target'larni to'ldirish (Eski barcha xom nomlarni butunlay tozalab, faqat sarasini kiritish) ──
+            # ── 1. Target'larni to'ldirish ──
+            # DIQQAT: 21k qatorni bitta tranzaksiyada yozish SQLite yozish qulfini uzoq
+            # ushlab, boshqa so'rovlarga "database is locked" beradi. Shuning uchun:
+            #  (a) baza allaqachon to'lgan bo'lsa katta yozishni butunlay o'tkazamiz;
+            #  (b) yozish kerak bo'lsa, kichik bo'laklarda (har biri alohida commit) yozamiz.
             if now - last_refill_ts > REFILL_INTERVAL:
                 targets = load_all_premium_targets()
-                async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-                    # Yangi nomlarni qo'shamiz, LEKIN band qilingan/so'ralgan/rad etilgan
-                    # nomlar holatini saqlaymiz (INSERT OR IGNORE — mavjudini o'zgartirmaydi).
-                    await db.executemany(
-                        "INSERT OR IGNORE INTO admin_premium_targets (username, quality_score, status, last_checked) VALUES (?, ?, 'hunting', 0)",
-                        [(w, score) for w, score in targets.items()]
-                    )
-                    # Ro'yxatdan chiqarilgan eski 'hunting' nomlarni tozalaymiz
-                    async with db.execute("SELECT id, username FROM admin_premium_targets WHERE status='hunting'") as cur:
-                        stale = [(r[0],) for r in await cur.fetchall() if r[1] not in targets]
-                    if stale:
-                        await db.executemany("DELETE FROM admin_premium_targets WHERE id=?", stale)
-                    await db.commit()
-                    async with db.execute("SELECT COUNT(*) FROM admin_premium_targets WHERE status='hunting'") as cur:
-                        total_cnt = (await cur.fetchone())[0]
-                logger.info(f"🏆 Admin Premium Hunter: baza yangilandi — {total_cnt} ta nom poylanmoqda.")
+                target_items = [(w, score) for w, score in targets.items()]
+
+                async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+                    await db.execute("PRAGMA busy_timeout=30000")
+                    async with db.execute("SELECT COUNT(*) FROM admin_premium_targets") as cur:
+                        existing = (await cur.fetchone())[0]
+
+                if existing >= int(len(target_items) * 0.97):
+                    # Baza to'lgan — qayta yozish shart emas (har restartда 21k yozishning oldini oladi)
+                    logger.info(f"🏆 Admin Premium Hunter: baza to'lgan ({existing} ta) — qayta yozilmadi.")
+                else:
+                    CHUNK = 500
+                    for i in range(0, len(target_items), CHUNK):
+                        batch = target_items[i:i + CHUNK]
+                        for _try in range(3):
+                            try:
+                                async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+                                    await db.execute("PRAGMA busy_timeout=30000")
+                                    await db.executemany(
+                                        "INSERT OR IGNORE INTO admin_premium_targets (username, quality_score, status, last_checked) VALUES (?, ?, 'hunting', 0)",
+                                        batch
+                                    )
+                                    await db.commit()
+                                break
+                            except Exception as ins_err:
+                                if _try == 2:
+                                    logger.warning(f"🏆 Refill bo'lak {i} yozilmadi: {ins_err}")
+                                else:
+                                    await asyncio.sleep(1.5)
+                        await asyncio.sleep(0.05)  # boshqa so'rovlarga navbat beramiz
+                    logger.info(f"🏆 Admin Premium Hunter: baza yangilandi (~{len(target_items)} nom, bo'laklarda).")
+
+                # Eski, ro'yxatdan chiqarilgan 'hunting' nomlarni tozalaymiz (kichik, xavfsiz)
+                try:
+                    async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+                        await db.execute("PRAGMA busy_timeout=30000")
+                        async with db.execute("SELECT id, username FROM admin_premium_targets WHERE status='hunting'") as cur:
+                            stale = [(r[0],) for r in await cur.fetchall() if r[1] not in targets]
+                        if stale:
+                            for i in range(0, len(stale), 500):
+                                await db.executemany("DELETE FROM admin_premium_targets WHERE id=?", stale[i:i+500])
+                                await db.commit()
+                except Exception as cl_err:
+                    logger.debug(f"🏆 Stale tozalash xatosi: {cl_err}")
                 last_refill_ts = now
 
             # ── 2. Tekshirish uchun sessiyalarni tanlash (admin + stealth zaxira) ──
