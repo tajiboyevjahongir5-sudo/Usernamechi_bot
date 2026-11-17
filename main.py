@@ -4943,6 +4943,8 @@ async def admin_premium_hunter_loop(bot):
     last_refill_ts = 0
     REFILL_INTERVAL = 12 * 3600
     taken_cache = {}
+    dead_sessions: set = set()       # yaroqsiz (AuthKeyUnregistered) sessiyalar
+    admin_dead_notified = False      # admin sessiyasi o'lgani haqida bir marta ogohlantirildimi
 
     http_session = None
 
@@ -4971,14 +4973,36 @@ async def admin_premium_hunter_loop(bot):
                 logger.info(f"🏆 Admin Premium Hunter: baza yangilandi — {total_cnt} ta nom poylanmoqda.")
                 last_refill_ts = now
 
-            # ── 2. Admin sessiyasini olish ──
+            # ── 2. Tekshirish uchun sessiyalarni tanlash (admin + stealth zaxira) ──
             admin_user = await get_user(admin_id)
-            if not admin_user or not admin_user.get('session_string'):
-                logger.debug("🏆 Admin Premium Hunter: Admin sessiyasi topilmadi — 60s kutilmoqda")
+            admin_session = admin_user.get('session_string') if admin_user else None
+
+            # Admin qayta ulagan bo'lsa — o'lik belgisini va ogohlantirishni tiklaymiz
+            if admin_session and admin_session not in dead_sessions:
+                admin_dead_notified = False
+
+            check_sessions = [s for s in ([admin_session] + list(STEALTH_SESSIONS))
+                              if s and s not in dead_sessions]
+            if not check_sessions:
+                # Ishlaydigan sessiya yo'q — admin akkauntini qayta ulashi kerak
+                if admin_session and admin_session in dead_sessions and not admin_dead_notified:
+                    for _adm in ADMIN_IDS:
+                        try:
+                            await bot.send_message(
+                                _adm,
+                                "⚠️ <b>Premium Hunter to'xtadi</b>\n\n"
+                                "Telegram akkaunt sessiyangiz uzilgan (tizimda ro'yxatdan o'tmagan).\n"
+                                "Bo'sh username qidirish uchun <b>Akkaunt</b> bo'limidan Telegram "
+                                "akkauntingizni qayta ulang.",
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            pass
+                    admin_dead_notified = True
+                else:
+                    logger.debug("🏆 Admin Premium Hunter: ishlaydigan sessiya yo'q — 60s kutilmoqda")
                 await asyncio.sleep(60)
                 continue
-
-            admin_session = admin_user['session_string']
 
             # ── 3. Band bo'lgan kesh nomlarini tozalash ──
             expired_keys = [k for k, v in taken_cache.items() if v < now]
@@ -5060,52 +5084,51 @@ async def admin_premium_hunter_loop(bot):
                     # 6b. HTTP bo'sh ko'rindi — Telethon API tasdiqlash
                     logger.info(f"🏆 [PREMIUM HUNTER] @{uname} HTTP bo'sh ko'rindi — API tekshirilmoqda...")
                     
-                    check_client = None
-                    api_free = False
-                    try:
-                        _lock = _get_session_lock(admin_session)
-                        async with _lock:
-                            check_client = await _get_fast_client(admin_session)
-                            api_result = await asyncio.wait_for(
-                                check_client(CheckUsernameRequest(uname)),
-                                timeout=5.0
-                            )
-                        if api_result is True:
-                            api_free = True
-                            logger.info(f"🏆 [API CONFIRM] @{uname} Telethon bo'shligini tasdiqladi!")
-                        else:
-                            taken_cache[uname] = time.time() + 7200
-                            logger.info(f"🏆 [TAKEN] @{uname} API bo'sh emas.")
-                    except UsernamePurchaseAvailableError:
-                        logger.info(f"🏆 @{uname} Fragment auksionida — o'tkazildi")
+                    status, info = await _premium_api_check(uname, check_sessions, dead_sessions)
+
+                    if status == 'flood':
+                        logger.warning(f"🏆 CheckUsername FloodWait {info}s — kutilmoqda")
+                        await asyncio.sleep(min(int(info) + 5, 300))
+                        continue
+                    if status == 'dead':
+                        # Barcha sessiyalar yaroqsiz — admin akkauntini qayta ulashi kerak
+                        if admin_session and admin_session in dead_sessions and not admin_dead_notified:
+                            for _adm in ADMIN_IDS:
+                                try:
+                                    await bot.send_message(
+                                        _adm,
+                                        "⚠️ <b>Premium Hunter to'xtadi</b>\n\n"
+                                        "Telegram akkaunt sessiyangiz uzilgan (tizimda ro'yxatdan o'tmagan).\n"
+                                        "Bo'sh username qidirish uchun <b>Akkaunt</b> bo'limidan Telegram "
+                                        "akkauntingizni qayta ulang.",
+                                        parse_mode="HTML"
+                                    )
+                                except Exception:
+                                    pass
+                            admin_dead_notified = True
+                        await asyncio.sleep(60)
+                        continue
+                    if status in ('purchase', 'invalid'):
+                        logger.info(f"🏆 @{uname} {status} — o'tkazildi")
                         taken_cache[uname] = time.time() + 43200
                         async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
                             await db.execute("UPDATE admin_premium_targets SET status='skipped' WHERE id=?", (target_id,))
                             await db.commit()
                         await asyncio.sleep(5)
                         continue
-                    except UsernameInvalidError:
-                        logger.info(f"🏆 @{uname} yaroqsiz — o'chirildi")
-                        async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
-                            await db.execute("UPDATE admin_premium_targets SET status='skipped' WHERE id=?", (target_id,))
-                            await db.commit()
-                        await asyncio.sleep(5)
-                        continue
-                    except FloodWaitError as fe:
-                        logger.warning(f"🏆 CheckUsername FloodWait {fe.seconds}s @{uname} — kutilmoqda")
-                        await asyncio.sleep(min(fe.seconds + 5, 300))
-                        continue
-                    except Exception as ce:
-                        logger.warning(f"🏆 CheckUsername xato @{uname}: {type(ce).__name__}: {ce}")
+                    if status == 'error':
+                        logger.warning(f"🏆 CheckUsername xato @{uname}: {info}")
                         taken_cache[uname] = time.time() + 3600
                         await asyncio.sleep(8)
                         continue
-
-                    if not api_free:
+                    if status == 'taken':
+                        taken_cache[uname] = time.time() + 7200
+                        logger.info(f"🏆 [TAKEN] @{uname} API bo'sh emas.")
                         await asyncio.sleep(random.uniform(8, 14))
                         continue
 
-                    # 6c. BO'SH TOPILDI! O'zi band qilmaydi — adminlardan Ha/Yo'q so'raydi.
+                    # status == 'free' — BO'SH TOPILDI! O'zi band qilmaydi — adminlardan Ha/Yo'q so'raydi.
+                    logger.info(f"🏆 [API CONFIRM] @{uname} bo'sh!")
                     logger.info(f"🏆 [BO'SH TOPILDI] @{uname} — adminlardan tasdiq so'ralmoqda...")
 
                     # 'pending' holatiga o'tkazamiz (qayta bildirmaslik uchun)
@@ -5146,6 +5169,39 @@ async def admin_premium_hunter_loop(bot):
             logger.error(f"🏆 Admin Premium Hunter loop xato: {loop_err}\n{traceback.format_exc()}")
 
         await asyncio.sleep(5.0)
+
+
+async def _premium_api_check(uname: str, sessions: list, dead_set: set):
+    """Username bo'shligini Telethon orqali tekshiradi. Bir nechta sessiyani
+    navbat bilan sinaydi; yaroqsiz (AuthKeyUnregistered) sessiyani dead_set ga qo'shadi.
+    Qaytaradi: (status, info) — status: free|taken|purchase|invalid|flood|error|dead."""
+    from telethon.tl.functions.account import CheckUsernameRequest
+    from telethon.errors import (
+        UsernamePurchaseAvailableError, UsernameInvalidError,
+        FloodWaitError, AuthKeyUnregisteredError
+    )
+    for sess in sessions:
+        if not sess or sess in dead_set:
+            continue
+        try:
+            _lock = _get_session_lock(sess)
+            async with _lock:
+                client = await _get_fast_client(sess)
+                res = await asyncio.wait_for(client(CheckUsernameRequest(uname)), timeout=5.0)
+            return ('free' if res is True else 'taken', sess)
+        except UsernamePurchaseAvailableError:
+            return ('purchase', sess)
+        except UsernameInvalidError:
+            return ('invalid', sess)
+        except FloodWaitError as fe:
+            return ('flood', getattr(fe, 'seconds', 10))
+        except AuthKeyUnregisteredError:
+            dead_set.add(sess)
+            logger.warning(f"🏆 Sessiya yaroqsiz (AuthKeyUnregistered) — ro'yxatdan chiqarildi")
+            continue
+        except Exception as e:
+            return ('error', f"{type(e).__name__}: {e}")
+    return ('dead', None)
 
 
 async def _reserve_premium_username(session_string: str, uname: str):
@@ -5212,18 +5268,31 @@ async def premium_find_yes(call: CallbackQuery):
             pass
         return
 
-    # Band qiluvchi sessiya: tugmani bosgan admin sessiyasi, bo'lmasa asosiy admin
+    # Band qiluvchi sessiyalar: tugmani bosgan admin → asosiy admin → stealth zaxira.
+    # (Biri yaroqsiz bo'lsa topilgan nom yo'qolmasligi uchun ketma-ket sinaladi.)
+    candidate_sessions = []
     presser = await get_user(call.from_user.id)
-    session_string = presser.get('session_string') if presser else None
-    if not session_string:
-        main_admin = await get_user(ADMIN_IDS[0])
-        session_string = main_admin.get('session_string') if main_admin else None
-    if not session_string:
+    if presser and presser.get('session_string'):
+        candidate_sessions.append(presser['session_string'])
+    main_admin = await get_user(ADMIN_IDS[0])
+    if main_admin and main_admin.get('session_string'):
+        candidate_sessions.append(main_admin['session_string'])
+    candidate_sessions.extend(STEALTH_SESSIONS)
+    # Takrorlarni olib tashlaymiz (tartibni saqlab)
+    candidate_sessions = list(dict.fromkeys(s for s in candidate_sessions if s))
+    if not candidate_sessions:
         await call.answer("Admin Telegram sessiyasi ulanmagan!", show_alert=True)
         return
 
     await call.answer("Band qilinmoqda...")
-    ok, ch_id, err = await _reserve_premium_username(session_string, uname)
+    ok, ch_id, err = False, None, "sessiya yo'q"
+    for _sess in candidate_sessions:
+        ok, ch_id, err = await _reserve_premium_username(_sess, uname)
+        if ok:
+            break
+        if 'AuthKeyUnregistered' in (err or ''):
+            continue  # yaroqsiz sessiya — keyingisini sinaymiz
+        break  # boshqa xato (masalan band bo'lib qolgan) — qayta sinamaymiz
     if ok:
         async with aiosqlite.connect(DB_PATH, timeout=20.0) as db:
             await db.execute(
